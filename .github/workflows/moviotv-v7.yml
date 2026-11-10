@@ -1,0 +1,511 @@
+name: MovioTV v7 - safe parallel test APK
+"on":
+  push:
+    branches:
+      - feature/moviotv-simple-home
+    paths:
+      - .github/workflows/moviotv-v7.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v7-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build-and-verify:
+    if: github.ref == 'refs/heads/feature/moviotv-simple-home'
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: '100007'
+      VERSION_NAME: '7'
+    steps:
+      - name: Checkout feature branch only
+        uses: actions/checkout@v7
+        with:
+          ref: feature/moviotv-simple-home
+          persist-credentials: true
+      - name: Apply MovioTV v7 patch; fail immediately if source differs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'MOVIOTV_V7_PY'
+          #!/usr/bin/env python3
+          """MovioTV v7 development patch. Source-only; intended for verified GitHub Actions build.
+
+          Keeps the production OwnTV branch and the existing MovioTV v3.1 install untouched.
+          """
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          ROOT = Path('app')
+          def read(p):
+              return Path(p).read_text(encoding='utf-8')
+          def save(p, s):
+              p=Path(p); p.parent.mkdir(parents=True,exist_ok=True)
+              old=p.read_text(encoding='utf-8') if p.exists() else None
+              if old != s:
+                  p.write_text(s,encoding='utf-8'); print('UPDATED',p)
+              else: print('UNCHANGED',p)
+          def replace(p, old, new, label):
+              s=read(p)
+              if new not in s:
+                  if old not in s: raise RuntimeError(f'Missing anchor for {label}: {p}')
+                  s=s.replace(old,new,1)
+              save(p,s)
+
+          # ---- Versioning, protected installation ----
+          gradle='app/build.gradle.kts'
+          s=read(gradle)
+          assert 'applicationIdSuffix = ".moviotv"' in s, 'Expected verified v3.1 feature branch as source'
+          s=s.replace('applicationIdSuffix = ".moviotv"','applicationIdSuffix = ".moviotv7"',1)
+          s=s.replace('            versionNameSuffix = "-moviotv"\n','',1)
+          save(gradle,s)
+
+          manifest=read('app/src/main/AndroidManifest.xml')
+          assert 'android:label="@string/moviotv_app_name"' in manifest
+          assert '@drawable/moviotv_launcher' in manifest
+
+          # ---- Strings visible in MovioTV Home ----
+          string_path='app/src/main/res/values/strings_moviotv.xml'
+          s=read(string_path)
+          extra='''    <string name="moviotv_version">v7</string>
+              <string name="moviotv_profile_label">PROFILE</string>
+              <string name="moviotv_provider_label">PROVIDER</string>
+              <string name="moviotv_manage_provider">Manage connection</string>
+              <string name="moviotv_no_provider">Add a provider</string>
+          '''
+          if 'name="moviotv_version"' not in s:
+              s=s.replace('</resources>',extra+'</resources>',1)
+          save(string_path,s); ET.parse(string_path)
+
+          # ---- Small v7 label, clean gradient, quick profile and provider access ----
+          landing='app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt'
+          s=read(landing)
+          assert 'fun MovioLandingScreen(' in s
+          if '    profileName: String,' not in s:
+              s=s.replace('    touchMode: Boolean,\n', '''    touchMode: Boolean,
+              profileName: String,
+              providerName: String,
+              onProfileClick: () -> Unit,
+              onProviderClick: () -> Unit,
+          ''',1)
+
+          s=s.replace('Brush.verticalGradient(listOf(Color(0xFF211531), background, Color(0xFF141026)))',
+          '''Brush.linearGradient(listOf(Color(0xFF211438), Color(0xFF130E24), Color(0xFF0D0B18)))''')
+          if 'R.string.moviotv_version' not in s:
+              old='''                Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+          '''
+              new=old+'''                Text(stringResource(R.string.moviotv_version), color = Color(0xFFC7AEDB), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
+          '''
+              assert old in s, 'TV lockup anchor'
+              s=s.replace(old,new,1)
+          if 'R.string.moviotv_profile_label' not in s:
+              old='''            Text(stringResource(R.string.moviotv_credit), color = muted, fontSize = 12.sp)
+          '''
+              new=old+'''            Spacer(Modifier.height(if (short) 7.dp else 12.dp))
+                      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Row(
+                              modifier = Modifier.clip(RoundedCornerShape(22.dp))
+                                  .background(Color(0xFF30213D))
+                                  .border(1.dp, Color(0xFF674681), RoundedCornerShape(22.dp))
+                                  .clickable(onClick = onProfileClick)
+                                  .padding(horizontal = 11.dp, vertical = 7.dp),
+                              verticalAlignment = Alignment.CenterVertically,
+                          ) {
+                              Text("◉  ", fontSize = 12.sp, color = accent)
+                              Text(profileName.ifBlank { "Profile" }.take(22), color = Color.White, fontSize = 12.sp, maxLines = 1)
+                          }
+                          Row(
+                              modifier = Modifier.clip(RoundedCornerShape(22.dp))
+                                  .background(Color(0xFF271E35))
+                                  .border(1.dp, Color(0xFF56436A), RoundedCornerShape(22.dp))
+                                  .clickable(onClick = onProviderClick)
+                                  .padding(horizontal = 11.dp, vertical = 7.dp),
+                              verticalAlignment = Alignment.CenterVertically,
+                          ) {
+                              Text("▣  ", fontSize = 12.sp, color = accent)
+                              Text(providerName.ifBlank { "Add a provider" }.take(24), color = muted, fontSize = 12.sp, maxLines = 1)
+                          }
+                      }
+          '''
+              assert old in s, 'credit anchor'
+              s=s.replace(old,new,1)
+          save(landing,s)
+
+          # ---- Connect Home actions to the existing profile chooser and provider settings ----
+          shell='app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt'
+          s=read(shell)
+          if 'onProviderClick = ' not in s[s.find('selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen'):s.find('selectedSection == MainSection.SEARCH ->')]:
+              anchor='''                            touchMode = movioTouch,
+                                      onEntryHook = { homeEntry = it },'''
+              new='''                            touchMode = movioTouch,
+                                      profileName = profileName,
+                                      providerName = playlistLabel,
+                                      onProfileClick = onSwitchProfile,
+                                      onProviderClick = {
+                                          settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
+                                          onSelectSection(MainSection.SETTINGS)
+                                      },
+                                      onEntryHook = { homeEntry = it },'''
+              assert anchor in s, 'Home callback anchor'
+              s=s.replace(anchor,new,1)
+          # Safe-area paddings for touchscreen browse UI, not fullscreen video.
+          if 'import androidx.compose.foundation.layout.WindowInsets' not in s:
+              s=s.replace('import androidx.compose.foundation.layout.fillMaxSize', '''import androidx.compose.foundation.layout.WindowInsets
+          import androidx.compose.foundation.layout.statusBars
+          import androidx.compose.foundation.layout.navigationBars
+          import androidx.compose.foundation.layout.windowInsetsPadding
+          import androidx.compose.foundation.layout.fillMaxSize''',1)
+          if 'if (movioTouch) Modifier.windowInsetsPadding(WindowInsets.statusBars)' not in s:
+              anchor='''          Box(Modifier.weight(1f).fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {'''
+              new='''          Box(Modifier.weight(1f).fillMaxWidth()
+                         .then(if (movioTouch) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier)) {
+                    Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {'''
+              assert anchor in s, 'Touch browse inset anchor'
+              s=s.replace(anchor,new,1)
+          if 'Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)' not in s:
+              s=s.replace('modifier = Modifier.align(Alignment.BottomCenter),\n                )','modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),\n                )',1)
+          save(shell,s)
+
+          settings='app/src/main/java/tv/own/owntv/features/shell/components/SettingsScreen.kt'
+          s=read(settings)
+          # The direct provider link uses a negative navigation sentinel, never a real group index.
+          s=s.replace('start?.group ?: 0', 'start?.group?.takeIf { it >= 0 } ?: 0')
+          if 'start.group == -7007' not in s:
+              anchor='''        tab = SettingsTab.ROOT
+                  start.group?.let { selectedGroup = it; displayedGroup = it }
+          '''
+              new='''        tab = if (start.group == -7007) SettingsTab.SOURCES else SettingsTab.ROOT
+                  start.group?.takeIf { it >= 0 }?.let { selectedGroup = it; displayedGroup = it }
+          '''
+              assert anchor in s, 'Deep-link provider settings anchor'
+              s=s.replace(anchor,new,1)
+          save(settings,s)
+
+          # ---- Touch seeking: full tap/drag, while retaining D-pad seek step ----
+          controls='app/src/main/java/tv/own/owntv/player/PlayerHudControls.kt'
+          s=read(controls)
+          for imp in [
+              'import androidx.compose.foundation.gestures.detectTapGestures',
+              'import androidx.compose.foundation.gestures.detectHorizontalDragGestures',
+              'import androidx.compose.ui.input.pointer.pointerInput',
+              'import androidx.compose.runtime.mutableStateOf',
+              'import androidx.compose.runtime.setValue',
+              'import androidx.compose.runtime.rememberUpdatedState',
+          ]:
+              if imp not in s: s=s.replace('import androidx.compose.foundation.background',imp+'\nimport androidx.compose.foundation.background',1)
+          if 'var dragFrac by remember' not in s:
+              anchor='''    val focused by interaction.collectIsFocusedAsState()
+              val frac = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f'''
+              replacement='''    val focused by interaction.collectIsFocusedAsState()
+              val latestPosition = rememberUpdatedState(positionMs)
+              val latestSeek = rememberUpdatedState(onSeek)
+              var dragFrac by remember { mutableStateOf<Float?>(null) }
+              val frac = dragFrac ?: if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f'''
+              assert anchor in s, 'SeekBar frac anchor'
+              s=s.replace(anchor,replacement,1)
+              anchor='''        modifier = Modifier.fillMaxWidth().height(24.dp)
+                      .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)'''
+              replacement='''        modifier = Modifier.fillMaxWidth().height(36.dp)
+                      .pointerInput(durationMs) {
+                          detectTapGestures(onTap = { tap ->
+                              if (durationMs > 0L && size.width > 0) {
+                                  val target = (tap.x / size.width.toFloat() * durationMs).toLong().coerceIn(0L, durationMs)
+                                  latestSeek.value(target - latestPosition.value)
+                              }
+                          })
+                      }
+                      .pointerInput(durationMs) {
+                          detectHorizontalDragGestures(
+                              onDragStart = { start ->
+                                  if (durationMs > 0L && size.width > 0) dragFrac = (start.x / size.width.toFloat()).coerceIn(0f, 1f)
+                              },
+                              onHorizontalDrag = { change, _ ->
+                                  if (durationMs > 0L && size.width > 0) dragFrac = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                  change.consume()
+                              },
+                              onDragEnd = {
+                                  dragFrac?.let { fraction ->
+                                      val target = (fraction * durationMs).toLong().coerceIn(0L, durationMs)
+                                      latestSeek.value(target - latestPosition.value)
+                                  }
+                                  dragFrac = null
+                              },
+                              onDragCancel = { dragFrac = null },
+                          )
+                      }
+                      .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)'''
+              assert anchor in s, 'SeekBar modifier anchor'
+              s=s.replace(anchor,replacement,1)
+          save(controls,s)
+
+          # ---- Film tap and volume/brightness gestures, strictly on touch devices ----
+          hud='app/src/main/java/tv/own/owntv/player/PlayerHud.kt'
+          s=read(hud)
+          if 'import androidx.compose.ui.platform.LocalConfiguration' not in s:
+              # Insert once after package, before imports.
+              s=s.replace('package tv.own.owntv.player\n','package tv.own.owntv.player\n\nimport androidx.compose.ui.platform.LocalConfiguration\n',1)
+          if 'val movioTouchPlayer =' not in s:
+              anchor='''    val isLive = player.isLiveContent
+          '''
+              replacement=anchor+'''    val movioTouchPlayer = (LocalConfiguration.current.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+                  android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+          '''
+              assert anchor in s, 'Player touch mode anchor'
+              s=s.replace(anchor,replacement,1)
+          if 'MovioTouchGestures(' not in s:
+              anchor='''    ) {
+                  if (!controlsVisible && !showNextCard) {'''
+              replacement='''    ) {
+                  if (movioTouchPlayer && error == null && dialog == HudDialog.NONE) {
+                      MovioTouchGestures(onTap = { controlsVisible = !controlsVisible; wakeTick++ })
+                  }
+                  if (!controlsVisible && !showNextCard) {'''
+              assert anchor in s, 'Player root overlay anchor'
+              s=s.replace(anchor,replacement,1)
+          save(hud,s)
+
+          # ---- Circular gesture feedback; touches video, never TV remote input ----
+          gesture='app/src/main/java/tv/own/owntv/player/MovioTouchGestures.kt'
+          if not Path(gesture).is_file():
+              save(gesture, '''package tv.own.owntv.player
+
+          import android.app.Activity
+          import android.content.Context
+          import android.content.ContextWrapper
+          import android.media.AudioManager
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.gestures.detectTapGestures
+          import androidx.compose.foundation.gestures.detectVerticalDragGestures
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.fillMaxHeight
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableFloatStateOf
+          import androidx.compose.runtime.mutableIntStateOf
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.tv.material3.Text
+          import kotlinx.coroutines.delay
+
+          /** Per-window screen brightness and hardware music volume. Never modifies system brightness. */
+          @Composable
+          internal fun MovioTouchGestures(onTap: () -> Unit) {
+              val context = LocalContext.current
+              val activity = remember(context) {
+                  var current: Context? = context
+                  var match: Activity? = null
+                  while (current != null) {
+                      if (current is Activity) { match = current; break }
+                      current = (current as? ContextWrapper)?.baseContext
+                  }
+                  match
+              }
+              val audio = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
+              val volumeMax = remember(audio) { audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 1 }
+              var brightness by remember(activity) {
+                  mutableFloatStateOf(activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f }
+                      ?: (runCatching { android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.5f)))
+              }
+              var volume by remember(audio) {
+                  mutableFloatStateOf((audio?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0).toFloat() / volumeMax)
+              }
+              var activeSide by remember { mutableStateOf<String?>(null) }
+              var feedbackTick by remember { mutableIntStateOf(0) }
+              LaunchedEffect(feedbackTick) {
+                  if (feedbackTick > 0) { delay(1200); activeSide = null }
+              }
+              Box(Modifier.fillMaxSize()) {
+                  listOf(true, false).forEach { left ->
+                      Box(
+                          modifier = Modifier.align(if (left) Alignment.CenterStart else Alignment.CenterEnd)
+                              .fillMaxHeight().fillMaxWidth(0.5f)
+                              .pointerInput(left, activity, audio) {
+                                  detectVerticalDragGestures(
+                                      onDragStart = {
+                                          activeSide = if (left) "brightness" else "volume"
+                                          feedbackTick++
+                                      },
+                                      onVerticalDrag = { change, distance ->
+                                          val increment = -distance / size.height.toFloat().coerceAtLeast(1f)
+                                          if (left) {
+                                              brightness = (brightness + increment).coerceIn(0.02f, 1f)
+                                              activity?.window?.let { window ->
+                                                  val params = window.attributes
+                                                  params.screenBrightness = brightness
+                                                  window.attributes = params
+                                              }
+                                          } else {
+                                              volume = (volume + increment).coerceIn(0f, 1f)
+                                              audio?.setStreamVolume(AudioManager.STREAM_MUSIC, (volume * volumeMax).toInt(), 0)
+                                          }
+                                          feedbackTick++
+                                          change.consume()
+                                      },
+                                      onDragEnd = { feedbackTick++ },
+                                      onDragCancel = { feedbackTick++ },
+                                  )
+                              }
+                              .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) },
+                      )
+                  }
+                  if (activeSide == "brightness") MovioProgressRing("☀", brightness, Modifier.align(Alignment.CenterStart).padding(start = 40.dp))
+                  if (activeSide == "volume") MovioProgressRing("♫", volume, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp))
+              }
+          }
+
+          @Composable
+          private fun MovioProgressRing(symbol: String, level: Float, modifier: Modifier = Modifier) {
+              Box(modifier.size(100.dp).background(Color(0xD9181128), CircleShape), contentAlignment = Alignment.Center) {
+                  Canvas(Modifier.fillMaxSize().padding(7.dp)) {
+                      drawArc(Color(0x775F4776), startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                          style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round))
+                      drawArc(Color(0xFFB465FF), startAngle = -90f, sweepAngle = level.coerceIn(0f,1f) * 360f, useCenter = false,
+                          style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round))
+                  }
+                  androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                      Text(symbol, color = Color.White, fontSize = 22.sp)
+                      Text("${(level * 100).toInt()}%", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                  }
+              }
+          }
+          ''')
+
+          # Branding: use overlays rather than renaming internal libraries, packages or database keys.
+          # The pinned OwnTV Core strings are imported by the GH Actions step after this patch runs.
+          # Also adjust any app-local English strings (if they contain legacy user-facing copy).
+          for path in Path('app/src/main/res/values').glob('*.xml'):
+              if path.name.startswith('strings') and path.name != 'strings_moviotv.xml':
+                  text=read(path)
+                  new=text.replace('OwnTV', 'MovioTV').replace('Own TV', 'MovioTV')
+                  if text != new: save(path,new)
+
+          assert 'applicationIdSuffix = ".moviotv7"' in read(gradle)
+          assert 'R.string.moviotv_version' in read(landing)
+          assert 'MovioTouchGestures(' in read(hud)
+          assert 'detectHorizontalDragGestures' in read(controls)
+          assert 'start.group == -7007' in read(settings)
+          print('PATCH COMPLETE: version 7, protected install, Home, providers, touch controls and gestures')
+          MOVIOTV_V7_PY
+          python3 - <<'MOVIOTV_BRAND_PY'
+          from pathlib import Path
+          import re
+          import time
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          ref='core-1.0.71'  # same pinned core artifact used by this build
+          names=['strings.xml','strings_content.xml','strings_features.xml','strings_player.xml','strings_settings.xml','strings_setup.xml']
+          base='https://raw.githubusercontent.com/ahXN00/OwnTV_Core/'+ref+'/core/src/main/res/values/'
+          used=set()
+          for local in Path('app/src/main/res/values').glob('*.xml'):
+              used.update(re.findall(r'<(?:string|plurals)\b[^>]*\bname=["\']([^"\']+)',local.read_text(encoding='utf-8')))
+          items=[]
+          for filename in names:
+              for attempt in range(3):
+                  try:
+                      with urllib.request.urlopen(base+filename,timeout=20) as rsp:
+                          xml=rsp.read().decode('utf-8')
+                      break
+                  except Exception:
+                      if attempt==2: raise
+                      time.sleep(2)
+              for kind in ('string','plurals'):
+                  for m in re.finditer(r'<'+kind+r'\b[^>]*>.*?</'+kind+'>',xml, re.S):
+                      entry=m.group(0)
+                      if 'OwnTV' not in entry and 'Own TV' not in entry and 'OWNTV' not in entry: continue
+                      match=re.search(r'\bname=["\']([^"\']+)',entry)
+                      if not match or match.group(1) in used: continue
+                      used.add(match.group(1))
+                      # Resource identifiers stay unchanged, only the display copy is replaced.
+                      entry=entry.replace('OwnTV','MovioTV').replace('Own TV','MovioTV').replace('OWNTV','MovioTV')
+                      items.append(entry)
+          out=Path('app/src/main/res/values/strings_moviotv_core_brand.xml')
+          out.write_text('<?xml version="1.0" encoding="utf-8"?>\n<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">\n'+ '\n'.join(items) +'\n</resources>\n',encoding='utf-8')
+          ET.parse(out)
+          assert len(items)>=25, 'Too few original Core strings were rebranded; fail rather than ship mixed branding'
+          print('PASS: user-facing library strings rebranded:',len(items))
+          MOVIOTV_BRAND_PY
+          git diff --check
+          git status --short
+      - name: Configure Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Cache and configure Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Unit tests, lint, build (do not publish on failure)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify built APK ID, label and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v7-apk-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv7'" /tmp/moviotv-v7-apk-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v7-apk-badging.txt
+          grep -F "versionName='7'" /tmp/moviotv-v7-apk-badging.txt
+          grep -F "versionCode='100007'" /tmp/moviotv-v7-apk-badging.txt
+          echo 'PASSED: MovioTV v7 identity, label and upgrade version'
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-v7-safe-parallel-install-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+      - name: Commit tested source to feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+          else
+            git commit -m 'MovioTV v7: touch gestures, timeline, profile access, rebranding'
+            git push origin HEAD:refs/heads/feature/moviotv-simple-home
+          fi
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-v7-build-reports
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
