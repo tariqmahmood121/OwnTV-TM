@@ -1,0 +1,979 @@
+# MovioTV universal mobile + TV installer, branch-only; GPL-3.0.
+# Upload this single file to .github/workflows/ on feature/moviotv-simple-home.
+# Push triggers apply -> localize -> compile -> APK artifact -> commit to feature branch.
+# No writes to main; no IPTV credentials or signing secrets are read.
+name: MovioTV Universal UI - Android Test v2
+
+"on":
+  push:
+    branches:
+      - feature/moviotv-simple-home
+    paths:
+      - .github/workflows/moviotv-universal-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moviotv-universal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android-ui-test:
+    if: github.ref == 'refs/heads/feature/moviotv-simple-home'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout only the development branch
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+          ref: feature/moviotv-simple-home
+
+      - name: Prepare and apply MovioTV source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/moviotv-bundle"
+          cat > "$RUNNER_TEMP/moviotv-bundle/MovioLayoutMode.kt" <<'MOVIO_LAYOUT_EOF'
+          /* MovioTV — universal APK layout selection. GPL-3.0; Created by ZIGGS. */
+          package tv.own.owntv.features.home
+
+          import androidx.compose.runtime.compositionLocalOf
+
+          enum class MovioLayoutChoice {
+              AUTO, MOBILE, TV;
+              companion object {
+                  fun fromSaved(value: String?): MovioLayoutChoice = entries.firstOrNull { it.name == value } ?: AUTO
+              }
+          }
+
+          /** Shared by Home, Movies, Series and Live TV; supplied by OwnTVShell. */
+          val LocalMovioTouchMode = compositionLocalOf { false }
+          MOVIO_LAYOUT_EOF
+          cat > "$RUNNER_TEMP/moviotv-bundle/MovioLandingScreen.kt" <<'MOVIO_LANDING_EOF'
+          /*
+           * MovioTV — Created by ZIGGS. One APK with TV/D-pad and touch-first home layouts.
+           * No provider, catalogue, playback or profile data is changed here. GPL-3.0.
+           */
+          package tv.own.owntv.features.home
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.BoxWithConstraints
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.DisposableEffect
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.scale
+          import androidx.compose.ui.focus.FocusRequester
+          import androidx.compose.ui.focus.focusRequester
+          import androidx.compose.ui.focus.onFocusChanged
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.tv.material3.Text
+
+          private val background = Color(0xFF100C1C)
+          private val accent = Color(0xFFB465FF)
+          private val muted = Color(0xFFD1C2E5)
+
+          @Composable
+          fun MovioLandingScreen(
+              onLiveTv: () -> Unit,
+              onMovies: () -> Unit,
+              onSeries: () -> Unit,
+              onFocused: () -> Unit,
+              layoutChoice: MovioLayoutChoice,
+              onLayoutChoice: (MovioLayoutChoice) -> Unit,
+              touchMode: Boolean,
+              onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
+              modifier: Modifier = Modifier,
+          ) {
+              val firstFocus = remember { FocusRequester() }
+              DisposableEffect(onEntryHook) {
+                  onEntryHook?.invoke { runCatching { firstFocus.requestFocus() }.getOrDefault(false) }
+                  onDispose { onEntryHook?.invoke(null) }
+              }
+              LaunchedEffect(touchMode) { if (!touchMode) runCatching { firstFocus.requestFocus() } }
+
+              BoxWithConstraints(
+                  modifier = modifier.fillMaxSize().background(
+                      Brush.verticalGradient(listOf(Color(0xFF211531), background, Color(0xFF141026)))
+                  ),
+              ) {
+                  val wide = maxWidth >= 700.dp
+                  val short = maxHeight < 560.dp
+                  val tileHeight = if (wide) (if (short) 126.dp else 222.dp) else (if (short) 82.dp else 118.dp)
+                  val edge = if (wide) 48.dp else 20.dp
+                  Column(
+                      modifier = Modifier.fillMaxSize().padding(horizontal = edge, vertical = if (short) 10.dp else 25.dp),
+                      verticalArrangement = Arrangement.Center,
+                  ) {
+                      Row(verticalAlignment = Alignment.Bottom) {
+                          Text("MOVIO", color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                          Text("TV", color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                      }
+                      Text("Created by ZIGGS", color = muted, fontSize = 12.sp)
+                      Spacer(Modifier.height(if (short) 10.dp else 22.dp))
+                      Text("What would you like to watch?", color = Color.White, fontSize = if (wide) 24.sp else 19.sp, fontWeight = FontWeight.SemiBold)
+                      Spacer(Modifier.height(if (short) 10.dp else 18.dp))
+                      if (wide) {
+                          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                              MovioTile("LIVE TV", "Watch channels", "▶", tileHeight, onLiveTv, onFocused, Modifier.weight(1f), firstFocus)
+                              MovioTile("MOVIES", "Browse films", "▣", tileHeight, onMovies, onFocused, Modifier.weight(1f))
+                              MovioTile("SERIES", "Watch episodes", "▤", tileHeight, onSeries, onFocused, Modifier.weight(1f))
+                          }
+                      } else {
+                          Column(verticalArrangement = Arrangement.spacedBy(if (short) 8.dp else 12.dp)) {
+                              MovioTile("LIVE TV", "Watch channels", "▶", tileHeight, onLiveTv, onFocused, Modifier.fillMaxWidth(), firstFocus)
+                              MovioTile("MOVIES", "Browse films", "▣", tileHeight, onMovies, onFocused, Modifier.fillMaxWidth())
+                              MovioTile("SERIES", "Watch episodes", "▤", tileHeight, onSeries, onFocused, Modifier.fillMaxWidth())
+                          }
+                      }
+                      Spacer(Modifier.height(if (short) 10.dp else 20.dp))
+                      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                          Text("Interface", color = muted, fontSize = 11.sp, modifier = Modifier.padding(end = 3.dp))
+                          listOf(MovioLayoutChoice.AUTO to "Auto", MovioLayoutChoice.MOBILE to "Touch", MovioLayoutChoice.TV to "TV").forEach { (choice, label) ->
+                              val active = layoutChoice == choice
+                              Box(
+                                  modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                                      .background(if (active) Color(0xFF7143A5) else Color(0xFF2B2040))
+                                      .border(1.dp, if (active) accent else Color(0xFF5A486E), RoundedCornerShape(20.dp))
+                                      .clickable { onLayoutChoice(choice) }
+                                      .padding(horizontal = 13.dp, vertical = 9.dp),
+                                  contentAlignment = Alignment.Center,
+                              ) { Text(label, color = Color.White, fontSize = 12.sp) }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun MovioTile(
+              title: String, subtitle: String, symbol: String, height: Dp,
+              onClick: () -> Unit, onFocused: () -> Unit, modifier: Modifier, focus: FocusRequester? = null,
+          ) {
+              var focused by remember { mutableStateOf(false) }
+              val shape = RoundedCornerShape(18.dp)
+              Box(
+                  modifier = modifier
+                      .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
+                      .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
+                      .height(height)
+                      .scale(if (focused) 1.015f else 1f)
+                      .clip(shape)
+                      .background(Brush.linearGradient(if (focused) listOf(Color(0xFF7442A9), Color(0xFF361B52)) else listOf(Color(0xFF39244F), Color(0xFF231934))))
+                      .border(if (focused) 2.dp else 1.dp, if (focused) accent else Color(0xFF694E7D), shape)
+                      .clickable(onClick = onClick)
+                      .padding(12.dp),
+                  contentAlignment = Alignment.Center,
+              ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                      Text(symbol, color = accent, fontSize = if (height < 110.dp) 22.sp else 32.sp)
+                      Text(title, color = Color.White, fontSize = if (height < 110.dp) 16.sp else 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                      Text(subtitle, color = muted, fontSize = 11.sp, textAlign = TextAlign.Center)
+                  }
+              }
+          }
+          MOVIO_LANDING_EOF
+          cat > "$RUNNER_TEMP/moviotv-bundle/MovioTouchBrowse.kt" <<'MOVIO_BROWSE_EOF'
+          /* MovioTV touch navigation and browsing surfaces. GPL-3.0, Created by ZIGGS. */
+          package tv.own.owntv.features.home
+
+          import androidx.compose.foundation.ExperimentalFoundationApi
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.combinedClickable
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.BoxWithConstraints
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.PaddingValues
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxHeight
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.LazyListState
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyGridState
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.tv.material3.Text
+          import coil3.compose.AsyncImage
+          import tv.own.owntv.core.nav.MainSection
+
+          private val panel = Color(0xFF171123)
+          private val purple = Color(0xFFB465FF)
+          private val pale = Color(0xFFD6C5E6)
+
+          /** Shell navigation stays outside scrollable content on small touch screens. */
+          @Composable
+          fun MovioTouchBottomNav(
+              selected: MainSection,
+              visible: Set<MainSection>,
+              onSelect: (MainSection) -> Unit,
+              modifier: Modifier = Modifier,
+          ) {
+              val entries = listOf(
+                  Triple(MainSection.HOME, "Home", "⌂"),
+                  Triple(MainSection.LIVE_TV, "Live", "▶"),
+                  Triple(MainSection.MOVIES, "Movies", "▣"),
+                  Triple(MainSection.SERIES, "Series", "▤"),
+                  Triple(MainSection.MORE, "More", "⋯"),
+              ).filter { it.first in visible || it.first == MainSection.HOME }
+              Row(
+                  modifier = modifier.fillMaxWidth().height(70.dp)
+                      .background(Color(0xFF140E20)).padding(horizontal = 5.dp, vertical = 6.dp),
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                  entries.forEach { (destination, label, icon) ->
+                      val active = selected == destination
+                      Column(
+                          modifier = Modifier.weight(1f).fillMaxSize()
+                              .clip(RoundedCornerShape(14.dp))
+                              .background(if (active) Color(0xFF493065) else Color.Transparent)
+                              .clickable { onSelect(destination) }
+                              .padding(vertical = 4.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                          verticalArrangement = Arrangement.Center,
+                      ) {
+                          Text(icon, color = if (active) purple else pale, fontSize = 20.sp)
+                          Text(label, color = Color.White, fontSize = 11.sp, maxLines = 1)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun MovioTouchSearch(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+              Box(
+                  modifier = modifier.height(44.dp).clip(RoundedCornerShape(12.dp))
+                      .background(Color(0xFF30213E)).border(1.dp, Color(0xFF6B4B85), RoundedCornerShape(12.dp))
+                      .padding(horizontal = 12.dp),
+                  contentAlignment = Alignment.CenterStart,
+              ) {
+                  if (value.isEmpty()) Text("Search titles", color = pale, fontSize = 14.sp)
+                  BasicTextField(
+                      value = value, onValueChange = onChange,
+                      singleLine = true, textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                      cursorBrush = androidx.compose.ui.graphics.SolidColor(purple),
+                      modifier = Modifier.fillMaxWidth(),
+                  )
+              }
+          }
+
+          /** Category rail is permanent on unfolded/tablet screens and a drawer on folded phones. */
+          @Composable
+          fun MovioTouchPosterBrowser(
+              title: String,
+              category: String,
+              query: String,
+              onSearch: (String) -> Unit,
+              categoryEnabled: Boolean,
+              onCategories: () -> Unit,
+              categories: @Composable (Modifier) -> Unit,
+              itemCount: Int,
+              gridState: LazyGridState,
+              emptyText: String,
+              poster: @Composable (Int, Dp) -> Unit,
+              modifier: Modifier = Modifier,
+          ) {
+              BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
+                  val tablet = maxWidth >= 700.dp && categoryEnabled
+                  val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
+                  Row(Modifier.fillMaxSize()) {
+                      if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))
+                      Column(Modifier.weight(1f).fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                          Text(title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                          Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                              if (!tablet && categoryEnabled) {
+                                  Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF50326D)).clickable(onClick = onCategories)
+                                      .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                      Text("☰  Categories", color = Color.White, fontSize = 13.sp)
+                                  }
+                                  Spacer(Modifier.width(8.dp))
+                              }
+                              MovioTouchSearch(query, onSearch, Modifier.weight(1f))
+                          }
+                          Text(category, color = pale, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          Spacer(Modifier.height(12.dp))
+                          if (itemCount == 0) {
+                              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                  Text(emptyText, color = pale, fontSize = 16.sp)
+                              }
+                          } else {
+                              BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                                  val columns = ((maxWidth + 12.dp) / 158.dp).toInt().coerceIn(2, 6)
+                                  val posterWidth = (maxWidth - 12.dp * (columns - 1) - 8.dp) / columns
+                                  LazyVerticalGrid(
+                                      columns = GridCells.Fixed(columns), state = gridState,
+                                      horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                      verticalArrangement = Arrangement.spacedBy(16.dp),
+                                      contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 32.dp),
+                                      modifier = Modifier.fillMaxSize(),
+                                  ) {
+                                      items(itemCount) { index -> poster(index, posterWidth) }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          /** Touch-first channel list; playback is delegated to LiveViewModel unchanged. */
+          @Composable
+          fun MovioTouchLiveBrowser(
+              category: String,
+              query: String,
+              onSearch: (String) -> Unit,
+              categoryEnabled: Boolean,
+              onCategories: () -> Unit,
+              categories: @Composable (Modifier) -> Unit,
+              count: Int,
+              listState: LazyListState,
+              row: @Composable (Int) -> Unit,
+              modifier: Modifier = Modifier,
+          ) {
+              BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
+                  val tablet = maxWidth >= 700.dp && categoryEnabled
+                  val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
+                  Row(Modifier.fillMaxSize()) {
+                      if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))
+                      Column(Modifier.weight(1f).fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                          Text("Live TV", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                          Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                              if (!tablet && categoryEnabled) {
+                                  Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF50326D)).clickable(onClick = onCategories)
+                                      .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                      Text("☰  Categories", color = Color.White, fontSize = 13.sp)
+                                  }
+                                  Spacer(Modifier.width(8.dp))
+                              }
+                              MovioTouchSearch(query, onSearch, Modifier.weight(1f))
+                          }
+                          Text(category, color = pale, fontSize = 13.sp)
+                          Spacer(Modifier.height(10.dp))
+                          LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(7.dp),
+                              contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.weight(1f).fillMaxWidth()) {
+                              items(count) { index -> row(index) }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @OptIn(ExperimentalFoundationApi::class)
+          @Composable
+          fun MovioTouchChannelRow(
+              title: String, subtitle: String?, logo: String?,
+              onClick: () -> Unit, onLongClick: () -> Unit,
+          ) {
+              Row(
+                  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                      .background(Color(0xFF29203A)).combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                      .padding(horizontal = 12.dp, vertical = 11.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  if (!logo.isNullOrBlank()) {
+                      AsyncImage(model = logo, contentDescription = null, modifier = Modifier.size(44.dp))
+                  } else {
+                      Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                          Text("▶", color = purple, fontSize = 22.sp)
+                      }
+                  }
+                  Spacer(Modifier.width(12.dp))
+                  Column(Modifier.weight(1f)) {
+                      Text(title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      if (!subtitle.isNullOrBlank()) Text(subtitle, color = pale, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  }
+              }
+          }
+          MOVIO_BROWSE_EOF
+          cat > "$RUNNER_TEMP/moviotv-bundle/apply_universal.py" <<'MOVIO_PATCH_EOF'
+          #!/usr/bin/env python3
+          """Install the MovioTV universal touch/TV UI into OwnTV-TM, feature branch only.
+
+          Full-source anchors were checked against main on Nov 10, 2026. All edits computed
+          in memory and validated before writing; repeat runs are harmless. Does not
+          change playback, provider authentication, databases, signing or manifest.
+          GPL-3.0; Created by ZIGGS.
+          """
+          from pathlib import Path
+          import sys
+
+          ROOT = Path.cwd()
+          BASE = ROOT / "app/src/main/java/tv/own/owntv"
+          SOURCE = Path(__file__).resolve().parent
+          FILES = {
+              'shell': BASE / 'features/shell/OwnTVShell.kt',
+              'movies': BASE / 'features/movies/MoviesScreen.kt',
+              'series': BASE / 'features/series/SeriesScreen.kt',
+              'live': BASE / 'features/live/LiveScreen.kt',
+          }
+          NEWFILES = ['MovioLayoutMode.kt', 'MovioLandingScreen.kt', 'MovioTouchBrowse.kt']
+
+
+          def once(src, old, new, label):
+              if old == new:
+                  raise RuntimeError('Replacement identical: ' + label)
+              if old not in src:
+                  if new in src:
+                      print('Already applied:',label)
+                      return src
+                  raise RuntimeError('Expected source not found: '+label)
+              if src.count(old) != 1:
+                  raise RuntimeError(f'Anchor not unique ({src.count(old)}): {label}')
+              print('Updating:',label)
+              return src.replace(old,new,1)
+
+
+          def replace_block(src,start,end,new,label):
+              if new in src:
+                  print('Already applied:',label)
+                  return src
+              if src.count(start)!=1 or src.count(end)!=1:
+                  raise RuntimeError('Block anchor not unique: '+label)
+              a=src.index(start); b=src.index(end,a)
+              if b <= a: raise RuntimeError('Block boundary order invalid: '+label)
+              print('Updating block:',label)
+              return src[:a]+new+src[b:]
+
+
+          def apply():
+              for path in FILES.values():
+                  if not path.is_file(): raise RuntimeError('Missing source: '+str(path))
+              for name in NEWFILES:
+                  if not (SOURCE/name).is_file(): raise RuntimeError('Missing packaged file: '+name)
+              src={name:path.read_text(encoding='utf-8') for name,path in FILES.items()}
+              sh=src['shell']
+
+              # Persist the user's chosen mode locally, separate from profiles and IPTV credentials.
+              sh=once(sh,
+                  '    val noSourceLabel = stringResource(R.string.shell_no_source)\n',
+                  '''    val movioContext = androidx.compose.ui.platform.LocalContext.current
+              val movioConfiguration = androidx.compose.ui.platform.LocalConfiguration.current
+              val movioPreferences = remember(movioContext) {
+                  movioContext.getSharedPreferences("moviotv_ui", android.content.Context.MODE_PRIVATE)
+              }
+              var movioChoice by remember {
+                  mutableStateOf(tv.own.owntv.features.home.MovioLayoutChoice.fromSaved(movioPreferences.getString("layout", null)))
+              }
+              val movioTouch = when (movioChoice) {
+                  tv.own.owntv.features.home.MovioLayoutChoice.MOBILE -> true
+                  tv.own.owntv.features.home.MovioLayoutChoice.TV -> false
+                  tv.own.owntv.features.home.MovioLayoutChoice.AUTO ->
+                      (movioConfiguration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+                          android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+              }
+              val noSourceLabel = stringResource(R.string.shell_no_source)
+          ''', 'persistent layout selection')
+
+              sh=once(sh,
+                  '        LocalRemoteShortcuts provides remoteShortcutEnvironment,\n',
+                  '        LocalRemoteShortcuts provides remoteShortcutEnvironment,\n        tv.own.owntv.features.home.LocalMovioTouchMode provides movioTouch,\n',
+                  'propagate layout mode')
+
+              # Reuse the same section navigation and video player in either layout.
+              start='                        selectedSection == MainSection.HOME -> HomeScreen(\n'
+              end='\n\n                        selectedSection == MainSection.SEARCH -> SearchScreen('
+              home='''                        selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen(
+                                      onLiveTv = { restoreFocus = false; onSelectSection(MainSection.LIVE_TV) },
+                                      onMovies = { restoreFocus = false; onSelectSection(MainSection.MOVIES) },
+                                      onSeries = { restoreFocus = false; onSelectSection(MainSection.SERIES) },
+                                      onFocused = { focusedLayer = ShellLayer.CONTENT },
+                                      layoutChoice = movioChoice,
+                                      onLayoutChoice = { choice ->
+                                          movioChoice = choice
+                                          movioPreferences.edit().putString("layout", choice.name).apply()
+                                      },
+                                      touchMode = movioTouch,
+                                      onEntryHook = { homeEntry = it },
+                                      modifier = Modifier.fillMaxSize(),
+                                  )'''
+              sh=replace_block(sh,start,end,home,'home and mode selector')
+
+              sh=once(sh,
+                  '          Row(modifier = Modifier.fillMaxSize()) {\n',
+                  '          Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {\n',
+                  'reserve touch navigation height')
+              sh=once(sh,
+                  '''                                    start = if (navStyle == tv.own.owntv.core.settings.SettingsRepository.NavStyle.DOCKED) {''',
+                  '''                                    start = if (movioTouch) 0.dp else if (navStyle == tv.own.owntv.core.settings.SettingsRepository.NavStyle.DOCKED) {''',
+                  'remove TV rail gutter in touch mode')
+              sh=once(sh,
+                  '''            tv.own.owntv.features.shell.components.StageRail(
+                          state = railState,''',
+                  '''            if (!movioTouch) tv.own.owntv.features.shell.components.StageRail(
+                          state = railState,''',
+                  'hide TV rail on touch devices')
+              sh=once(sh,
+                  '''                onNowPlaying = enterNowPlaying,
+                      )
+                    }
+                  }
+                  // The solid-mode wizard aura''',
+                  '''                onNowPlaying = enterNowPlaying,
+                      )
+                      if (movioTouch && playerMode != PlayerMode.FULLSCREEN && !inPip && multiview == null) {
+                          tv.own.owntv.features.home.MovioTouchBottomNav(
+                              selected = selectedSection,
+                              visible = visibleSections,
+                              onSelect = selectFromNav,
+                              modifier = Modifier.align(Alignment.BottomCenter),
+                          )
+                      }
+                    }
+                  }
+                  // The solid-mode wizard aura''',
+                  'touch bottom navigation')
+              src['shell']=sh
+
+              # Movies: TV uses familiar two-pane left category rail + right posters.
+              mo=src['movies']
+              mo=once(mo,
+                  '    val cinematic = vodLayout == SettingsRepository.VodLayout.CINEMATIC && lockedKey == null',
+                  '''    val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+              val cinematic = false // MovioTV keeps the category and title panes in TV mode''',
+                  'movies TV two-pane mode')
+              mo=once(mo,
+                  '    val viewMode = if (cinematic) SettingsRepository.VodViewMode.GRID else storedViewMode',
+                  '    val viewMode = if (lockedKey == null) SettingsRepository.VodViewMode.GRID else storedViewMode',
+                  'movies default poster grid')
+              mo=once(mo,
+                  '            val cardShown = panelShares?.preview != 0',
+                  '            val cardShown = locked && panelShares?.preview != 0',
+                  'movies hide third preview pane')
+              mo=once(mo,
+                  '        if (cinematic) {\n            val heroH =',
+                  '''        if (touchUi) {
+                      tv.own.owntv.features.home.MovioTouchPosterBrowser(
+                          title = "Movies", category = headerLabel, query = searchQuery,
+                          onSearch = vm::setSearchQuery,
+                          categoryEnabled = lockedKey == null,
+                          onCategories = { categoriesOpen = true },
+                          categories = { catModifier ->
+                              LiveCategories(
+                                  searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
+                                  onSearchQueryChange = vm::setCategoryQuery,
+                                  entries = categoryEntries, selectedIndex = selectedIndex,
+                                  groupsHeading = groupsHeading, sheet = false,
+                                  listState = catListState, onSelect = onCategorySelect,
+                                  onLongSelect = onCategoryLongSelect,
+                                  onNavigateRight = { focusTitles() },
+                                  focusRequester = railFocus,
+                                  focusRowIndex = railFocusRow,
+                                  onRowFocused = { railFocusRow = null },
+                                  onRowFocus = { catFocusIndex = it },
+                                  modifier = catModifier,
+                              )
+                          },
+                          itemCount = movies.itemCount, gridState = effectiveGridState,
+                          emptyText = emptyText,
+                          poster = { index, width ->
+                              val movie = movies[index]
+                              if (movie != null) {
+                                  val prog = movieProgress[movie.id]
+                                  StagePoster(
+                                      title = movie.name,
+                                      rating = movie.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                      width = width, height = width * 1.5f, compact = true,
+                                      progress = prog?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
+                                      watched = prog?.let { vm.isMovieCompleted(it) } == true,
+                                      onClick = { startMovie(movie) },
+                                      onLongClick = { openMenu(movie, index) },
+                                      modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
+                                  ) { VodPosterArt(posterOf(movie), OwnTVIcon.MOVIES) }
+                              }
+                          },
+                      )
+                  } else if (cinematic) {
+                      val heroH =''',
+                  'touch Movies screen')
+              mo=once(mo,
+                  '''                    .width(
+                                  // Panel widths › Categories sheet (Cinematic): its own % of the screen, as Live TV's Stage sheet.
+                                  if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
+                              )''',
+                  '''                    .width(
+                                  if (touchUi) minOf(screenW * 0.88f, 400.dp)
+                                  else if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
+                              )''',
+                  'Movies category drawer width')
+              src['movies']=mo
+
+              # Series shares the same responsive poster browser without touching the episode player.
+              se=src['series']
+              se=once(se,
+                  '    val cinematic = vodLayout == SettingsRepository.VodLayout.CINEMATIC && lockedKey == null',
+                  '''    val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+              val cinematic = false // MovioTV two-pane TV browsing''',
+                  'series TV two-pane mode')
+              se=once(se,
+                  '    val viewMode = if (cinematic) SettingsRepository.VodViewMode.GRID else storedViewMode',
+                  '    val viewMode = if (lockedKey == null) SettingsRepository.VodViewMode.GRID else storedViewMode',
+                  'series default poster grid')
+              se=once(se,
+                  '            val cardShown = panelShares?.preview != 0',
+                  '            val cardShown = locked && panelShares?.preview != 0',
+                  'series hide third preview pane')
+              se=once(se,
+                  '        if (cinematic) {\n            val heroH =',
+                  '''        if (touchUi) {
+                      tv.own.owntv.features.home.MovioTouchPosterBrowser(
+                          title = "Series", category = headerLabel, query = searchQuery,
+                          onSearch = vm::setSearchQuery,
+                          categoryEnabled = lockedKey == null,
+                          onCategories = { categoriesOpen = true },
+                          categories = { catModifier ->
+                              LiveCategories(
+                                  searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
+                                  onSearchQueryChange = vm::setCategoryQuery,
+                                  entries = categoryEntries, selectedIndex = selectedIndex,
+                                  groupsHeading = groupsHeading, sheet = false,
+                                  listState = catListState, onSelect = onCategorySelect,
+                                  onLongSelect = onCategoryLongSelect,
+                                  onNavigateRight = { focusTitles() },
+                                  focusRequester = railFocus,
+                                  focusRowIndex = railFocusRow,
+                                  onRowFocused = { railFocusRow = null },
+                                  onRowFocus = { catFocusIndex = it },
+                                  modifier = catModifier,
+                              )
+                          },
+                          itemCount = series.itemCount, gridState = effectiveGridState,
+                          emptyText = emptyText,
+                          poster = { index, width ->
+                              val show = series[index]
+                              if (show != null) {
+                                  StagePoster(
+                                      title = show.name,
+                                      rating = show.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                      width = width, height = width * 1.5f, compact = true,
+                                      progress = seriesProgress[show.id],
+                                      onClick = { onOpenAt(index); vm.openSeries(show) },
+                                      onLongClick = { openMenu(show, index) },
+                                      modifier = Modifier.onFocusChanged { if (it.isFocused) onShowFocus(show) },
+                                  ) { VodPosterArt(posterOf(show), OwnTVIcon.SERIES) }
+                              }
+                          },
+                      )
+                  } else if (cinematic) {
+                      val heroH =''',
+                  'touch Series screen')
+              se=once(se,
+                  '''                    .width(
+                                  // Panel widths › Categories sheet (Cinematic): its own % of the screen, as Live TV's Stage sheet.
+                                  if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
+                              )''',
+                  '''                    .width(
+                                  if (touchUi) minOf(screenW * 0.88f, 400.dp)
+                                  else if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
+                              )''',
+                  'Series category drawer width')
+              src['series']=se
+
+              # Live TV: on phones a scrollable touch channel list replaces the multi-pane TV stage;
+              # selecting a channel still calls LiveViewModel.watchFullscreen exactly as on TV.
+              li=src['live']
+              li=once(li,
+                  '    val separate = liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null',
+                  '''    val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+              val separate = !touchUi && liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null''',
+                  'touch Live layout switch')
+              li=once(li,
+                  '    val categoriesVisible = lockedKey == null && (separate || categoriesOpen)',
+                  '    val categoriesVisible = lockedKey == null && (touchUi || separate || categoriesOpen)',
+                  'load mobile category counts')
+              li=once(li,
+                  '''        val margin = fx(64)
+                  val row = screenW - margin * 2''',
+                  '''        if (touchUi) {
+                      tv.own.owntv.features.home.MovioTouchLiveBrowser(
+                          category = headerLabel, query = searchQuery,
+                          onSearch = vm::setSearchQuery,
+                          categoryEnabled = lockedKey == null,
+                          onCategories = { categoriesOpen = true },
+                          categories = { catModifier ->
+                              LiveCategories(
+                                  entries = categoryEntries, selectedIndex = selectedIndex,
+                                  groupsHeading = groupsHeading, sheet = false,
+                                  listState = catListState, onSelect = onCategorySelect,
+                                  onLongSelect = onCategoryLongSelect,
+                                  onNavigateRight = { focusChannelList() },
+                                  focusRequester = railFocus,
+                                  focusRowIndex = railFocusRow,
+                                  onRowFocused = { railFocusRow = null },
+                                  onRowFocus = { catFocusIndex = it },
+                                  searchQuery = categoryQuery,
+                                  onSearchQueryChange = vm::setCategoryQuery,
+                                  modifier = catModifier,
+                              )
+                          },
+                          count = channels.itemCount, listState = effectiveListState,
+                          row = { index ->
+                              val channel = channels[index]
+                              if (channel != null) {
+                                  tv.own.owntv.features.home.MovioTouchChannelRow(
+                                      title = ProviderTags.parse(channel.name).name,
+                                      subtitle = nowPlaying[channel.id], logo = channel.displayLogoUrl,
+                                      onClick = {
+                                          vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+                                          if (!externalPlayerOn) onFullscreen()
+                                      },
+                                      onLongClick = { contextChannel = channel; contextChannelId = channel.id },
+                                  )
+                              }
+                          },
+                      )
+                      if (categoriesOpen) {
+                          LiveCategories(
+                              entries = categoryEntries, selectedIndex = selectedIndex,
+                              groupsHeading = groupsHeading, sheet = true,
+                              listState = catListState, onSelect = onCategorySelect,
+                              onLongSelect = onCategoryLongSelect,
+                              onNavigateRight = { categoriesOpen = false; focusChannelList() },
+                              focusRequester = railFocus,
+                              focusRowIndex = railFocusRow,
+                              onRowFocused = { railFocusRow = null },
+                              onRowFocus = { catFocusIndex = it },
+                              searchQuery = categoryQuery,
+                              onSearchQueryChange = vm::setCategoryQuery,
+                              modifier = categoriesModifier
+                                  .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
+                                  .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),
+                          )
+                      }
+                  } else {
+                  val margin = fx(64)
+                  val row = screenW - margin * 2''',
+                  'touch Live TV list')
+              li=once(li,
+                  '''                    .width(sheetW)
+                              .fillMaxHeight(),
+                      )
+                  }
+              }
+
+              programmeDetails?.let { ch ->''',
+                  '''                    .width(sheetW)
+                              .fillMaxHeight(),
+                      )
+                  }
+                  } // end TV-only Live stage
+              }
+
+              programmeDetails?.let { ch ->''',
+                  'close TV Live stage branch')
+              src['live']=li
+
+              # The checks above finish before any file writes.
+              for name,content in src.items(): FILES[name].write_text(content,encoding='utf-8')
+              target=BASE/'features/home'
+              target.mkdir(parents=True,exist_ok=True)
+              for name in NEWFILES:
+                  (target/name).write_text((SOURCE/name).read_text(encoding='utf-8'),encoding='utf-8')
+              print('MovioTV universal UI applied. Preserved playback, credentials, DB and main.')
+
+          if __name__=='__main__':
+              try: apply()
+              except Exception as exc:
+                  print('ERROR:',exc,file=sys.stderr)
+                  sys.exit(1)
+          MOVIO_PATCH_EOF
+          python3 "$RUNNER_TEMP/moviotv-bundle/apply_universal.py"
+          cat > "$RUNNER_TEMP/moviotv-bundle/localize_moviotv.py" <<'MOVIO_LOCALIZE_EOF'
+          #!/usr/bin/env python3
+          """Localize MovioTV's new source and classify non-display preference keys.
+          
+          Runs after apply_universal.py, before Gradle's mandatory i18n ratchet. Safe to
+          run repeatedly. All user-facing strings live in app Android resources.
+          """
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          
+          root = Path.cwd()
+          base = root / 'app/src/main/java/tv/own/owntv'
+          files = [
+              base/'features/home/MovioLandingScreen.kt',
+              base/'features/home/MovioTouchBrowse.kt',
+              base/'features/movies/MoviesScreen.kt',
+              base/'features/series/SeriesScreen.kt',
+          ]
+          # The two existing screens only have one new hard-coded string each; do not
+          # change other, existing text in those large files.
+          strings = {
+              'MOVIO': ('brand_movio', 'MOVIO'),
+              'TV': ('brand_tv', 'TV'),
+              'Created by ZIGGS': ('credit', 'Created by ZIGGS'),
+              'What would you like to watch?': ('welcome', 'What would you like to watch?'),
+              'LIVE TV': ('home_live', 'LIVE TV'),
+              'MOVIES': ('home_movies', 'MOVIES'),
+              'SERIES': ('home_series', 'SERIES'),
+              'Watch channels': ('watch_channels', 'Watch channels'),
+              'Browse films': ('browse_films', 'Browse films'),
+              'Watch episodes': ('watch_episodes', 'Watch episodes'),
+              'Interface': ('interface', 'Interface'),
+              'Auto': ('mode_auto', 'Auto'),
+              'Touch': ('mode_touch', 'Touch'),
+              '▶': ('icon_play', '▶'),
+              '▣': ('icon_movies', '▣'),
+              '▤': ('icon_series', '▤'),
+              '⌂': ('icon_home', '⌂'),
+              '⋯': ('icon_more', '⋯'),
+              'Home': ('nav_home', 'Home'),
+              'Live': ('nav_live', 'Live'),
+              'Movies': ('nav_movies', 'Movies'),
+              'Series': ('nav_series', 'Series'),
+              'More': ('nav_more', 'More'),
+              'Live TV': ('nav_live_tv', 'Live TV'),
+              'Search titles': ('search_titles', 'Search titles'),
+              '☰  Categories': ('categories', '☰  Categories'),
+          }
+          
+          for path in files:
+              if not path.is_file():
+                  raise RuntimeError('Cannot localize absent source: ' + str(path))
+              src = path.read_text(encoding='utf-8')
+              if path.name in ('MoviesScreen.kt', 'SeriesScreen.kt'):
+                  wanted = ['Movies'] if path.name == 'MoviesScreen.kt' else ['Series']
+                  # Only the title introduced by the new MovioTouchPosterBrowser branch.
+                  for label in wanted:
+                      needle = 'title = "' + label + '", category = headerLabel'
+                      replacement = 'title = stringResource(R.string.moviotv_' + strings[label][0] + '), category = headerLabel'
+                      if needle in src:
+                          src = src.replace(needle, replacement, 1)
+                      elif replacement not in src:
+                          raise RuntimeError('Missing ' + label + ' touch browser title')
+              else:
+                  for raw, (name, _) in strings.items():
+                      src = src.replace('"' + raw + '"', 'stringResource(R.string.moviotv_' + name + ')')
+                  if 'import androidx.compose.ui.res.stringResource' not in src:
+                      src = src.replace('import androidx.tv.material3.Text', 'import androidx.compose.ui.res.stringResource\nimport androidx.tv.material3.Text', 1)
+                  if 'import tv.own.owntv.R' not in src:
+                      src = src.replace('import androidx.tv.material3.Text', 'import tv.own.owntv.R\nimport androidx.tv.material3.Text', 1)
+              path.write_text(src, encoding='utf-8')
+          
+          resources = root / 'app/src/main/res/values/strings_moviotv.xml'
+          resources.parent.mkdir(parents=True, exist_ok=True)
+          xml_lines = ['<?xml version="1.0" encoding="utf-8"?>', '<resources>']
+          for name, text in strings.values():
+              # XML-escape quotes and special chars; Android strings have single quote apostrophe constraints.
+              import xml.sax.saxutils
+              text_xml = xml.sax.saxutils.escape(text)
+              xml_lines.append('    <string name="moviotv_' + name + '">' + text_xml + '</string>')
+          xml_lines.append('</resources>')
+          resources.write_text('\n'.join(xml_lines) + '\n', encoding='utf-8')
+          ET.parse(resources)
+          
+          safe = root / 'tools/i18n/safe_literals.txt'
+          original = safe.read_text(encoding='utf-8')
+          entries = [
+              '2\tpreference-key\tapp/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt\tlayout',
+              '1\tpreference-key\tapp/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt\tmoviotv_ui',
+          ]
+          for entry in entries:
+              if entry not in original.splitlines():
+                  original = original.rstrip('\n') + '\n' + entry + '\n'
+          safe.write_text(original, encoding='utf-8')
+          print('MovioTV visible strings now in Android resources; preference keys classified.')
+          MOVIO_LOCALIZE_EOF
+          python3 "$RUNNER_TEMP/moviotv-bundle/localize_moviotv.py"
+          git diff --check
+          git status --short
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build standard ARM test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew assembleStandardDebug --stacktrace
+
+      - name: Publish the test APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-universal-touch-TV-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+
+      - name: Commit the validated UI to the development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/res/values/strings_moviotv.xml \
+            tools/i18n/safe_literals.txt \
+            app/src/main/java/tv/own/owntv/features/home/MovioLayoutMode.kt \
+            app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt \
+            app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt \
+            app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt \
+            app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt \
+            app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt \
+            app/src/main/java/tv/own/owntv/features/series/SeriesScreen.kt
+          if git diff --cached --quiet; then
+            echo 'Already up to date.'
+          else
+            git commit -m 'MovioTV: universal mobile touch and Android TV interface'
+            git push origin HEAD:refs/heads/feature/moviotv-simple-home
+          fi
