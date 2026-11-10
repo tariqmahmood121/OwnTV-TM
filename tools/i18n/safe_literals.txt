@@ -1463,3 +1463,5 @@
 1	technical	app/src/main/java/tv/own/owntv/ui/theme/Glass.kt	glassPosition
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/OwnTVColors.kt	\0
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/Theme.kt	\0
+2	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	layout
+1	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	moviotv_ui

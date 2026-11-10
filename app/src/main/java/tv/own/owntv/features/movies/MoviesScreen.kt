@@ -239,11 +239,12 @@ fun MoviesScreen(
     val settingsVm: tv.own.owntv.features.settings.SettingsViewModel = koinViewModel()
     val vodLayout by settingsVm.vodLayout.collectAsStateWithLifecycle()
     // Cinematic is the browse section's; More → Favourites / History pin the plain Separate list.
-    val cinematic = vodLayout == SettingsRepository.VodLayout.CINEMATIC && lockedKey == null
+    val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+    val cinematic = false // MovioTV keeps the category and title panes in TV mode
     val cinematicDetailsPct by settingsVm.cinematicDetailsHeight(PanelSection.MOVIES).collectAsStateWithLifecycle()
     // Cinematic is grid-only: the List rows have nowhere to put a full-bleed backdrop. The stored
     // choice is deliberately not rewritten, so switching back to Separate restores the user's List.
-    val viewMode = if (cinematic) SettingsRepository.VodViewMode.GRID else storedViewMode
+    val viewMode = if (lockedKey == null) SettingsRepository.VodViewMode.GRID else storedViewMode
     val chNavEnabled by settingsVm.chNavEnabled.collectAsStateWithLifecycle()
     val chNavUpSkip by settingsVm.chNavUpSkip.collectAsStateWithLifecycle()
     val chNavDownSkip by settingsVm.chNavDownSkip.collectAsStateWithLifecycle()
@@ -562,7 +563,48 @@ fun MoviesScreen(
         // Horizontal geometry is a fraction of the 1920 design width, so every zoom reflows.
         val screenW = maxWidth
         fun fx(px: Int) = screenW * (px / 1920f)
-        if (cinematic) {
+        if (touchUi) {
+            tv.own.owntv.features.home.MovioTouchPosterBrowser(
+                title = stringResource(R.string.moviotv_nav_movies), category = headerLabel, query = searchQuery,
+                onSearch = vm::setSearchQuery,
+                categoryEnabled = lockedKey == null,
+                onCategories = { categoriesOpen = true },
+                categories = { catModifier ->
+                    LiveCategories(
+                        searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
+                        onSearchQueryChange = vm::setCategoryQuery,
+                        entries = categoryEntries, selectedIndex = selectedIndex,
+                        groupsHeading = groupsHeading, sheet = false,
+                        listState = catListState, onSelect = onCategorySelect,
+                        onLongSelect = onCategoryLongSelect,
+                        onNavigateRight = { focusTitles() },
+                        focusRequester = railFocus,
+                        focusRowIndex = railFocusRow,
+                        onRowFocused = { railFocusRow = null },
+                        onRowFocus = { catFocusIndex = it },
+                        modifier = catModifier,
+                    )
+                },
+                itemCount = movies.itemCount, gridState = effectiveGridState,
+                emptyText = emptyText,
+                poster = { index, width ->
+                    val movie = movies[index]
+                    if (movie != null) {
+                        val prog = movieProgress[movie.id]
+                        StagePoster(
+                            title = movie.name,
+                            rating = movie.rating?.takeIf { it > 0 }?.let(::vodRating),
+                            width = width, height = width * 1.5f, compact = true,
+                            progress = prog?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
+                            watched = prog?.let { vm.isMovieCompleted(it) } == true,
+                            onClick = { startMovie(movie) },
+                            onLongClick = { openMenu(movie, index) },
+                            modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
+                        ) { VodPosterArt(posterOf(movie), OwnTVIcon.MOVIES) }
+                    }
+                },
+            )
+        } else if (cinematic) {
             val heroH = if (panelShares != null) maxHeight * (cinematicDetailsPct / 100f) else 464.mpx
             val toolTop = 122.mpx + heroH
             Box(Modifier.fillMaxSize().then(if (categoriesOpen) Modifier.graphicsLayer { alpha = 0.36f } else Modifier)) {
@@ -655,7 +697,7 @@ fun MoviesScreen(
             val rightEdge = if (locked) screenW else fx(1880)
             val gapCol = if (locked) 0.dp else fx(26)
             val gapCard = fx(30)
-            val cardShown = panelShares?.preview != 0
+            val cardShown = locked && panelShares?.preview != 0
             val p = panelShares?.let { computePanelWidths(it, rightEdge - margin, gapCol + if (cardShown) gapCard else 0.dp) }
             val colW = if (locked) 0.dp else p?.category ?: fx(350)
             val cardW = if (!cardShown) 0.dp else p?.preview ?: fx(550)
@@ -844,8 +886,8 @@ fun MoviesScreen(
                 modifier = categoriesModifier
                     .padding(start = fx(24), top = 24.mpx, bottom = 24.mpx)
                     .width(
-                        // Panel widths › Categories sheet (Cinematic): its own % of the screen, as Live TV's Stage sheet.
-                        if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
+                        if (touchUi) minOf(screenW * 0.88f, 400.dp)
+                        else if (panelShares != null && cinematic) screenW * (cinematicSheetPct / 100f) else fx(450),
                     )
                     .fillMaxHeight(),
             )

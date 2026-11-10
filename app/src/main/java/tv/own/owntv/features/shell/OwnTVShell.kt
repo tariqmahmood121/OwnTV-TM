@@ -138,6 +138,21 @@ fun OwnTVShell(
     // Called once the profile's start-up choice has been applied; the splash waits for it.
     onStartupSettled: () -> Unit = {},
 ) {
+    val movioContext = androidx.compose.ui.platform.LocalContext.current
+    val movioConfiguration = androidx.compose.ui.platform.LocalConfiguration.current
+    val movioPreferences = remember(movioContext) {
+        movioContext.getSharedPreferences("moviotv_ui", android.content.Context.MODE_PRIVATE)
+    }
+    var movioChoice by remember {
+        mutableStateOf(tv.own.owntv.features.home.MovioLayoutChoice.fromSaved(movioPreferences.getString("layout", null)))
+    }
+    val movioTouch = when (movioChoice) {
+        tv.own.owntv.features.home.MovioLayoutChoice.MOBILE -> true
+        tv.own.owntv.features.home.MovioLayoutChoice.TV -> false
+        tv.own.owntv.features.home.MovioLayoutChoice.AUTO ->
+            (movioConfiguration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+                android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
     val noSourceLabel = stringResource(R.string.shell_no_source)
     val subtitleLoadFailed = stringResource(R.string.content_subtitle_load_failed)
 
@@ -1000,6 +1015,7 @@ fun OwnTVShell(
 
     CompositionLocalProvider(
         LocalRemoteShortcuts provides remoteShortcutEnvironment,
+        tv.own.owntv.features.home.LocalMovioTouchMode provides movioTouch,
         tv.own.owntv.features.shell.components.LocalClockWeather provides (weatherInfo to weatherFahrenheit),
     ) {
     Box(
@@ -1154,7 +1170,7 @@ fun OwnTVShell(
               }
           } else null
           Box(Modifier.weight(1f).fillMaxWidth()) {
-          Row(modifier = Modifier.fillMaxSize()) {
+          Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -1192,7 +1208,7 @@ fun OwnTVShell(
                             // edge (or beside a docked rail).
                             Modifier
                                 .padding(
-                                    start = if (navStyle == tv.own.owntv.core.settings.SettingsRepository.NavStyle.DOCKED) {
+                                    start = if (movioTouch) 0.dp else if (navStyle == tv.own.owntv.core.settings.SettingsRepository.NavStyle.DOCKED) {
                                         tv.own.owntv.features.shell.components.railDockedReserve(navSize)
                                     } else 0.dp,
                                 )
@@ -1264,62 +1280,18 @@ fun OwnTVShell(
                                 .focusGroup(),
                         ) }
 
-                        selectedSection == MainSection.HOME -> HomeScreen(
-                            vm = homeVm,
-                            // Skip the fullscreen player when the global external-player toggle is on
-                            // (mounting it spins up mpv even though playback went to the external app).
-                            onPlayMovie = { id, pos -> scope.launch { if (movieVm.playByIdAsync(id, pos) && !movieVm.externalPlayerOn.value) openFullscreen(MainSection.MOVIES) } },
-                            onPlayEpisode = { seriesId, epId, pos -> scope.launch { if (seriesVm.playFromHomeAsync(seriesId, epId, pos) && !seriesVm.externalPlayerOn.value) openFullscreen(MainSection.SERIES) } },
-                            onPlayChannel = { id, zap -> scope.launch { if (liveVm.ensurePlayingByIdAsync(id, zap)) openFullscreen(MainSection.LIVE_TV) } },
-                            onActivateTrending = { selected, onUnavailable ->
-                                scope.launch {
-                                    when (val current = homeVm.revalidateTrendingItem(selected)) {
-                                        is TrendingHomeItem.Movie -> {
-                                            val played = movieVm.playByIdAsync(current.movie.id)
-                                            if (!played) onUnavailable()
-                                            else if (!movieVm.externalPlayerOn.value) openFullscreen(MainSection.MOVIES)
-                                        }
-                                        is TrendingHomeItem.Series -> {
-                                            seriesVm.openSeries(current.series)
-                                            restoreFocus = true
-                                            onSelectSection(MainSection.SERIES)
-                                        }
-                                        null -> onUnavailable()
-                                    }
-                                }
+                        selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen(
+                            onLiveTv = { restoreFocus = false; onSelectSection(MainSection.LIVE_TV) },
+                            onMovies = { restoreFocus = false; onSelectSection(MainSection.MOVIES) },
+                            onSeries = { restoreFocus = false; onSelectSection(MainSection.SERIES) },
+                            onFocused = { focusedLayer = ShellLayer.CONTENT },
+                            layoutChoice = movioChoice,
+                            onLayoutChoice = { choice ->
+                                movioChoice = choice
+                                movioPreferences.edit().putString("layout", choice.name).apply()
                             },
-                            onOpenMovie = { movie ->
-                                restoreFocus = false
-                                movieVm.revealMovie(movie)
-                                onSelectSection(MainSection.MOVIES)
-                            },
-                            onOpenSeries = { series ->
-                                seriesVm.openSeries(series)
-                                restoreFocus = true
-                                onSelectSection(MainSection.SERIES)
-                            },
-                            onOpenTrendingSearch = { query ->
-                                searchVm.setQuery(query)
-                                trendingSearchActive = true
-                                restoreTrendingSearchFocus = false
-                                onSelectSection(MainSection.SEARCH)
-                            },
-                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                            restoreFocus = restoreFocus,
-                            restoreTrendingSearchFocus = restoreTrendingSearchFocus,
-                            onRestored = {
-                                restoreFocus = false
-                                restoreTrendingSearchFocus = false
-                            },
-                            previewEnabled = playerMode == PlayerMode.NONE,
-                            firstRowFocusRequester = homeFirstRowFocus,
-                            // Beside the resting capsule; a docked rail already reserves its own width.
+                            touchMode = movioTouch,
                             onEntryHook = { homeEntry = it },
-                            onOpenMatch = { m ->
-                                sportsMatchRequests.pendingMatch.value = m to null
-                                onSelectSection(MainSection.SPORTS)
-                            },
-                            contentStart = if (navStyle == tv.own.owntv.core.settings.SettingsRepository.NavStyle.DOCKED) 64.mpx else 150.mpx,
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1476,7 +1448,7 @@ fun OwnTVShell(
                 onPlaylistPillBounds = { playlistPillBounds = it },
                 modifier = Modifier.align(Alignment.TopEnd).onFocusChanged { clusterFocused = it.hasFocus }.focusGroup(),
             )
-            tv.own.owntv.features.shell.components.StageRail(
+            if (!movioTouch) tv.own.owntv.features.shell.components.StageRail(
                 state = railState,
                 size = railSize,
                 length = navLength,
@@ -1506,6 +1478,14 @@ fun OwnTVShell(
                 nowPlaying = nowPlayingRail,
                 onNowPlaying = enterNowPlaying,
             )
+            if (movioTouch && playerMode != PlayerMode.FULLSCREEN && !inPip && multiview == null) {
+                tv.own.owntv.features.home.MovioTouchBottomNav(
+                    selected = selectedSection,
+                    visible = visibleSections,
+                    onSelect = selectFromNav,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
           }
         }
         // The solid-mode wizard aura is deliberately drawn after the opaque browse surfaces so it

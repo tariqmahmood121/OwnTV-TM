@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="moviotv_brand_movio">MOVIO</string>
+    <string name="moviotv_brand_tv">TV</string>
+    <string name="moviotv_credit">Created by ZIGGS</string>
+    <string name="moviotv_welcome">What would you like to watch?</string>
+    <string name="moviotv_home_live">LIVE TV</string>
+    <string name="moviotv_home_movies">MOVIES</string>
+    <string name="moviotv_home_series">SERIES</string>
+    <string name="moviotv_watch_channels">Watch channels</string>
+    <string name="moviotv_browse_films">Browse films</string>
+    <string name="moviotv_watch_episodes">Watch episodes</string>
+    <string name="moviotv_interface">Interface</string>
+    <string name="moviotv_mode_auto">Auto</string>
+    <string name="moviotv_mode_touch">Touch</string>
+    <string name="moviotv_icon_play">▶</string>
+    <string name="moviotv_icon_movies">▣</string>
+    <string name="moviotv_icon_series">▤</string>
+    <string name="moviotv_icon_home">⌂</string>
+    <string name="moviotv_icon_more">⋯</string>
+    <string name="moviotv_nav_home">Home</string>
+    <string name="moviotv_nav_live">Live</string>
+    <string name="moviotv_nav_movies">Movies</string>
+    <string name="moviotv_nav_series">Series</string>
+    <string name="moviotv_nav_more">More</string>
+    <string name="moviotv_nav_live_tv">Live TV</string>
+    <string name="moviotv_search_titles">Search titles</string>
+    <string name="moviotv_categories">☰  Categories</string>
+</resources>

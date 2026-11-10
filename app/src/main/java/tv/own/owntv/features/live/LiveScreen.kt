@@ -486,7 +486,8 @@ fun LiveScreen(
     val nowProgrammes by vm.nowProgrammes.collectAsStateWithLifecycle()
     val playlistMarks by vm.playlistMarks.collectAsStateWithLifecycle()
     // Separate panels keeps the categories on screen; the Stage layout opens them as a sheet on Left.
-    val separate = liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null
+    val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+    val separate = !touchUi && liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null
     var categoriesOpen by remember { mutableStateOf(false) }
     var sheetHadFocus by remember { mutableStateOf(false) }
     // The current channel's row. After a long-press that row carries contextFocus instead of selFocus
@@ -495,7 +496,7 @@ fun LiveScreen(
         runCatching { selFocus.requestFocus() }.getOrDefault(false) ||
             runCatching { contextFocus.requestFocus() }.getOrDefault(false) ||
             runCatching { firstItemFocus.requestFocus() }.getOrDefault(false)
-    val categoriesVisible = lockedKey == null && (separate || categoriesOpen)
+    val categoriesVisible = lockedKey == null && (touchUi || separate || categoriesOpen)
     val railCounts by (if (categoriesVisible) vm.railCounts else remember { kotlinx.coroutines.flow.MutableStateFlow(emptyMap<LiveKey, Int>()) })
         .collectAsStateWithLifecycle()
     // The channel whose Program details page is open; focus returns to its row when it closes.
@@ -590,6 +591,63 @@ fun LiveScreen(
         // Horizontal geometry is a fraction of the 1920 design width, so every zoom reflows.
         val screenW = maxWidth
         fun fx(px: Int) = screenW * (px / 1920f)
+        if (touchUi) {
+            tv.own.owntv.features.home.MovioTouchLiveBrowser(
+                category = headerLabel, query = searchQuery,
+                onSearch = vm::setSearchQuery,
+                categoryEnabled = lockedKey == null,
+                onCategories = { categoriesOpen = true },
+                categories = { catModifier ->
+                    LiveCategories(
+                        entries = categoryEntries, selectedIndex = selectedIndex,
+                        groupsHeading = groupsHeading, sheet = false,
+                        listState = catListState, onSelect = onCategorySelect,
+                        onLongSelect = onCategoryLongSelect,
+                        onNavigateRight = { focusChannelList() },
+                        focusRequester = railFocus,
+                        focusRowIndex = railFocusRow,
+                        onRowFocused = { railFocusRow = null },
+                        onRowFocus = { catFocusIndex = it },
+                        searchQuery = categoryQuery,
+                        onSearchQueryChange = vm::setCategoryQuery,
+                        modifier = catModifier,
+                    )
+                },
+                count = channels.itemCount, listState = effectiveListState,
+                row = { index ->
+                    val channel = channels[index]
+                    if (channel != null) {
+                        tv.own.owntv.features.home.MovioTouchChannelRow(
+                            title = ProviderTags.parse(channel.name).name,
+                            subtitle = nowPlaying[channel.id], logo = channel.displayLogoUrl,
+                            onClick = {
+                                vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+                                if (!externalPlayerOn) onFullscreen()
+                            },
+                            onLongClick = { contextChannel = channel; contextChannelId = channel.id },
+                        )
+                    }
+                },
+            )
+            if (categoriesOpen) {
+                LiveCategories(
+                    entries = categoryEntries, selectedIndex = selectedIndex,
+                    groupsHeading = groupsHeading, sheet = true,
+                    listState = catListState, onSelect = onCategorySelect,
+                    onLongSelect = onCategoryLongSelect,
+                    onNavigateRight = { categoriesOpen = false; focusChannelList() },
+                    focusRequester = railFocus,
+                    focusRowIndex = railFocusRow,
+                    onRowFocused = { railFocusRow = null },
+                    onRowFocus = { catFocusIndex = it },
+                    searchQuery = categoryQuery,
+                    onSearchQueryChange = vm::setCategoryQuery,
+                    modifier = categoriesModifier
+                        .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
+                        .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),
+                )
+            }
+        } else {
         val margin = fx(64)
         val row = screenW - margin * 2
         val previewShown = if (separate) panelShares?.preview != 0 else stageWidths?.preview != 0
@@ -924,6 +982,7 @@ fun LiveScreen(
                     .fillMaxHeight(),
             )
         }
+        } // end TV-only Live stage
     }
 
     programmeDetails?.let { ch ->
