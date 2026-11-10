@@ -1,0 +1,278 @@
+name: MovioTV v3.1 - formatting fix and verified APK
+"on":
+  push:
+    branches:
+      - feature/moviotv-simple-home
+    paths:
+      - .github/workflows/moviotv-v3-fixed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moviotv-v3-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verified-build:
+    if: github.ref == 'refs/heads/feature/moviotv-simple-home'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the development branch ONLY
+        uses: actions/checkout@v7
+        with:
+          ref: feature/moviotv-simple-home
+          persist-credentials: true
+
+      - name: Apply MovioTV v3 startup and parallel-install fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'MOVIOTV_PATCH_PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          
+          root = Path('app')
+          
+          def text(path):
+              return Path(path).read_text(encoding='utf-8')
+          
+          def save(path, content):
+              file = Path(path)
+              file.parent.mkdir(parents=True, exist_ok=True)
+              previous = file.read_text(encoding='utf-8') if file.is_file() else None
+              if previous != content:
+                  file.write_text(content, encoding='utf-8')
+                  print('UPDATED', path)
+              else:
+                  print('UNCHANGED', path)
+          
+          def required_replace(content, old, new, note):
+              if new in content:
+                  return content
+              if old not in content:
+                  raise RuntimeError('MovioTV patch anchor missing: ' + note)
+              return content.replace(old, new, 1)
+          
+          def required_regex(content, pattern, replacement, note):
+              new, count = re.subn(pattern, replacement, content)
+              if count == 0 and replacement not in content:
+                  raise RuntimeError('MovioTV pattern missing: ' + note)
+              return new
+          
+          # The same build can never overwrite the user's original OwnTV install.
+          gradle_path='app/build.gradle.kts'
+          s=text(gradle_path)
+          s=required_replace(s, '    buildTypes {\n        debug {\n', '    buildTypes {\n        debug {\n            // MovioTV QA only: independent installation and private data sandbox.\n            applicationIdSuffix = ".moviotv"\n            versionNameSuffix = "-moviotv"\n', 'debug side-by-side Android identity')
+          save(gradle_path, s)
+          
+          # Manifest keeps original Kotlin class namespace; changes only the installed debug ID and branding.
+          manifest='app/src/main/AndroidManifest.xml'
+          s=text(manifest)
+          s=required_replace(s, 'android:label="@string/app_name"', 'android:label="@string/moviotv_app_name"', 'application launcher label')
+          s=re.sub(r'@mipmap/owntv_icon_[a-z_]+', '@drawable/moviotv_launcher', s)
+          s=re.sub(r'@drawable/owntv_banner_[a-z_]+', '@drawable/moviotv_tv_banner', s)
+          save(manifest,s)
+          
+          # App-owned resources (rather than replacing library-localised OwnTV strings wholesale).
+          strings='app/src/main/res/values/strings_moviotv.xml'
+          s=text(strings)
+          extras='''    <string name="moviotv_app_name">MovioTV</string>
+              <string name="moviotv_setup_welcome_title">Welcome to MovioTV</string>
+              <string name="moviotv_setup_welcome_sub">Your movies, series and Live TV in one place. Choose a language to begin.</string>
+              <string name="moviotv_setup_choice_title">Set up MovioTV</string>
+          '''
+          if 'name="moviotv_app_name"' not in s:
+              s=required_replace(s,'<resources>\n','<resources>\n'+extras,'MovioTV resources')
+          save(strings,s)
+          ET.parse(strings)
+          
+          # Brand mark vector for this test build. The originally approved graphical logo is NOT in this
+          # repository; this vector is an explicit interim asset, not a claim of pixel-perfect reproduction.
+          icon='''<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#130D21" android:pathData="M22,4 L86,4 C96,4 104,12 104,22 L104,86 C104,96 96,104 86,104 L22,104 C12,104 4,96 4,86 L4,22 C4,12 12,4 22,4 Z"/>
+              <path android:fillColor="#6226AA" android:pathData="M25,11 L83,11 C91,11 97,17 97,25 L97,83 C97,91 91,97 83,97 L25,97 C17,97 11,91 11,83 L11,25 C11,17 17,11 25,11 Z"/>
+              <path android:fillColor="#9C49F7" android:pathData="M30,18 L78,18 C84,18 90,24 90,30 L90,78 C90,84 84,90 78,90 L30,90 C24,90 18,84 18,78 L18,30 C18,24 24,18 30,18 Z"/>
+              <path android:fillColor="#211231" android:pathData="M31,24 L77,24 C81,24 84,27 84,31 L84,77 C84,81 81,84 77,84 L31,84 C27,84 24,81 24,77 L24,31 C24,27 27,24 31,24 Z"/>
+              <path android:fillColor="#E1AAFF" android:pathData="M41,32 L75,54 L41,76 Z"/>
+              <path android:fillColor="#FF7FDD" android:pathData="M42,37 L68,54 L42,71 Z"/>
+          </vector>
+          '''
+          banner='''<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="320dp" android:height="180dp"
+              android:viewportWidth="320" android:viewportHeight="180">
+              <path android:fillColor="#130D21" android:pathData="M0,0 L320,0 L320,180 L0,180 Z"/>
+              <path android:fillColor="#6D2CAC" android:pathData="M121,29 L199,29 C209,29 215,35 215,45 L215,135 C215,145 209,151 199,151 L121,151 C111,151 105,145 105,135 L105,45 C105,35 111,29 121,29 Z"/>
+              <path android:fillColor="#BD6CF8" android:pathData="M128,38 L192,38 C200,38 206,44 206,52 L206,128 C206,136 200,142 192,142 L128,142 C120,142 114,136 114,128 L114,52 C114,44 120,38 128,38 Z"/>
+              <path android:fillColor="#241136" android:pathData="M132,45 L188,45 C194,45 198,49 198,55 L198,125 C198,131 194,135 188,135 L132,135 C126,135 122,131 122,125 L122,55 C122,49 126,45 132,45 Z"/>
+              <path android:fillColor="#F5B3FF" android:pathData="M143,60 L184,90 L143,120 Z"/>
+          </vector>
+          '''
+          for name,data in [('moviotv_launcher.xml', icon),('moviotv_tv_banner.xml', banner)]:
+              path=Path('app/src/main/res/drawable')/name
+              if not path.exists(): save(path,data)
+              ET.parse(path)
+          
+          # Cold-start splash: remove the OLD OWN TV graphical assets from every icon theme.
+          for path in ['app/src/main/res/values/themes.xml','app/src/main/res/values-v31/themes.xml']:
+              s=text(path)
+              s=re.sub(r'@drawable/owntv_splash_(?:static_)?[a-z_]+', '@drawable/moviotv_launcher', s)
+              # Remove the whole branding-image line, including indentation, to avoid
+              # whitespace-only lines failing git diff --check (v3 CI failure).
+              s=re.sub(r'(?m)^[ \t]*<item name="android:windowSplashScreenBrandingImage">[^<]*</item>[ \t]*\n?', '', s)
+              # Normalize any remaining whitespace-only lines in this touched theme.
+              s=re.sub(r'(?m)^[ \t]+$', '', s)
+              save(path,s)
+              ET.parse(path)
+          colors='app/src/main/res/values/colors.xml'
+          s=text(colors)
+          s=required_replace(s,'#040e0b','#100c1c','purple launch background')
+          save(colors,s)
+          
+          # Onboarding must identify itself from the first frame (not only after all setup steps).
+          frame='app/src/main/java/tv/own/owntv/features/setup/WizardFrame.kt'
+          s=text(frame)
+          s=required_replace(s,'import androidx.compose.foundation.background', 'import androidx.compose.foundation.Image\nimport androidx.compose.foundation.background','wizard image import')
+          s=required_replace(s,'import androidx.compose.ui.res.stringResource','import androidx.compose.ui.res.painterResource\nimport androidx.compose.ui.res.stringResource','wizard painter import')
+          old='''            Box(Modifier.size(44.mpx).background(LockupTile, RoundedCornerShape(12.mpx)), contentAlignment = Alignment.Center) {
+                          OwnTVIcon(OwnTVIcon.PLAY, LockupMark, Modifier.size(22.mpx))
+                      }
+                      Text(stringResource(R.string.app_name), style = stageText(24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)'''
+          new='''            Image(
+                          painter = painterResource(R.drawable.moviotv_launcher),
+                          contentDescription = stringResource(R.string.moviotv_app_name),
+                          modifier = Modifier.size(44.mpx),
+                      )
+                      Column {
+                          Text(stringResource(R.string.moviotv_app_name), style = stageText(24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          Text(stringResource(R.string.moviotv_credit), style = stageText(11, 600), color = Color(0xFFB465FF))
+                      }'''
+          s=required_replace(s,old,new,'wizard header branding')
+          save(frame,s)
+          
+          setup='app/src/main/java/tv/own/owntv/features/setup/SetupWizard.kt'
+          s=text(setup)
+          s=required_replace(s,'title = stringResource(R.string.setup_welcome_title),','title = stringResource(R.string.moviotv_setup_welcome_title),','first-run title')
+          s=required_replace(s,'sub = stringResource(R.string.setup_welcome_sub),','sub = stringResource(R.string.moviotv_setup_welcome_sub),','first-run subtitle')
+          s=required_replace(s,'title = stringResource(R.string.setup_set_up_owntv),','title = stringResource(R.string.moviotv_setup_choice_title),','profile setup brand')
+          save(setup,s)
+          
+          # Home was previously compiled and wired but not branded with its own logo.
+          landing='app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt'
+          s=text(landing)
+          s=required_replace(s,'import androidx.compose.foundation.background','import androidx.compose.foundation.Image\nimport androidx.compose.foundation.background','landing Image import')
+          s=required_replace(s,'import androidx.compose.ui.Alignment','import androidx.compose.ui.res.painterResource\nimport androidx.compose.ui.Alignment','landing painter import')
+          s=required_replace(s,'import androidx.compose.foundation.layout.width','import androidx.compose.foundation.layout.size\nimport androidx.compose.foundation.layout.width','landing size import')
+          old='''            Row(verticalAlignment = Alignment.Bottom) {
+                          Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                          Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                      }'''
+          new='''            Row(verticalAlignment = Alignment.CenterVertically) {
+                          Image(painter = painterResource(R.drawable.moviotv_launcher), contentDescription = null, modifier = Modifier.size(if (wide) 62.dp else 48.dp))
+                          Spacer(Modifier.width(12.dp))
+                          Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                          Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                      }'''
+          s=required_replace(s,old,new,'landing screen mark')
+          save(landing,s)
+          
+          # Fail immediately when a source patch is missing; do not emit a green APK from partial work.
+          manifest=text(manifest)
+          shell=text('app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt')
+          frame_text=text(frame)
+          assert 'applicationIdSuffix = ".moviotv"' in text(gradle_path)
+          assert 'android:label="@string/moviotv_app_name"' in manifest
+          assert '@mipmap/owntv_icon_' not in manifest and '@drawable/owntv_banner_' not in manifest
+          assert 'R.string.moviotv_setup_welcome_title' in text(setup)
+          assert 'R.string.moviotv_credit' in frame_text
+          assert 'selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen' in shell
+          assert 'MovioTouchPosterBrowser' in text('app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt')
+          assert 'MovioTouchPosterBrowser' in text('app/src/main/java/tv/own/owntv/features/series/SeriesScreen.kt')
+          assert '@drawable/owntv_splash' not in text('app/src/main/res/values/themes.xml')
+          assert '@drawable/owntv_splash' not in text('app/src/main/res/values-v31/themes.xml')
+          print('PASS: self-checks for separate app, startup, branding, Home, Movies and Series')
+          MOVIOTV_PATCH_PY
+          git diff --check
+          git status --short
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Gradle setup and cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Compile, run JVM tests and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+
+      - name: Verify REAL APK identity, app label and version before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          if [ "${#apks[@]}" -ne 1 ]; then echo "Expected exactly one APK"; exit 1; fi
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv'" /tmp/moviotv-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-badging.txt
+          grep -F "versionName='99.99.99-moviotv'" /tmp/moviotv-badging.txt
+          echo "PASSED: independent APK identity and launcher branding"
+
+      - name: Publish verified APK only (not earlier unverified builds)
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-v3-verified-parallel-install-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+
+      - name: Commit VALIDATED source to development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main/AndroidManifest.xml \
+            app/src/main/res/values/strings_moviotv.xml app/src/main/res/values/colors.xml \
+            app/src/main/res/values/themes.xml app/src/main/res/values-v31/themes.xml \
+            app/src/main/res/drawable/moviotv_launcher.xml \
+            app/src/main/res/drawable/moviotv_tv_banner.xml \
+            app/src/main/java/tv/own/owntv/features/setup/WizardFrame.kt \
+            app/src/main/java/tv/own/owntv/features/setup/SetupWizard.kt \
+            app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m 'MovioTV: verified parallel app and branded startup'
+            git push origin HEAD:refs/heads/feature/moviotv-simple-home
+          fi
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-v3-quality-reports
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
