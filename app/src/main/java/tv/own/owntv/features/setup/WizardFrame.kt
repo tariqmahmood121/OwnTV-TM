@@ -1,6 +1,7 @@
 package tv.own.owntv.features.setup
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -80,10 +82,15 @@ internal fun WizardFrame(
             horizontalArrangement = Arrangement.spacedBy(14.mpx),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(44.mpx).background(LockupTile, RoundedCornerShape(12.mpx)), contentAlignment = Alignment.Center) {
-                OwnTVIcon(OwnTVIcon.PLAY, LockupMark, Modifier.size(22.mpx))
+            Image(
+                painter = painterResource(R.drawable.moviotv_launcher),
+                contentDescription = stringResource(R.string.moviotv_app_name),
+                modifier = Modifier.size(44.mpx),
+            )
+            Column {
+                Text(stringResource(R.string.moviotv_app_name), style = stageText(24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.moviotv_credit), style = stageText(11, 600), color = Color(0xFFB465FF))
             }
-            Text(stringResource(R.string.app_name), style = stageText(24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         StepDots(step, Modifier.align(Alignment.TopEnd).padding(end = 64.mpx, top = 66.mpx))
 

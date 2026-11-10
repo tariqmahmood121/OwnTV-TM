@@ -154,6 +154,9 @@ android {
 
     buildTypes {
         debug {
+            // MovioTV QA only: independent installation and private data sandbox.
+            applicationIdSuffix = ".moviotv"
+            versionNameSuffix = "-moviotv"
             // Pseudolocales (en-XA / ar-XB) are generated for the debug BuildType, NOT androidResources.
             // They are the pseudolocale QA instrument; localeFilters below would otherwise strip them,
             // so the debug-only qualifiers are added back via the per-variant API in the androidComponents

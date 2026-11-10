@@ -54,13 +54,13 @@
     <application
         android:name=".OwnTVApp"
         android:allowBackup="false"
-        android:banner="@drawable/owntv_banner_eggshell"
+        android:banner="@drawable/moviotv_tv_banner"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/owntv_icon_eggshell"
-        android:label="@string/app_name"
+        android:icon="@drawable/moviotv_launcher"
+        android:label="@string/moviotv_app_name"
         android:requestLegacyExternalStorage="true"
-        android:roundIcon="@mipmap/owntv_icon_eggshell"
+        android:roundIcon="@drawable/moviotv_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.OwnTV"
         android:usesCleartextTraffic="true"
@@ -102,14 +102,14 @@
              the window resizes the activity, which screenSize|smallestScreenSize|screenLayout keep alive. -->
         <activity
             android:name=".MainActivityPetrol"
-            android:banner="@drawable/owntv_banner_petrol"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_petrol"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_petrol"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Petrol"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -132,14 +132,14 @@
 
         <activity
             android:name=".MainActivitySunflower"
-            android:banner="@drawable/owntv_banner_sunflower"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_sunflower"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_sunflower"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Sunflower"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -162,14 +162,14 @@
 
         <activity
             android:name=".MainActivityCobalt"
-            android:banner="@drawable/owntv_banner_cobalt"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_cobalt"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_cobalt"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Cobalt"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -192,14 +192,14 @@
 
         <activity
             android:name=".MainActivityTomato"
-            android:banner="@drawable/owntv_banner_tomato"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_tomato"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_tomato"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Tomato"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -222,14 +222,14 @@
 
         <activity
             android:name=".MainActivityBoard"
-            android:banner="@drawable/owntv_banner_board"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_board"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_board"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Board"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -252,14 +252,14 @@
 
         <activity
             android:name=".MainActivity"
-            android:banner="@drawable/owntv_banner_eggshell"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="true"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_eggshell"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_eggshell"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Eggshell"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -282,14 +282,14 @@
 
         <activity
             android:name=".MainActivityOlive"
-            android:banner="@drawable/owntv_banner_olive"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_olive"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_olive"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Olive"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -312,14 +312,14 @@
 
         <activity
             android:name=".MainActivityOliveCream"
-            android:banner="@drawable/owntv_banner_olive_cream"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_olive_cream"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_olive_cream"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.OliveCream"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -343,14 +343,14 @@
 
         <activity
             android:name=".MainActivityPixel"
-            android:banner="@drawable/owntv_banner_pixel"
+            android:banner="@drawable/moviotv_tv_banner"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/owntv_icon_pixel"
+            android:icon="@drawable/moviotv_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode|density|colorMode"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
-            android:roundIcon="@mipmap/owntv_icon_pixel"
+            android:roundIcon="@drawable/moviotv_launcher"
             android:theme="@style/Theme.OwnTV.Starting.Pixel"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>

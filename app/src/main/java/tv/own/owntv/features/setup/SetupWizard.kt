@@ -125,7 +125,7 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
                 val first = rememberFirstFocus()
                 WizardFrame(
                     step = WizardStep.PROFILE,
-                    title = stringResource(R.string.setup_set_up_owntv),
+                    title = stringResource(R.string.moviotv_setup_choice_title),
                     sub = stringResource(R.string.setup_setup_choice_description),
                     back = WizardAction(stringResource(R.string.common_back), { step = Step.DISCLAIMER }),
                     next = null,
@@ -302,8 +302,8 @@ private fun rememberFirstFocus(): FocusRequester {
 private fun WelcomeStep(onNext: () -> Unit) {
     WizardFrame(
         step = WizardStep.LANGUAGE,
-        title = stringResource(R.string.setup_welcome_title),
-        sub = stringResource(R.string.setup_welcome_sub),
+        title = stringResource(R.string.moviotv_setup_welcome_title),
+        sub = stringResource(R.string.moviotv_setup_welcome_sub),
         back = null,
         next = WizardAction(stringResource(R.string.setup_get_started), onNext),
     ) {

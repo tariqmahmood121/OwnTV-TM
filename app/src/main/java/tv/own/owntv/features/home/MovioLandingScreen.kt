@@ -4,6 +4,7 @@
  */
 package tv.own.owntv.features.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -26,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,7 +83,9 @@ fun MovioLandingScreen(
             modifier = Modifier.fillMaxSize().padding(horizontal = edge, vertical = if (short) 10.dp else 25.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(painter = painterResource(R.drawable.moviotv_launcher), contentDescription = null, modifier = Modifier.size(if (wide) 62.dp else 48.dp))
+                Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
                 Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
             }

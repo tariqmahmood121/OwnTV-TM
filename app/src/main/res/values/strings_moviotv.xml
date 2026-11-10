@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="moviotv_app_name">MovioTV</string>
+    <string name="moviotv_setup_welcome_title">Welcome to MovioTV</string>
+    <string name="moviotv_setup_welcome_sub">Your movies, series and Live TV in one place. Choose a language to begin.</string>
+    <string name="moviotv_setup_choice_title">Set up MovioTV</string>
     <string name="moviotv_brand_movio">MOVIO</string>
     <string name="moviotv_brand_tv">TV</string>
     <string name="moviotv_credit">Created by ZIGGS</string>
