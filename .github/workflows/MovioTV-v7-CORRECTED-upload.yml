@@ -4,7 +4,7 @@ name: MovioTV v7 - safe parallel test APK
     branches:
       - feature/moviotv-simple-home
     paths:
-      - .github/workflows/moviotv-v7.yml
+      - .github/workflows/MovioTV-v7-CORRECTED-upload.yml
   workflow_dispatch:
 permissions:
   contents: write
