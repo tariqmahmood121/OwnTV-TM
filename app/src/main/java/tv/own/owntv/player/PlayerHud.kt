@@ -1,5 +1,7 @@
 package tv.own.owntv.player
 
+import androidx.compose.ui.platform.LocalConfiguration
+
 import tv.own.owntv.ui.theme.hudShade
 import tv.own.owntv.ui.theme.hudInk
 import androidx.activity.compose.BackHandler
@@ -250,6 +252,8 @@ fun PlayerHud(
     val zoomMode by player.zoomMode.collectAsStateWithLifecycle()
     val speed by player.speed.collectAsStateWithLifecycle()
     val isLive = player.isLiveContent
+    val movioTouchPlayer = (LocalConfiguration.current.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+        android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     val switchedToExo = stringResource(R.string.player_switch_exo)
     val switchedToMpv = stringResource(R.string.player_switch_mpv)
     val tuneNotFound = stringResource(R.string.player_channel_not_found)
@@ -615,6 +619,9 @@ fun PlayerHud(
             }
         },
     ) {
+        if (movioTouchPlayer && error == null && dialog == HudDialog.NONE) {
+            MovioTouchGestures(onTap = { controlsVisible = !controlsVisible; wakeTick++ })
+        }
         if (!controlsVisible && !showNextCard) {
             Box(
                 Modifier.fillMaxSize().focusRequester(catchFocus).focusable()

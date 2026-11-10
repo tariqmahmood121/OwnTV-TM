@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1169,7 +1173,8 @@ fun OwnTVShell(
                   )
               }
           } else null
-          Box(Modifier.weight(1f).fillMaxWidth()) {
+          Box(Modifier.weight(1f).fillMaxWidth()
+               .then(if (movioTouch) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier)) {
           Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {
             Column(
                 modifier = Modifier
@@ -1291,6 +1296,13 @@ fun OwnTVShell(
                                 movioPreferences.edit().putString("layout", choice.name).apply()
                             },
                             touchMode = movioTouch,
+                            profileName = profileName,
+                            providerName = playlistLabel,
+                            onProfileClick = onSwitchProfile,
+                            onProviderClick = {
+                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
+                                onSelectSection(MainSection.SETTINGS)
+                            },
                             onEntryHook = { homeEntry = it },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1483,7 +1495,7 @@ fun OwnTVShell(
                     selected = selectedSection,
                     visible = visibleSections,
                     onSelect = selectFromNav,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),
                 )
             }
           }

@@ -60,6 +60,10 @@ fun MovioLandingScreen(
     layoutChoice: MovioLayoutChoice,
     onLayoutChoice: (MovioLayoutChoice) -> Unit,
     touchMode: Boolean,
+    profileName: String,
+    providerName: String,
+    onProfileClick: () -> Unit,
+    onProviderClick: () -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -72,7 +76,7 @@ fun MovioLandingScreen(
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(Color(0xFF211531), background, Color(0xFF141026)))
+            Brush.linearGradient(listOf(Color(0xFF211438), Color(0xFF130E24), Color(0xFF0D0B18)))
         ),
     ) {
         val wide = maxWidth >= 700.dp
@@ -88,8 +92,36 @@ fun MovioLandingScreen(
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
                 Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                Text(stringResource(R.string.moviotv_version), color = Color(0xFFC7AEDB), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
             }
             Text(stringResource(R.string.moviotv_credit), color = muted, fontSize = 12.sp)
+            Spacer(Modifier.height(if (short) 7.dp else 12.dp))
+            val fallbackProfile = stringResource(R.string.moviotv_profile_fallback)
+            val fallbackProvider = stringResource(R.string.moviotv_no_provider)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFF30213D))
+                        .border(1.dp, Color(0xFF674681), RoundedCornerShape(22.dp))
+                        .clickable(onClick = onProfileClick)
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.moviotv_profile_symbol), fontSize = 12.sp, color = accent)
+                    Text(profileName.ifBlank { fallbackProfile }.take(22), color = Color.White, fontSize = 12.sp, maxLines = 1)
+                }
+                Row(
+                    modifier = Modifier.clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFF271E35))
+                        .border(1.dp, Color(0xFF56436A), RoundedCornerShape(22.dp))
+                        .clickable(onClick = onProviderClick)
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.moviotv_provider_symbol), fontSize = 12.sp, color = accent)
+                    Text(providerName.ifBlank { fallbackProvider }.take(24), color = muted, fontSize = 12.sp, maxLines = 1)
+                }
+            }
             Spacer(Modifier.height(if (short) 10.dp else 22.dp))
             Text(stringResource(R.string.moviotv_welcome), color = Color.White, fontSize = if (wide) 24.sp else 19.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(if (short) 10.dp else 18.dp))

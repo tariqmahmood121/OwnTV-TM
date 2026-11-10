@@ -240,8 +240,8 @@ fun SettingsScreen(
     // These belong to the two-pane Settings root, but stay remembered while a detail screen replaces
     // it. Otherwise Back briefly rebuilds Quick at row zero before restoring the real group/row.
     // Start on the card More opened, not Quick: waiting for the start effect drew Quick for a few frames first.
-    var selectedGroup by rememberSaveable { mutableIntStateOf(start?.group ?: 0) }
-    var displayedGroup by rememberSaveable { mutableIntStateOf(start?.group ?: 0) }
+    var selectedGroup by rememberSaveable { mutableIntStateOf(start?.group?.takeIf { it >= 0 } ?: 0) }
+    var displayedGroup by rememberSaveable { mutableIntStateOf(start?.group?.takeIf { it >= 0 } ?: 0) }
     var savedScrollPx by remember { mutableIntStateOf(0) }
     val saveScroll = { savedScrollPx = pageScroll.value }
     // The rows column: fresh entry and a lost focus land here, on the page's first row.
@@ -251,8 +251,8 @@ fun SettingsScreen(
     LaunchedEffect(searchAutoEdit) { if (searchAutoEdit) { kotlinx.coroutines.delay(1000); searchAutoEdit = false } }
     LaunchedEffect(start) {
         if (start == null) return@LaunchedEffect
-        tab = SettingsTab.ROOT
-        start.group?.let { selectedGroup = it; displayedGroup = it }
+        tab = if (start.group == -7007) SettingsTab.SOURCES else SettingsTab.ROOT
+        start.group?.takeIf { it >= 0 }?.let { selectedGroup = it; displayedGroup = it }
         if (start.search) {
             searchMode = true
             searchFromMore = true

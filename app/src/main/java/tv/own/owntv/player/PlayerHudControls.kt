@@ -4,6 +4,12 @@ import tv.own.owntv.ui.theme.hudOnAccent
 import tv.own.owntv.ui.theme.hudAccent
 import tv.own.owntv.ui.theme.hudShade
 import tv.own.owntv.ui.theme.hudInk
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
@@ -400,13 +406,43 @@ private fun BoxScope.Playhead(frac: Float) {
 internal fun SeekBar(positionMs: Long, durationMs: Long, bufferedMs: Long, stepMs: Long, onSeek: (Long) -> Unit, focusRequester: FocusRequester? = null) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val frac = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val latestPosition = rememberUpdatedState(positionMs)
+    val latestSeek = rememberUpdatedState(onSeek)
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    val frac = dragFrac ?: if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     // The buffer ghost: how far ahead the engine has data. Never behind the playhead, so a stale or
     // unreported value simply draws nothing rather than a stripe that contradicts the fill.
     val bufferedFrac = if (durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(frac, 1f) else frac
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Box(
-        modifier = Modifier.fillMaxWidth().height(24.dp)
+        modifier = Modifier.fillMaxWidth().height(36.dp)
+            .pointerInput(durationMs) {
+                detectTapGestures(onTap = { tap ->
+                    if (durationMs > 0L && size.width > 0) {
+                        val target = (tap.x / size.width.toFloat() * durationMs).toLong().coerceIn(0L, durationMs)
+                        latestSeek.value(target - latestPosition.value)
+                    }
+                })
+            }
+            .pointerInput(durationMs) {
+                detectHorizontalDragGestures(
+                    onDragStart = { start ->
+                        if (durationMs > 0L && size.width > 0) dragFrac = (start.x / size.width.toFloat()).coerceIn(0f, 1f)
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        if (durationMs > 0L && size.width > 0) dragFrac = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        change.consume()
+                    },
+                    onDragEnd = {
+                        dragFrac?.let { fraction ->
+                            val target = (fraction * durationMs).toLong().coerceIn(0L, durationMs)
+                            latestSeek.value(target - latestPosition.value)
+                        }
+                        dragFrac = null
+                    },
+                    onDragCancel = { dragFrac = null },
+                )
+            }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onKeyEvent { e ->
                 // Physical by design: left rewinds and right advances media time in every locale.

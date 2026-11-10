@@ -30,4 +30,15 @@
     <string name="moviotv_nav_live_tv">Live TV</string>
     <string name="moviotv_search_titles">Search titles</string>
     <string name="moviotv_categories">☰  Categories</string>
+    <string name="moviotv_version">v7</string>
+    <string name="moviotv_profile_label">PROFILE</string>
+    <string name="moviotv_provider_label">PROVIDER</string>
+    <string name="moviotv_manage_provider">Manage connection</string>
+    <string name="moviotv_no_provider">Add a provider</string>
+    <string name="moviotv_profile_fallback">Profile</string>
+    <string name="moviotv_profile_symbol">◉</string>
+    <string name="moviotv_provider_symbol">▣</string>
+    <string name="moviotv_brightness_symbol">☀</string>
+    <string name="moviotv_volume_symbol">♫</string>
+    <string name="moviotv_progress_percent">%1$d%%</string>
 </resources>
