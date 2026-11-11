@@ -1,0 +1,378 @@
+# Safe isolated visual test: upload to .github/workflows/ on feature/moviotv-v7-themes.
+# Builds a separate app package; the currently working MovioTV/OwnTV APK is untouched.
+name: MovioTV V7.1 - themes and player controls
+"on":
+  push:
+    branches:
+      - feature/moviotv-v7-themes
+    paths:
+      - .github/workflows/moviotv-v7-themes.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v7-themes-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  android-themes-test:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-themes'
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: '100008'
+      VERSION_NAME: '7.1'
+    steps:
+      - name: Checkout protected themes development branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/moviotv-v7-themes
+          persist-credentials: true
+      - name: Apply MovioTV V7.1 palette and Profile theme selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v71_theme_patch.py <<'MOVIO_PATCH_PY'
+          from pathlib import Path
+
+          # All edits stay in this checkout's app source. This runs exclusively on the themes branch.
+
+
+          def patch(rel, guard, transform):
+              path = Path(rel)
+              if not path.is_file():
+                  raise SystemExit(f"Required source missing: {rel}")
+              source = path.read_text(encoding="utf-8")
+              if guard in source:
+                  print(f"Already applied: {rel}")
+                  return
+              edited = transform(source)
+              if edited == source:
+                  raise SystemExit(f"Patch made no change: {rel}")
+              path.write_text(edited, encoding="utf-8")
+              print(f"Updated {rel}")
+
+
+          def replace_once(s, before, after):
+              count = s.count(before)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match, got {count}: {before[:90]!r}")
+              return s.replace(before, after, 1)
+
+
+          MAIN = "app/src/main/java/tv/own/owntv/MainActivity.kt"
+
+
+          def main_patch(s):
+              s = replace_once(s, "import android.util.Log", "import android.util.Log\nimport kotlinx.coroutines.flow.first")
+              anchor = "    private val localeStore: tv.own.owntv.core.i18n.LocaleStore by inject()"
+              s = replace_once(s, anchor,
+                  anchor + "\n    // Isolated visual preference only; never touches playback or catalogue data.\n"
+                  "    private val movioVisualSettings: tv.own.owntv.core.settings.SettingsRepository by inject()")
+              marker = "            val focusHighlight by viewModel.focusHighlight.collectAsStateWithLifecycle()"
+              insert = '''
+                      // The new MovioTV V7 theme starts purple once. Existing custom accents and all
+                      // later user selections remain untouched, including after app restarts.
+                      LaunchedEffect(Unit) {
+                          val prefs = getSharedPreferences("moviotv_visual_v7", MODE_PRIVATE)
+                          if (!prefs.getBoolean("palette_initialised", false)) {
+                              val savedAccent = movioVisualSettings.accent.first()
+                              val savedCustom = movioVisualSettings.customAccent.first()
+                              if (savedAccent == tv.own.owntv.core.theme.AccentColor.TEAL && savedCustom.isBlank()) {
+                                  movioVisualSettings.setThemeMode(tv.own.owntv.core.theme.ThemeMode.DARK)
+                                  movioVisualSettings.setAccent(tv.own.owntv.core.theme.AccentColor.VIOLET)
+                                  movioVisualSettings.setFocusHighlight("")
+                              }
+                              prefs.edit().putBoolean("palette_initialised", true).apply()
+                          }
+                      }'''
+              return replace_once(s, marker, marker + insert)
+
+
+          patch(MAIN, '"moviotv_visual_v7"', main_patch)
+
+
+          COLORS = "app/src/main/java/tv/own/owntv/ui/theme/OwnTVColors.kt"
+
+
+          def colors_patch(s):
+              anchor = "/**\n * OwnTV's resolved Material 3 color roles"
+              s = replace_once(s, anchor, "/** Near-black plum surface, used only for Movio Purple. */\n"
+                               "val MovioPurpleBackground = Color(0xFF08080E)\n\n" + anchor)
+              s = replace_once(s, "    val primary = roles.primary", '''    val movioPurple = isDark && accent == AccentColor.VIOLET && customAccent.isBlank()
+              // Deliberately muted: the image stays black-forward, not a glowing purple wall.
+              val selectedRoles = if (movioPurple) AccentRoles(
+                  primary = Color(0xFFAB8BCC),
+                  onPrimary = Color(0xFF1A1521),
+                  primaryContainer = Color(0xFF31243D),
+                  onPrimaryContainer = Color(0xFFE7D9F3),
+              ) else roles
+              val primary = selectedRoles.primary''')
+              for name in ("onPrimary", "primaryContainer", "onPrimaryContainer"):
+                  before = f"{name} = roles.{name},"
+                  count = s.count(before)
+                  if count != 2:
+                      raise SystemExit(f"Expected 2 M3 role assignments, got {count}: {before}")
+                  s = s.replace(before, f"{name} = selectedRoles.{name},")
+              # Only dark palette values are touched: teal remains pixel-for-pixel original.
+              replacements = (
+                  ("background = DarkBackground,", "background = if (movioPurple) MovioPurpleBackground else DarkBackground,"),
+                  ("surface = DarkSurface,", "surface = if (movioPurple) Color(0xFF0F0D16) else DarkSurface,"),
+                  ("surfaceContainerLowest = DarkSurfaceContainerLowest,", "surfaceContainerLowest = if (movioPurple) Color(0xFF0C0A12) else DarkSurfaceContainerLowest,"),
+                  ("surfaceContainerLow = DarkSurfaceContainerLow,", "surfaceContainerLow = if (movioPurple) Color(0xFF14111B) else DarkSurfaceContainerLow,"),
+                  ("surfaceContainer = DarkSurfaceContainer,", "surfaceContainer = if (movioPurple) Color(0xFF191521) else DarkSurfaceContainer,"),
+                  ("surfaceContainerHigh = DarkSurfaceContainerHigh,", "surfaceContainerHigh = if (movioPurple) Color(0xFF211B2B) else DarkSurfaceContainerHigh,"),
+                  ("surfaceContainerHighest = DarkSurfaceContainerHighest,", "surfaceContainerHighest = if (movioPurple) Color(0xFF2A2235) else DarkSurfaceContainerHighest,"),
+                  ("onSurfaceVariant = DarkOnSurfaceVariant,", "onSurfaceVariant = if (movioPurple) Color(0xFFBDB4C7) else DarkOnSurfaceVariant,"),
+                  ("outline = DarkOutline,", "outline = if (movioPurple) Color(0xFF51435B) else DarkOutline,"),
+                  ("outlineVariant = DarkOutlineVariant,", "outlineVariant = if (movioPurple) Color(0xFF312B3B) else DarkOutlineVariant,"),
+                  ("secondary = DarkSecondary,", "secondary = if (movioPurple) Color(0xFFB0A0BD) else DarkSecondary,"),
+              )
+              for before, after in replacements:
+                  s = replace_once(s, before, after)
+              # In-video controls, seek bars and focus also use the softer violet token.
+              old = "accentOnVideo = onVideoRoles.primary,"
+              new = "accentOnVideo = if (movioPurple) selectedRoles.primary else onVideoRoles.primary,"
+              if s.count(old) != 2:
+                  raise SystemExit("Expected dark and light HUD accent declarations")
+              s = s.replace(old, new, 1)
+              old = "onAccentOnVideo = onVideoRoles.onPrimary,"
+              new = "onAccentOnVideo = if (movioPurple) selectedRoles.onPrimary else onVideoRoles.onPrimary,"
+              if s.count(old) != 2:
+                  raise SystemExit("Expected dark and light HUD text declarations")
+              s = s.replace(old, new, 1)
+              return s
+
+
+          patch(COLORS, "val MovioPurpleBackground =", colors_patch)
+
+
+          STAGE = "app/src/main/java/tv/own/owntv/ui/theme/StageTokens.kt"
+
+
+          def stage_patch(s):
+              anchor = "        val Light = StagePalette("
+              block = '''        // Black/charcoal dominates. Classic continues to use unmodified StagePalette.Dark.
+                  val MovioPurple = Dark.copy(
+                      muted = Color(0xFFB2AABD),
+                      dim = Color(0xFF80768E),
+                      itemText = Color(0xFFDDD8E3),
+                      menuItemText = Color(0xFFE0D9E7),
+                      tagText = Color(0xFFC8BFCE),
+                      page = MovioPurpleBackground,
+                      glassTint = Color(0xFF15121C),
+                      glassOff = Color(0xFF15121C),
+                      body = Color(0xFFD0C9D6),
+                      navText = Color(0xFFCFC7D6),
+                      fxLine = Color(0xFFE6DDF0),
+                      scrim = Color(6, 4, 11).copy(alpha = 0.58f),
+                      wash = Color(8, 8, 14),
+                      knobOff = Color(0xFFD9CFDF),
+                  )
+          '''
+              return replace_once(s, anchor, block + anchor)
+
+
+          patch(STAGE, "val MovioPurple = Dark.copy(", stage_patch)
+
+
+          THEME = "app/src/main/java/tv/own/owntv/ui/theme/Theme.kt"
+
+
+          def theme_patch(s):
+              return replace_once(s, "LocalStagePalette provides if (useDark) StagePalette.Dark else StagePalette.Light,", '''LocalStagePalette provides if (!useDark) StagePalette.Light
+                      else if (accent == AccentColor.VIOLET && customAccent.isBlank()) StagePalette.MovioPurple
+                      else StagePalette.Dark,''')
+
+
+          patch(THEME, "StagePalette.MovioPurple", theme_patch)
+
+
+          LANDING = "app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt"
+
+
+          def landing_patch(s):
+              s = replace_once(s, '''private val background = Color(0xFF100C1C)
+          private val accent = Color(0xFFB465FF)
+          private val muted = Color(0xFFD1C2E5)''', '''// The same tokens as Movies, Series, Live TV, Settings and the player HUD.
+          private val accent: Color
+              @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.primary
+          private val muted: Color
+              @Composable get() = tv.own.owntv.ui.theme.StageColors.Muted
+          private val purple: Boolean
+              @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.background ==
+                  tv.own.owntv.ui.theme.MovioPurpleBackground''')
+              swaps = (
+                  ("Brush.linearGradient(listOf(Color(0xFF211438), Color(0xFF130E24), Color(0xFF0D0B18)))", "Brush.linearGradient(if (purple) listOf(Color(0xFF17121F), Color(0xFF0D0B14), Color(0xFF08080E)) else listOf(Color(0xFF0D191C), Color(0xFF091114), Color(0xFF05090B)))"),
+                  ("Color(0xFFC7AEDB)", "if (purple) Color(0xFFC3B2D2) else Color(0xFFB0CACC)"),
+                  ("Color(0xFF30213D)", "if (purple) Color(0xFF241D2C) else Color(0xFF14272B)"),
+                  ("Color(0xFF674681)", "if (purple) Color(0xFF4C3A5C) else Color(0xFF29525A)"),
+                  ("Color(0xFF271E35)", "if (purple) Color(0xFF211A29) else Color(0xFF112327)"),
+                  ("Color(0xFF56436A)", "if (purple) Color(0xFF45374F) else Color(0xFF28464C)"),
+                  ("Color(0xFF7143A5)", "if (purple) Color(0xFF4E366A) else Color(0xFF215A62)"),
+                  ("Color(0xFF2B2040)", "if (purple) Color(0xFF221A2B) else Color(0xFF132A2F)"),
+                  ("Color(0xFF5A486E)", "if (purple) Color(0xFF4E405A) else Color(0xFF30555B)"),
+                  ("listOf(Color(0xFF7442A9), Color(0xFF361B52))", "if (purple) listOf(Color(0xFF3B294B), Color(0xFF201729)) else listOf(Color(0xFF17474E), Color(0xFF0F272B))"),
+                  ("listOf(Color(0xFF39244F), Color(0xFF231934))", "if (purple) listOf(Color(0xFF241C2F), Color(0xFF16131E)) else listOf(Color(0xFF12292D), Color(0xFF0C1B1E))"),
+                  ("Color(0xFF694E7D)", "if (purple) Color(0xFF4A3B58) else Color(0xFF30555A)"),
+              )
+              for before, after in swaps:
+                  if before not in s:
+                      raise SystemExit(f"Landing screen changed, cannot safely recolour: {before}")
+                  s = s.replace(before, after)
+              return s
+
+
+          patch(LANDING, "// The same tokens as Movies", landing_patch)
+
+
+          PROFILE = "app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt"
+
+
+          def profile_patch(s):
+              s = replace_once(s, "import androidx.compose.ui.res.stringResource", "import androidx.compose.ui.res.stringResource\nimport tv.own.owntv.core.theme.AccentColor\nimport tv.own.owntv.core.theme.ThemeMode")
+              anchor = "    val defaultProfileName = stringResource(R.string.profiles_default_name)"
+              s = replace_once(s, anchor, anchor + '''
+              val visualSettingsVm: SettingsViewModel = koinViewModel()
+              val visualAccent by visualSettingsVm.accent.collectAsStateWithLifecycle()
+              val visualCustom by visualSettingsVm.customAccent.collectAsStateWithLifecycle()
+              val currentVisualPreset = if (visualAccent == AccentColor.VIOLET && visualCustom.isBlank()) "PURPLE" else "CLASSIC"
+              var showVisualPicker by remember { mutableStateOf(false) }''')
+              anchor = "    profiles.forEach { p ->"
+              s = replace_once(s, anchor, '''    // A simple two-choice MovioTV appearance picker under Settings > Profile.
+              StageSettingRow(
+                  icon = OwnTVIcon.PALETTE,
+                  title = stringResource(R.string.moviotv_visual_theme),
+                  desc = stringResource(R.string.moviotv_visual_theme_desc),
+                  value = SettingValue.Choice(stringResource(
+                      if (currentVisualPreset == "PURPLE") R.string.moviotv_purple_theme
+                      else R.string.moviotv_classic_theme
+                  )),
+                  onClick = { showVisualPicker = true },
+                  help = SettingHelp(
+                      title = stringResource(R.string.moviotv_visual_theme),
+                      text = stringResource(R.string.moviotv_visual_theme_desc),
+                  ),
+              )
+          ''' + anchor)
+              anchor = "    if (creating) {"
+              s = replace_once(s, anchor, '''    if (showVisualPicker) {
+                  PickerDialog(
+                      title = stringResource(R.string.moviotv_visual_theme),
+                      options = listOf(
+                          "PURPLE" to stringResource(R.string.moviotv_purple_theme),
+                          "CLASSIC" to stringResource(R.string.moviotv_classic_theme),
+                      ),
+                      selected = currentVisualPreset,
+                      onSelect = { choice ->
+                          // Only visual tokens change; all player and SQLite state stays untouched.
+                          visualSettingsVm.setThemeMode(ThemeMode.DARK)
+                          visualSettingsVm.setCustomAccent("")
+                          visualSettingsVm.setFocusHighlight("")
+                          visualSettingsVm.setAccent(if (choice == "PURPLE") AccentColor.VIOLET else AccentColor.TEAL)
+                          showVisualPicker = false
+                      },
+                      onDismiss = { showVisualPicker = false },
+                      descriptions = mapOf(
+                          "PURPLE" to stringResource(R.string.moviotv_purple_desc),
+                          "CLASSIC" to stringResource(R.string.moviotv_classic_desc),
+                      ),
+                  )
+              }
+
+          ''' + anchor)
+              return s
+
+
+          patch(PROFILE, "val currentVisualPreset =", profile_patch)
+
+
+          STRINGS = "app/src/main/res/values/strings_moviotv.xml"
+
+
+          def strings_patch(s):
+              return replace_once(s, "</resources>", '''    <string name="moviotv_visual_theme">MovioTV appearance</string>
+              <string name="moviotv_visual_theme_desc">Choose a subtle theme for all screens and player controls</string>
+              <string name="moviotv_purple_theme">Movio Purple (default)</string>
+              <string name="moviotv_classic_theme">Classic Turquoise</string>
+              <string name="moviotv_purple_desc">Nearly black with soft violet highlights</string>
+              <string name="moviotv_classic_desc">Original dark design with turquoise controls</string>
+          </resources>''')
+
+
+          patch(STRINGS, 'name="moviotv_visual_theme"', strings_patch)
+          print("MovioTV V7.1 theme patch complete")
+          MOVIO_PATCH_PY
+          python3 /tmp/moviotv_v71_theme_patch.py
+      - name: Isolate test package from existing working V7 installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'MOVIO_PACKAGE_PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          old = 'applicationIdSuffix = ".moviotv7"'
+          assert s.count(old) == 1, 'Expected unmodified working V7 suffix in source'
+          p.write_text(s.replace(old, 'applicationIdSuffix = ".moviotv7themes"'), encoding='utf-8')
+          MOVIO_PACKAGE_PY
+      - name: Configure Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle and caches
+        uses: gradle/actions/setup-gradle@v6
+      - name: Run unit tests, lint and compile test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify APK package, branding and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v71-apk-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv7themes'" /tmp/moviotv-v71-apk-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v71-apk-badging.txt
+          grep -F "versionName='7.1'" /tmp/moviotv-v71-apk-badging.txt
+          grep -F "versionCode='100008'" /tmp/moviotv-v71-apk-badging.txt
+          echo 'MovioTV V7.1 isolated theme test APK verified'
+      - name: Upload verified isolated V7.1 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.1-Themes-Isolated-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+      - name: Commit TESTED theme source only to the themes branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main
+          if git diff --cached --quiet; then
+            echo 'Theme source was already saved.'
+          else
+            git commit -m 'MovioTV V7.1: near-black purple, classic turquoise, profile selector and player-wide tokens'
+            git push origin HEAD:refs/heads/feature/moviotv-v7-themes
+          fi
+      - name: Upload diagnostics if unsuccessful
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.1-Themes-Build-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
