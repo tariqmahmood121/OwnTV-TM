@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import tv.own.owntv.core.theme.AccentColor
 import tv.own.owntv.core.theme.ThemeMode
@@ -48,9 +49,10 @@ internal fun profileCount(): Int {
  * profiles as a whole.
  */
 @Composable
-internal fun ProfileSettingsRows() {
+internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () -> Unit = {}) {
     val vm: ProfilesViewModel = koinViewModel()
     val gateSession: ProfileGateSessionViewModel = koinViewModel()
+    val context = LocalContext.current
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val activeProfileId by vm.activeProfileId.collectAsStateWithLifecycle()
     val defaultProfileName = stringResource(R.string.profiles_default_name)
@@ -109,6 +111,21 @@ internal fun ProfileSettingsRows() {
             text = stringResource(R.string.moviotv_visual_theme_desc),
         ),
     )
+    // Use the app's existing, tested pairing and source resync pages; never erase library state.
+    StageSettingRow(
+        icon = OwnTVIcon.BACKUP,
+        title = stringResource(R.string.moviotv_profile_sync_title),
+        desc = stringResource(R.string.moviotv_profile_sync_desc),
+        value = null,
+        onClick = onOpenSync,
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.REFRESH,
+        title = stringResource(R.string.moviotv_profile_sources_title),
+        desc = stringResource(R.string.moviotv_profile_sources_desc),
+        value = null,
+        onClick = onOpenSources,
+    )
     profiles.forEach { p ->
         val inUse = p.id == activeProfileId
         val line = listOfNotNull(
@@ -162,6 +179,11 @@ internal fun ProfileSettingsRows() {
                 visualSettingsVm.setCustomAccent("")
                 visualSettingsVm.setFocusHighlight("")
                 visualSettingsVm.setAccent(if (choice == "PURPLE") AccentColor.VIOLET else AccentColor.TEAL)
+                // Preference scoped to the active profile. Only visual choices are stored here.
+                activeProfileId?.takeIf { it >= 0L }?.let { profileId ->
+                    context.getSharedPreferences("moviotv_profile_theme_v72", android.content.Context.MODE_PRIVATE)
+                        .edit().putString("profile_$profileId", choice).apply()
+                }
                 showVisualPicker = false
             },
             onDismiss = { showVisualPicker = false },

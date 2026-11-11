@@ -309,6 +309,21 @@ open class MainActivity : ComponentActivity() {
             val selectedSection by viewModel.selectedSection.collectAsStateWithLifecycle()
             val visibleSections by viewModel.visibleSections.collectAsStateWithLifecycle()
             val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+            // Individual local appearance follows the selected profile on device switch.
+            // Catalogue, PIN, stream credentials and watched progress are not modified.
+            LaunchedEffect(activeProfileId) {
+                val profileId = activeProfileId ?: return@LaunchedEffect
+                if (profileId < 0L) return@LaunchedEffect
+                val prefs = getSharedPreferences("moviotv_profile_theme_v72", MODE_PRIVATE)
+                val preset = prefs.getString("profile_$profileId", "PURPLE")
+                movioVisualSettings.setThemeMode(tv.own.owntv.core.theme.ThemeMode.DARK)
+                movioVisualSettings.setCustomAccent("")
+                movioVisualSettings.setFocusHighlight("")
+                movioVisualSettings.setAccent(
+                    if (preset == "CLASSIC") tv.own.owntv.core.theme.AccentColor.TEAL
+                    else tv.own.owntv.core.theme.AccentColor.VIOLET
+                )
+            }
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
 
             val profilesVm: ProfilesViewModel = koinViewModel()

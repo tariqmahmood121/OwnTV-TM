@@ -1194,7 +1194,10 @@ fun SettingsScreen(
                     )
                     if (group == SettingsGroup.WATCHING) tv.own.owntv.features.settings.RecordingSettingsRows(pageScroll)
                 }
-                group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows()
+                group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows(
+                    onOpenSync = { tab = SettingsTab.LOCAL_SYNC },
+                    onOpenSources = { tab = SettingsTab.SOURCES },
+                )
                 // Only Quick can be empty, and only because the user emptied it.
                 selectedRows.isEmpty() -> StageSettingsNote(stringResource(R.string.settings_quick_empty_title), stringResource(R.string.settings_quick_empty_hint))
                 else -> {

@@ -30,7 +30,7 @@
     <string name="moviotv_nav_live_tv">Live TV</string>
     <string name="moviotv_search_titles">Search titles</string>
     <string name="moviotv_categories">☰  Categories</string>
-    <string name="moviotv_version">v7</string>
+    <string name="moviotv_version">v7.2</string>
     <string name="moviotv_profile_label">PROFILE</string>
     <string name="moviotv_provider_label">PROVIDER</string>
     <string name="moviotv_manage_provider">Manage connection</string>
@@ -42,9 +42,13 @@
     <string name="moviotv_volume_symbol">♫</string>
     <string name="moviotv_progress_percent">%1$d%%</string>
     <string name="moviotv_visual_theme">MovioTV appearance</string>
-    <string name="moviotv_visual_theme_desc">Choose a subtle theme for all screens and player controls</string>
+    <string name="moviotv_visual_theme_desc">Choose a theme for this profile across screens and player controls</string>
     <string name="moviotv_purple_theme">Movio Purple (default)</string>
     <string name="moviotv_classic_theme">Classic Turquoise</string>
     <string name="moviotv_purple_desc">Nearly black with soft violet highlights</string>
     <string name="moviotv_classic_desc">Original dark design with turquoise controls</string>
+        <string name="moviotv_profile_sync_title">Sync with another device</string>
+        <string name="moviotv_profile_sync_desc">Use PIN or QR pairing to transfer viewing data and settings</string>
+        <string name="moviotv_profile_sources_title">Refresh streaming library</string>
+        <string name="moviotv_profile_sources_desc">Manage connections and safely resync channels, films and series</string>
 </resources>

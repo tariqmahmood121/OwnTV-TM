@@ -96,10 +96,10 @@ enum class RailState {
  */
 data class NowPlayingRail(val logoUrl: String?, val audioMode: Boolean, val playing: Boolean)
 
-/** The rail order: Search first, Sports then the Guide right after Live TV, More last. */
+/** MovioTV V7.2: compact, meaningful vector icons in the agreed viewing order. */
 private val StageRailOrder = listOf(
-    MainSection.SEARCH, MainSection.HOME, MainSection.LIVE_TV, MainSection.SPORTS, MainSection.EPG,
-    MainSection.MOVIES, MainSection.SERIES, MainSection.DOWNLOADS,
+    MainSection.SEARCH, MainSection.HOME, MainSection.MOVIES, MainSection.SERIES,
+    MainSection.LIVE_TV, MainSection.SPORTS, MainSection.EPG, MainSection.DOWNLOADS,
 )
 
 /** The rail's width with names: Normal 280 · Wide 340 · Extra wide 400; Compact is the 84 capsule. */

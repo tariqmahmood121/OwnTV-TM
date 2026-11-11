@@ -24,19 +24,23 @@
 1	log	app/src/main/java/tv/own/owntv/BlurredBackdropLoader.kt	blur: crop/scale/blur threw ${t.javaClass.simpleName}: ${t.message}
 1	log	app/src/main/java/tv/own/owntv/BlurredBackdropLoader.kt	blur: decodeFile returned null for $path
 1	log	app/src/main/java/tv/own/owntv/BlurredBackdropLoader.kt	blur: produceState failed: ${it.javaClass.simpleName}: ${it.message}
-1	empty	app/src/main/java/tv/own/owntv/MainActivity.kt	\0
+3	empty	app/src/main/java/tv/own/owntv/MainActivity.kt	\0
+1	technical	app/src/main/java/tv/own/owntv/MainActivity.kt	CLASSIC
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	OwnTVHome
+1	technical	app/src/main/java/tv/own/owntv/MainActivity.kt	PURPLE
 1	compiler	app/src/main/java/tv/own/owntv/MainActivity.kt	RememberReturnType
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	database probe failed: $error
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	db-probed
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	destination-ready
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	first-composition
+1	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	moviotv_profile_theme_v72
 1	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	moviotv_visual_v7
 2	technical	app/src/main/java/tv/own/owntv/MainActivity.kt	none
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	onCreate deepLinkHost=${intent.data?.host} deepLinkType=${pendingDeepLink?.javaClass?.simpleName ?: "none"}
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	onNewIntent deepLinkHost=${intent.data?.host} deepLinkType=${pendingDeepLink?.javaClass?.simpleName ?: "none"}
 2	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	palette_initialised
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	profile-id-loaded
+1	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	profile_$profileId
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	profiles-loaded
 1	compiler	app/src/main/java/tv/own/owntv/OwnTVApp.kt	DEPRECATION
 1	technical	app/src/main/java/tv/own/owntv/OwnTVApp.kt	ahXN00/OwnTV
@@ -436,6 +440,8 @@
 2	empty	app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt	\0
 3	technical	app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt	CLASSIC
 5	technical	app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt	PURPLE
+1	preference-key	app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt	moviotv_profile_theme_v72
+1	preference-key	app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt	profile_$profileId
 1	technical	app/src/main/java/tv/own/owntv/features/settings/RecordingSettingsScreen.kt	rec_post_roll
 1	technical	app/src/main/java/tv/own/owntv/features/settings/RecordingSettingsScreen.kt	rec_pre_roll
 1	technical	app/src/main/java/tv/own/owntv/features/settings/RecordingSettingsScreen.kt	rec_reserve
