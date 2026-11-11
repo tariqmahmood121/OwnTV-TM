@@ -439,6 +439,37 @@ private fun SourceRow(
         isDefault -> stringResource(R.string.settings_sources_default)
         else -> null
     }
+    val touchMode = tv.own.owntv.features.home.LocalMovioTouchMode.current
+    var touchActionsOpen by remember { mutableStateOf(false) }
+    if (touchActionsOpen) {
+        tv.own.owntv.ui.stage.StagePopup(
+            onDismiss = { touchActionsOpen = false },
+            title = source.name,
+            body = stringResource(R.string.settings_playlists_description),
+            buttons = {
+                tv.own.owntv.ui.stage.StageButton(
+                    stringResource(R.string.common_cancel), onClick = { touchActionsOpen = false },
+                    height = 56.mpx, textSize = 19,
+                )
+            },
+        ) {
+            tv.own.owntv.ui.stage.StagePopupOption(
+                title = stringResource(R.string.settings_sources_resync),
+                onClick = { touchActionsOpen = false; onResync() },
+                leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.REFRESH) },
+            )
+            tv.own.owntv.ui.stage.StagePopupOption(
+                title = stringResource(R.string.settings_sources_edit),
+                onClick = { touchActionsOpen = false; onEdit() },
+                leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.PENCIL) },
+            )
+            tv.own.owntv.ui.stage.StagePopupOption(
+                title = stringResource(R.string.settings_sources_info),
+                onClick = { touchActionsOpen = false; onTest() },
+                leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.INFO) },
+            )
+        }
+    }
     val back = rowFocus ?: remember { FocusRequester() }
     val actions = if (isDeleting) emptyList() else listOf(
         StageAction(OwnTVIcon.PENCIL, stringResource(R.string.settings_sources_edit), onEdit),
@@ -457,7 +488,7 @@ private fun SourceRow(
         title = source.name,
         desc = line.ifBlank { typeName },
         value = status?.let { SettingValue.Action(it) },
-        onClick = { runCatching { actionsFocus.requestFocus() } },
+        onClick = { if (touchMode) touchActionsOpen = true else runCatching { actionsFocus.requestFocus() } },
         keepPanel = keepPanel,
         help = SettingHelp(
             title = source.name,

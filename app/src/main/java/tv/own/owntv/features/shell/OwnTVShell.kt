@@ -1268,6 +1268,7 @@ fun OwnTVShell(
                             fontCustomization = fontCustomization,
                             onSetFontCustomization = onSetFontCustomization,
                             onOpenPlaylist = {},
+                            onSwitchProfile = onSwitchProfile,
                             // Settings is reached through More now, so Back out of its root goes
                             // back there rather than to the rail — one level out, not two.
                             onBack = { restoreFocus = true; onSelectSection(MainSection.MORE) },
@@ -1298,7 +1299,12 @@ fun OwnTVShell(
                             touchMode = movioTouch,
                             profileName = profileName,
                             providerName = playlistLabel,
-                            onProfileClick = onSwitchProfile,
+                            onProfileClick = {
+                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(
+                                     tv.own.owntv.features.shell.components.SettingsGroup.PROFILE.ordinal, false,
+                                 )
+                                 onSelectSection(MainSection.SETTINGS)
+                             },
                             onProviderClick = {
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
                                 onSelectSection(MainSection.SETTINGS)

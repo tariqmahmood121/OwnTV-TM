@@ -49,7 +49,14 @@ internal fun profileCount(): Int {
  * profiles as a whole.
  */
 @Composable
-internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () -> Unit = {}) {
+internal fun ProfileSettingsRows(
+    onOpenSync: () -> Unit = {},
+    onOpenSources: () -> Unit = {},
+    onOpenAppearance: () -> Unit = {},
+    onOpenLayout: () -> Unit = {},
+    onOpenAllSettings: () -> Unit = {},
+    onSwitchProfile: () -> Unit = {},
+) {
     val vm: ProfilesViewModel = koinViewModel()
     val gateSession: ProfileGateSessionViewModel = koinViewModel()
     val context = LocalContext.current
@@ -60,6 +67,18 @@ internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () 
     val visualAccent by visualSettingsVm.accent.collectAsStateWithLifecycle()
     val visualCustom by visualSettingsVm.customAccent.collectAsStateWithLifecycle()
     val currentVisualPreset = if (visualAccent == AccentColor.VIOLET && visualCustom.isBlank()) "PURPLE" else "CLASSIC"
+    val linkedSources by visualSettingsVm.sources.collectAsStateWithLifecycle()
+    val defaultSourceId by visualSettingsVm.defaultSourceId.collectAsStateWithLifecycle()
+    val currentSource = linkedSources.firstOrNull { it.id == defaultSourceId } ?: linkedSources.firstOrNull()
+    val sourceSyncFlow = remember(currentSource?.id) {
+        currentSource?.let { visualSettingsVm.syncState(it.id) }
+            ?: kotlinx.coroutines.flow.flowOf<tv.own.owntv.core.sync.work.CatalogSyncState>(
+                tv.own.owntv.core.sync.work.CatalogSyncState.Idle
+            )
+    }
+    val sourceSync by sourceSyncFlow.collectAsStateWithLifecycle(
+        tv.own.owntv.core.sync.work.CatalogSyncState.Idle
+    )
     var showVisualPicker by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ProfileEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -111,7 +130,30 @@ internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () 
             text = stringResource(R.string.moviotv_visual_theme_desc),
         ),
     )
-    // Use the app's existing, tested pairing and source resync pages; never erase library state.
+    // A visible account card and a real one-tap normal refresh for the current playlist.
+    // Clean resync is deliberately NOT used here: keep provider-shrink safeguards intact.
+    StageSettingRow(
+        icon = OwnTVIcon.PLAYLIST,
+        title = stringResource(R.string.moviotv_profile_source_title),
+        desc = stringResource(R.string.moviotv_profile_source_desc),
+        value = SettingValue.Choice(currentSource?.name ?: stringResource(R.string.moviotv_no_provider)),
+        onClick = onOpenSources,
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.REFRESH,
+        title = stringResource(R.string.moviotv_profile_sources_title),
+        desc = if (sourceSync.isActive) stringResource(R.string.moviotv_profile_refresh_running)
+            else stringResource(R.string.moviotv_profile_refresh_desc),
+        value = null,
+        onClick = {
+            when {
+                currentSource == null -> onOpenSources()
+                sourceSync.isActive -> onOpenSources()
+                else -> visualSettingsVm.resync(currentSource)
+            }
+        },
+    )
+    // Device pairing and display preferences sit together in the personal dashboard.
     StageSettingRow(
         icon = OwnTVIcon.BACKUP,
         title = stringResource(R.string.moviotv_profile_sync_title),
@@ -120,11 +162,32 @@ internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () 
         onClick = onOpenSync,
     )
     StageSettingRow(
-        icon = OwnTVIcon.REFRESH,
-        title = stringResource(R.string.moviotv_profile_sources_title),
-        desc = stringResource(R.string.moviotv_profile_sources_desc),
+        icon = OwnTVIcon.PALETTE,
+        title = stringResource(R.string.moviotv_profile_gui_title),
+        desc = stringResource(R.string.moviotv_profile_gui_desc),
         value = null,
-        onClick = onOpenSources,
+        onClick = onOpenAppearance,
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.LIST_GRID,
+        title = stringResource(R.string.moviotv_profile_layout_title),
+        desc = stringResource(R.string.moviotv_profile_layout_desc),
+        value = null,
+        onClick = onOpenLayout,
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.SETTINGS,
+        title = stringResource(R.string.moviotv_profile_all_settings_title),
+        desc = stringResource(R.string.moviotv_profile_all_settings_desc),
+        value = null,
+        onClick = onOpenAllSettings,
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.PERSON,
+        title = stringResource(R.string.moviotv_profile_switch_title),
+        desc = stringResource(R.string.moviotv_profile_switch_desc),
+        value = null,
+        onClick = onSwitchProfile,
     )
     profiles.forEach { p ->
         val inUse = p.id == activeProfileId

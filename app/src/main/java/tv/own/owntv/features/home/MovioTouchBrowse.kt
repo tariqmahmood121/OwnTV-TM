@@ -63,7 +63,7 @@ fun MovioTouchBottomNav(
         Triple(MainSection.MOVIES, stringResource(R.string.moviotv_nav_movies), stringResource(R.string.moviotv_icon_movies)),
         Triple(MainSection.SERIES, stringResource(R.string.moviotv_nav_series), stringResource(R.string.moviotv_icon_series)),
         Triple(MainSection.MORE, stringResource(R.string.moviotv_nav_more), stringResource(R.string.moviotv_icon_more)),
-    ).filter { it.first in visible || it.first == MainSection.HOME }
+    ).filter { it.first in visible || it.first == MainSection.HOME || it.first == MainSection.MORE }
     Row(
         modifier = modifier.fillMaxWidth().height(70.dp)
             .background(Color(0xFF140E20)).padding(horizontal = 5.dp, vertical = 6.dp),

@@ -142,6 +142,7 @@ fun SettingsScreen(
     fontCustomization: FontCustomization,
     onSetFontCustomization: (FontCustomization) -> Unit,
     onOpenPlaylist: () -> Unit,
+    onSwitchProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * Where Back from the **root** of this screen goes. Settings sits behind More, so leaving
@@ -954,6 +955,9 @@ fun SettingsScreen(
                 chip = languageChip, chipTone = TileTone.PRIMARY) { open(SettingsTab.LANGUAGE) },
             SettingsSearchEntry(stringResource(R.string.settings_group_profile), stringResource(R.string.profiles_title), stringResource(R.string.settings_search_keywords_profiles), OwnTVIcon.PERSON, TileTone.SECONDARY) { searchQuery = ""; searchMode = false; selectedGroup = SettingsGroup.PROFILE.ordinal },
             SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.settings_playlists), stringResource(R.string.settings_search_keywords_playlists), OwnTVIcon.PLAYLIST, TileTone.PRIMARY) { open(SettingsTab.SOURCES) },
+  SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.settings_sources_resync), stringResource(R.string.settings_search_keywords_playlists), OwnTVIcon.REFRESH, TileTone.PRIMARY) { open(SettingsTab.SOURCES) },
+  SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.settings_sources_edit), stringResource(R.string.settings_search_keywords_playlists), OwnTVIcon.PENCIL, TileTone.SECONDARY) { open(SettingsTab.SOURCES) },
+  SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.settings_sources_info), stringResource(R.string.settings_search_keywords_playlists), OwnTVIcon.INFO, TileTone.SECONDARY) { open(SettingsTab.SOURCES) },
             SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.settings_epg_sources), stringResource(R.string.settings_search_keywords_epg), OwnTVIcon.EPG, TileTone.PRIMARY) { open(SettingsTab.EPG) },
             SettingsSearchEntry(stringResource(R.string.settings_group_sources), stringResource(R.string.content_epg_time_offset), stringResource(R.string.settings_search_keywords_epg_offset), OwnTVIcon.EPG, TileTone.SECONDARY,
                 chip = epgShiftLabel(epgOffset), chipTone = if (epgOffset == 0) TileTone.SECONDARY else TileTone.PRIMARY) { saveScroll(); dialogReturn = searchFieldFocus; showEpgOffset = true },
@@ -1197,6 +1201,10 @@ fun SettingsScreen(
                 group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows(
                     onOpenSync = { tab = SettingsTab.LOCAL_SYNC },
                     onOpenSources = { tab = SettingsTab.SOURCES },
+                    onOpenAppearance = { selectedGroup = SettingsGroup.APPEARANCE.ordinal },
+                    onOpenLayout = { selectedGroup = SettingsGroup.LAYOUT.ordinal },
+                    onOpenAllSettings = { selectedGroup = SettingsGroup.QUICK.ordinal },
+                    onSwitchProfile = onSwitchProfile,
                 )
                 // Only Quick can be empty, and only because the user emptied it.
                 selectedRows.isEmpty() -> StageSettingsNote(stringResource(R.string.settings_quick_empty_title), stringResource(R.string.settings_quick_empty_hint))
