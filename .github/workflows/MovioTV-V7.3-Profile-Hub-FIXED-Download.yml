@@ -6,7 +6,7 @@ name: MovioTV V7.3 - personal profile hub and touch controls TEST FIXED
     branches:
       - feature/moviotv-v7-themes
     paths:
-      - .github/workflows/moviotv-v73-profile-hub-touch-fixed.yml
+      - .github/workflows/MovioTV-V7.3-Profile-Hub-FIXED-Download.yml
   workflow_dispatch:
 permissions:
   contents: write
