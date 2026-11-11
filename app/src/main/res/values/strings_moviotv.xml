@@ -41,4 +41,10 @@
     <string name="moviotv_brightness_symbol">☀</string>
     <string name="moviotv_volume_symbol">♫</string>
     <string name="moviotv_progress_percent">%1$d%%</string>
+    <string name="moviotv_visual_theme">MovioTV appearance</string>
+    <string name="moviotv_visual_theme_desc">Choose a subtle theme for all screens and player controls</string>
+    <string name="moviotv_purple_theme">Movio Purple (default)</string>
+    <string name="moviotv_classic_theme">Classic Turquoise</string>
+    <string name="moviotv_purple_desc">Nearly black with soft violet highlights</string>
+    <string name="moviotv_classic_desc">Original dark design with turquoise controls</string>
 </resources>

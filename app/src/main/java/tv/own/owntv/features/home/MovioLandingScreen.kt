@@ -47,9 +47,14 @@ import androidx.compose.ui.res.stringResource
 import tv.own.owntv.R
 import androidx.tv.material3.Text
 
-private val background = Color(0xFF100C1C)
-private val accent = Color(0xFFB465FF)
-private val muted = Color(0xFFD1C2E5)
+// The same tokens as Movies, Series, Live TV, Settings and the player HUD.
+private val accent: Color
+    @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.primary
+private val muted: Color
+    @Composable get() = tv.own.owntv.ui.theme.StageColors.Muted
+private val purple: Boolean
+    @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.background ==
+        tv.own.owntv.ui.theme.MovioPurpleBackground
 
 @Composable
 fun MovioLandingScreen(
@@ -76,7 +81,7 @@ fun MovioLandingScreen(
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize().background(
-            Brush.linearGradient(listOf(Color(0xFF211438), Color(0xFF130E24), Color(0xFF0D0B18)))
+            Brush.linearGradient(if (purple) listOf(Color(0xFF17121F), Color(0xFF0D0B14), Color(0xFF08080E)) else listOf(Color(0xFF0D191C), Color(0xFF091114), Color(0xFF05090B)))
         ),
     ) {
         val wide = maxWidth >= 700.dp
@@ -92,7 +97,7 @@ fun MovioLandingScreen(
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
                 Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
-                Text(stringResource(R.string.moviotv_version), color = Color(0xFFC7AEDB), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
+                Text(stringResource(R.string.moviotv_version), color = if (purple) Color(0xFFC3B2D2) else Color(0xFFB0CACC), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
             }
             Text(stringResource(R.string.moviotv_credit), color = muted, fontSize = 12.sp)
             Spacer(Modifier.height(if (short) 7.dp else 12.dp))
@@ -101,8 +106,8 @@ fun MovioLandingScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     modifier = Modifier.clip(RoundedCornerShape(22.dp))
-                        .background(Color(0xFF30213D))
-                        .border(1.dp, Color(0xFF674681), RoundedCornerShape(22.dp))
+                        .background(if (purple) Color(0xFF241D2C) else Color(0xFF14272B))
+                        .border(1.dp, if (purple) Color(0xFF4C3A5C) else Color(0xFF29525A), RoundedCornerShape(22.dp))
                         .clickable(onClick = onProfileClick)
                         .padding(horizontal = 11.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -112,8 +117,8 @@ fun MovioLandingScreen(
                 }
                 Row(
                     modifier = Modifier.clip(RoundedCornerShape(22.dp))
-                        .background(Color(0xFF271E35))
-                        .border(1.dp, Color(0xFF56436A), RoundedCornerShape(22.dp))
+                        .background(if (purple) Color(0xFF211A29) else Color(0xFF112327))
+                        .border(1.dp, if (purple) Color(0xFF45374F) else Color(0xFF28464C), RoundedCornerShape(22.dp))
                         .clickable(onClick = onProviderClick)
                         .padding(horizontal = 11.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -145,8 +150,8 @@ fun MovioLandingScreen(
                     val active = layoutChoice == choice
                     Box(
                         modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                            .background(if (active) Color(0xFF7143A5) else Color(0xFF2B2040))
-                            .border(1.dp, if (active) accent else Color(0xFF5A486E), RoundedCornerShape(20.dp))
+                            .background(if (active) if (purple) Color(0xFF4E366A) else Color(0xFF215A62) else if (purple) Color(0xFF221A2B) else Color(0xFF132A2F))
+                            .border(1.dp, if (active) accent else if (purple) Color(0xFF4E405A) else Color(0xFF30555B), RoundedCornerShape(20.dp))
                             .clickable { onLayoutChoice(choice) }
                             .padding(horizontal = 13.dp, vertical = 9.dp),
                         contentAlignment = Alignment.Center,
@@ -171,8 +176,8 @@ private fun MovioTile(
             .height(height)
             .scale(if (focused) 1.015f else 1f)
             .clip(shape)
-            .background(Brush.linearGradient(if (focused) listOf(Color(0xFF7442A9), Color(0xFF361B52)) else listOf(Color(0xFF39244F), Color(0xFF231934))))
-            .border(if (focused) 2.dp else 1.dp, if (focused) accent else Color(0xFF694E7D), shape)
+            .background(Brush.linearGradient(if (focused) if (purple) listOf(Color(0xFF3B294B), Color(0xFF201729)) else listOf(Color(0xFF17474E), Color(0xFF0F272B)) else if (purple) listOf(Color(0xFF241C2F), Color(0xFF16131E)) else listOf(Color(0xFF12292D), Color(0xFF0C1B1E))))
+            .border(if (focused) 2.dp else 1.dp, if (focused) accent else if (purple) Color(0xFF4A3B58) else Color(0xFF30555A), shape)
             .clickable(onClick = onClick)
             .padding(12.dp),
         contentAlignment = Alignment.Center,

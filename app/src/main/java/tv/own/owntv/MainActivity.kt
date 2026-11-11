@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.flow.first
 import androidx.room.useWriterConnection
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -100,6 +101,8 @@ open class MainActivity : ComponentActivity() {
     private val shellViewModel: ShellViewModel by viewModel()
     // The sole locale authority (SharedPreferences-backed; see docs/internationalization.md 0b).
     private val localeStore: tv.own.owntv.core.i18n.LocaleStore by inject()
+    // Isolated visual preference only; never touches playback or catalogue data.
+    private val movioVisualSettings: tv.own.owntv.core.settings.SettingsRepository by inject()
     private var pendingDeepLink by mutableStateOf<LauncherDeepLink?>(null)
 
     /**
@@ -263,6 +266,21 @@ open class MainActivity : ComponentActivity() {
             val accent by viewModel.accent.collectAsStateWithLifecycle()
             val customAccent by viewModel.customAccent.collectAsStateWithLifecycle()
             val focusHighlight by viewModel.focusHighlight.collectAsStateWithLifecycle()
+            // The new MovioTV V7 theme starts purple once. Existing custom accents and all
+            // later user selections remain untouched, including after app restarts.
+            LaunchedEffect(Unit) {
+                val prefs = getSharedPreferences("moviotv_visual_v7", MODE_PRIVATE)
+                if (!prefs.getBoolean("palette_initialised", false)) {
+                    val savedAccent = movioVisualSettings.accent.first()
+                    val savedCustom = movioVisualSettings.customAccent.first()
+                    if (savedAccent == tv.own.owntv.core.theme.AccentColor.TEAL && savedCustom.isBlank()) {
+                        movioVisualSettings.setThemeMode(tv.own.owntv.core.theme.ThemeMode.DARK)
+                        movioVisualSettings.setAccent(tv.own.owntv.core.theme.AccentColor.VIOLET)
+                        movioVisualSettings.setFocusHighlight("")
+                    }
+                    prefs.edit().putBoolean("palette_initialised", true).apply()
+                }
+            }
             val focusHighlightWidth by viewModel.focusHighlightWidth.collectAsStateWithLifecycle()
             val uiZoomPercent by viewModel.uiZoomPercent.collectAsStateWithLifecycle()
             val fontCustomization by viewModel.fontCustomization.collectAsStateWithLifecycle()

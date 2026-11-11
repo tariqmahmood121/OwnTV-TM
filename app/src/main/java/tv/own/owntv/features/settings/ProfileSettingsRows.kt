@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import tv.own.owntv.core.theme.AccentColor
+import tv.own.owntv.core.theme.ThemeMode
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.R
@@ -52,6 +54,11 @@ internal fun ProfileSettingsRows() {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val activeProfileId by vm.activeProfileId.collectAsStateWithLifecycle()
     val defaultProfileName = stringResource(R.string.profiles_default_name)
+    val visualSettingsVm: SettingsViewModel = koinViewModel()
+    val visualAccent by visualSettingsVm.accent.collectAsStateWithLifecycle()
+    val visualCustom by visualSettingsVm.customAccent.collectAsStateWithLifecycle()
+    val currentVisualPreset = if (visualAccent == AccentColor.VIOLET && visualCustom.isBlank()) "PURPLE" else "CLASSIC"
+    var showVisualPicker by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ProfileEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<ProfileEntity?>(null) }
@@ -87,6 +94,21 @@ internal fun ProfileSettingsRows() {
         ),
     )
     val sep = stringResource(R.string.content_epg_bits_separator)
+    // A simple two-choice MovioTV appearance picker under Settings > Profile.
+    StageSettingRow(
+        icon = OwnTVIcon.PALETTE,
+        title = stringResource(R.string.moviotv_visual_theme),
+        desc = stringResource(R.string.moviotv_visual_theme_desc),
+        value = SettingValue.Choice(stringResource(
+            if (currentVisualPreset == "PURPLE") R.string.moviotv_purple_theme
+            else R.string.moviotv_classic_theme
+        )),
+        onClick = { showVisualPicker = true },
+        help = SettingHelp(
+            title = stringResource(R.string.moviotv_visual_theme),
+            text = stringResource(R.string.moviotv_visual_theme_desc),
+        ),
+    )
     profiles.forEach { p ->
         val inUse = p.id == activeProfileId
         val line = listOfNotNull(
@@ -125,6 +147,30 @@ internal fun ProfileSettingsRows() {
         help = help,
         modifier = Modifier.focusRequester(addFocus),
     )
+
+    if (showVisualPicker) {
+        PickerDialog(
+            title = stringResource(R.string.moviotv_visual_theme),
+            options = listOf(
+                "PURPLE" to stringResource(R.string.moviotv_purple_theme),
+                "CLASSIC" to stringResource(R.string.moviotv_classic_theme),
+            ),
+            selected = currentVisualPreset,
+            onSelect = { choice ->
+                // Only visual tokens change; all player and SQLite state stays untouched.
+                visualSettingsVm.setThemeMode(ThemeMode.DARK)
+                visualSettingsVm.setCustomAccent("")
+                visualSettingsVm.setFocusHighlight("")
+                visualSettingsVm.setAccent(if (choice == "PURPLE") AccentColor.VIOLET else AccentColor.TEAL)
+                showVisualPicker = false
+            },
+            onDismiss = { showVisualPicker = false },
+            descriptions = mapOf(
+                "PURPLE" to stringResource(R.string.moviotv_purple_desc),
+                "CLASSIC" to stringResource(R.string.moviotv_classic_desc),
+            ),
+        )
+    }
 
     if (creating) {
         ProfileEditorDialog(

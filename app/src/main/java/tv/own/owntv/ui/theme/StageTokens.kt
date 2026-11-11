@@ -111,6 +111,23 @@ data class StagePalette(
             chipWarnText = Color(0xFFFFD27A),
             chipWarnFill = Color(255, 200, 80).copy(alpha = 0.14f),
         )
+        // Black/charcoal dominates. Classic continues to use unmodified StagePalette.Dark.
+        val MovioPurple = Dark.copy(
+            muted = Color(0xFFB2AABD),
+            dim = Color(0xFF80768E),
+            itemText = Color(0xFFDDD8E3),
+            menuItemText = Color(0xFFE0D9E7),
+            tagText = Color(0xFFC8BFCE),
+            page = MovioPurpleBackground,
+            glassTint = Color(0xFF15121C),
+            glassOff = Color(0xFF15121C),
+            body = Color(0xFFD0C9D6),
+            navText = Color(0xFFCFC7D6),
+            fxLine = Color(0xFFE6DDF0),
+            scrim = Color(6, 4, 11).copy(alpha = 0.58f),
+            wash = Color(8, 8, 14),
+            knobOff = Color(0xFFD9CFDF),
+        )
         val Light = StagePalette(
             isLight = true,
             text = Color(0xFF0F1A16),

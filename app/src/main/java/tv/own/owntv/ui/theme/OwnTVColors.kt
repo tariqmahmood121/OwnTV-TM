@@ -6,6 +6,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import tv.own.owntv.core.theme.AccentColor
 
+/** Near-black plum surface, used only for Movio Purple. */
+val MovioPurpleBackground = Color(0xFF08080E)
+
 /**
  * OwnTV's resolved Material 3 color roles for the current theme + accent. Read as `OwnTVTheme.colors`.
  *
@@ -120,7 +123,15 @@ fun ownTvColors(
         primaryContainer = accent.primaryContainer(isDark),
         onPrimaryContainer = accent.onPrimaryContainer(isDark),
     )
-    val primary = roles.primary
+    val movioPurple = isDark && accent == AccentColor.VIOLET && customAccent.isBlank()
+    // Deliberately muted: the image stays black-forward, not a glowing purple wall.
+    val selectedRoles = if (movioPurple) AccentRoles(
+        primary = Color(0xFFAB8BCC),
+        onPrimary = Color(0xFF1A1521),
+        primaryContainer = Color(0xFF31243D),
+        onPrimaryContainer = Color(0xFFE7D9F3),
+    ) else roles
+    val primary = selectedRoles.primary
     // Always the dark-surface tone of the same accent: the player HUD is dark chrome in every theme.
     val onVideoRoles = parseAccentHex(customAccent)?.let { rolesFrom(it, true) } ?: AccentRoles(
         primary = accent.primary(true),
@@ -132,22 +143,22 @@ fun ownTvColors(
     return if (isDark) {
         OwnTVColors(
             isDark = true,
-            background = DarkBackground,
-            surface = DarkSurface,
-            surfaceContainerLowest = DarkSurfaceContainerLowest,
-            surfaceContainerLow = DarkSurfaceContainerLow,
-            surfaceContainer = DarkSurfaceContainer,
-            surfaceContainerHigh = DarkSurfaceContainerHigh,
-            surfaceContainerHighest = DarkSurfaceContainerHighest,
+            background = if (movioPurple) MovioPurpleBackground else DarkBackground,
+            surface = if (movioPurple) Color(0xFF0F0D16) else DarkSurface,
+            surfaceContainerLowest = if (movioPurple) Color(0xFF0C0A12) else DarkSurfaceContainerLowest,
+            surfaceContainerLow = if (movioPurple) Color(0xFF14111B) else DarkSurfaceContainerLow,
+            surfaceContainer = if (movioPurple) Color(0xFF191521) else DarkSurfaceContainer,
+            surfaceContainerHigh = if (movioPurple) Color(0xFF211B2B) else DarkSurfaceContainerHigh,
+            surfaceContainerHighest = if (movioPurple) Color(0xFF2A2235) else DarkSurfaceContainerHighest,
             onSurface = DarkOnSurface,
-            onSurfaceVariant = DarkOnSurfaceVariant,
-            outline = DarkOutline,
-            outlineVariant = DarkOutlineVariant,
+            onSurfaceVariant = if (movioPurple) Color(0xFFBDB4C7) else DarkOnSurfaceVariant,
+            outline = if (movioPurple) Color(0xFF51435B) else DarkOutline,
+            outlineVariant = if (movioPurple) Color(0xFF312B3B) else DarkOutlineVariant,
             primary = primary,
-            onPrimary = roles.onPrimary,
-            primaryContainer = roles.primaryContainer,
-            onPrimaryContainer = roles.onPrimaryContainer,
-            secondary = DarkSecondary,
+            onPrimary = selectedRoles.onPrimary,
+            primaryContainer = selectedRoles.primaryContainer,
+            onPrimaryContainer = selectedRoles.onPrimaryContainer,
+            secondary = if (movioPurple) Color(0xFFB0A0BD) else DarkSecondary,
             onSecondary = DarkOnSecondary,
             secondaryContainer = DarkSecondaryContainer,
             onSecondaryContainer = DarkOnSecondaryContainer,
@@ -158,8 +169,8 @@ fun ownTvColors(
             focusBorder = focus,
             focusGlow = focus.copy(alpha = 0.40f),
             favorite = DarkError,
-            accentOnVideo = onVideoRoles.primary,
-            onAccentOnVideo = onVideoRoles.onPrimary,
+            accentOnVideo = if (movioPurple) selectedRoles.primary else onVideoRoles.primary,
+            onAccentOnVideo = if (movioPurple) selectedRoles.onPrimary else onVideoRoles.onPrimary,
         )
     } else {
         OwnTVColors(
@@ -176,9 +187,9 @@ fun ownTvColors(
             outline = LightOutline,
             outlineVariant = LightOutlineVariant,
             primary = primary,
-            onPrimary = roles.onPrimary,
-            primaryContainer = roles.primaryContainer,
-            onPrimaryContainer = roles.onPrimaryContainer,
+            onPrimary = selectedRoles.onPrimary,
+            primaryContainer = selectedRoles.primaryContainer,
+            onPrimaryContainer = selectedRoles.onPrimaryContainer,
             secondary = LightSecondary,
             onSecondary = LightOnSecondary,
             secondaryContainer = LightSecondaryContainer,

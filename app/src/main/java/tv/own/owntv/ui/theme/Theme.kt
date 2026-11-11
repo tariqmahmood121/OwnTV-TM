@@ -114,7 +114,9 @@ fun OwnTVTheme(
 
     CompositionLocalProvider(
         LocalOwnTVColors provides colors,
-        LocalStagePalette provides if (useDark) StagePalette.Dark else StagePalette.Light,
+        LocalStagePalette provides if (!useDark) StagePalette.Light
+            else if (accent == AccentColor.VIOLET && customAccent.isBlank()) StagePalette.MovioPurple
+            else StagePalette.Dark,
         LocalThemeMode provides themeMode,
         LocalFocusBorderWidth provides focusBorderWidthDp.dp,
         LocalAnimationLevel provides animationLevel,
