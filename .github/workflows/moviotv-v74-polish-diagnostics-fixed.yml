@@ -1,0 +1,415 @@
+# Fixed V7.4 workflow. Upload to feature/moviotv-v7-polish/.github/workflows/
+name: MovioTV V7.4 - Polish and Diagnostics TEST FIXED
+'on':
+  push:
+    branches:
+    - feature/moviotv-v7-polish
+    paths:
+    - .github/workflows/moviotv-v74-polish-diagnostics-fixed.yml
+  workflow_dispatch: null
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v74-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v74-test:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-polish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION_CODE: '100011'
+      VERSION_NAME: '7.4'
+    steps:
+    - name: Checkout isolated V7.4 polish branch
+      uses: actions/checkout@v7
+      with:
+        ref: feature/moviotv-v7-polish
+        persist-credentials: true
+    - name: Apply V7.4 app improvements
+      shell: bash
+      run: |
+        set -euo pipefail
+        cat > /tmp/moviotv_v74_patch.py <<'V74_PATCH_SCRIPT'
+        """MovioTV V7.4 branch-only polish; run on feature/moviotv-v7-polish checkout."""
+        from pathlib import Path
+        ROOT=Path('app/src/main/java/tv/own/owntv')
+        FILES={
+         'mini':ROOT/'player/MiniPlayer.kt',
+         'shell':ROOT/'features/shell/OwnTVShell.kt',
+         'touch':ROOT/'features/home/MovioTouchBrowse.kt',
+         'vod':ROOT/'features/shell/components/VodStage.kt',
+         'movies':ROOT/'features/movies/MoviesScreen.kt',
+         'series':ROOT/'features/series/SeriesScreen.kt',
+         'profile':ROOT/'features/settings/ProfileSettingsRows.kt',
+         'status':ROOT/'features/shell/components/StageStatus.kt',
+         'source_test':ROOT/'features/settings/ManageSourcesScreen.kt',
+         'strings':Path('app/src/main/res/values/strings_moviotv.xml'),
+        }
+
+        def once(s, old, new, label):
+            if new in s:
+                print('Already applied:',label)
+                return s
+            count=s.count(old)
+            if count != 1:
+                raise SystemExit(f'{label}: expected one anchor, got {count}: {old[:120]!r}')
+            return s.replace(old,new,1)
+
+        def replace_n(s, old, new, n, label):
+            count=s.count(old)
+            if count!=n:
+                raise SystemExit(f'{label}: expected {n} anchors, got {count}: {old[:120]!r}')
+            return s.replace(old,new)
+
+        def read(n): return FILES[n].read_text(encoding='utf-8')
+        def write(n,s):
+            FILES[n].write_text(s,encoding='utf-8')
+            print('Updated',FILES[n])
+
+        # 1. Mini-player: whole video tap/OK expands; sidebar Now Playing expands directly.
+        s=read('mini')
+        s=once(s,'import androidx.compose.foundation.background\n',
+         'import androidx.compose.foundation.background\nimport androidx.compose.foundation.clickable\n','mini clickable import')
+        s=once(s,
+         '        // The pill carries eight tiles at full width. Below this the window cannot hold them without\n',
+         '''        // The video itself is an independent expand target (touch + TV remote focus).
+                // It is placed before the pill so individual pause/volume/window buttons still work.
+                Box(
+                    Modifier.matchParentSize()
+                        .then(entryFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                        .clickable(onClick = onExpand),
+                )
+                // The pill carries eight tiles at full width. Below this the window cannot hold them without
+        ''','mini surface expand target')
+        s=once(s,
+         '                modifier = entryFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,\n',
+         '                modifier = Modifier,\n', 'mini remove focus from pause')
+        write('mini',s)
+        s=read('shell')
+        s=once(s,'            PlayerMode.MINI -> runCatching { miniEntryFocus.requestFocus() }',
+                '            PlayerMode.MINI -> expandPlayer()', 'rail Now Playing immediate fullscreen')
+        # automatic provider diagnostic request, throttled and non-blocking. Existing SourceTester performs liveness checks.
+        s=once(s,
+         '    val dockedPlaying by dockedEngine.isPlaying.collectAsStateWithLifecycle()\n',
+         '''    val dockedPlaying by dockedEngine.isPlaying.collectAsStateWithLifecycle()
+            // V7.4: a failed video triggers one lightweight provider diagnostic, not a full catalogue refresh.
+            // Keep at least 60 seconds between probes to avoid spamming a struggling provider.
+            val v74TestVm: tv.own.owntv.features.settings.SettingsViewModel = org.koin.androidx.compose.koinViewModel()
+            val v74PlaybackError by player.error.collectAsStateWithLifecycle()
+            var v74LastProbeAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+            LaunchedEffect(v74PlaybackError) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (v74PlaybackError != null && (v74LastProbeAt == 0L || now - v74LastProbeAt > 60_000L)) {
+                    v74LastProbeAt = now
+                    v74TestVm.sources.value.firstOrNull()?.let { source -> v74TestVm.testSource(source) }
+                }
+            }
+            // Some hosts never send a player error: they simply leave the spinner running.
+            // After 15 seconds of genuine buffering, probe the provider once without cancelling playback.
+            val v74Buffering by player.buffering.collectAsStateWithLifecycle()
+            LaunchedEffect(v74Buffering, playerMode) {
+                if (v74Buffering && (playerMode == PlayerMode.FULLSCREEN || playerMode == PlayerMode.MINI)) {
+                    kotlinx.coroutines.delay(15_000L)
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (player.buffering.value && (v74LastProbeAt == 0L || now - v74LastProbeAt > 60_000L)) {
+                        v74LastProbeAt = now
+                        v74TestVm.sources.value.firstOrNull()?.let { source -> v74TestVm.testSource(source) }
+                    }
+                }
+            }
+        ''','automatic diagnosis after playback failure')
+        write('shell',s)
+
+        # 2. Mobile toolbar: real Sort filter (existing four modes), not just a search and categories button.
+        s=read('touch')
+        s=once(s,
+         '    onCategories: () -> Unit,\n    categories: @Composable (Modifier) -> Unit,\n    itemCount: Int,',
+         '    onCategories: () -> Unit,\n    categories: @Composable (Modifier) -> Unit,\n    onSort: () -> Unit,\n    itemCount: Int,', 'mobile poster toolbar sort callback')
+        # The shared search line appears twice (VOD and Live). Modify only the VOD toolbar.
+        touch_search = '                    MovioTouchSearch(query, onSearch, Modifier.weight(1f))\n'
+        if s.count(touch_search) != 2:
+            raise SystemExit(f'mobile search: expected two shared toolbar lines, got {s.count(touch_search)}')
+        s = s.replace(touch_search, '                    MovioTouchSearch(query, onSearch, Modifier.weight(1f))\n                    Spacer(Modifier.width(8.dp))\n                    Box(Modifier.clip(RoundedCornerShape(10.dp))\n                        .background(Color(0xFF50326D)).clickable(onClick = onSort)\n                        .padding(horizontal = 12.dp, vertical = 12.dp)) {\n                        Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp)\n                    }\n', 1)
+        print('Mobile filter added only to movies/series')
+        tablet_original = '            if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))'
+        if s.count(tablet_original) != 2:
+            raise SystemExit(f'tablet rail: expected two occurrences, found {s.count(tablet_original)}')
+        s = s.replace(tablet_original, """            if (tablet) MovioCategoryTextZoom(
+                        modifier = Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp),
+                    ) { categories(Modifier.fillMaxSize()) }""", 1)
+        write('touch',s)
+
+        # 3. Per-profile category label pinch zoom, preserving poster grid dimensions.
+        zoom_path=ROOT/'features/home/MovioCategoryTextZoom.kt'
+        zoom_path.write_text('''package tv.own.owntv.features.home
+
+        import android.content.Context
+        import androidx.compose.foundation.gestures.detectTransformGestures
+        import androidx.compose.foundation.layout.Box
+        import androidx.compose.runtime.Composable
+        import androidx.compose.runtime.CompositionLocalProvider
+        import androidx.compose.runtime.getValue
+        import androidx.compose.runtime.mutableFloatStateOf
+        import androidx.compose.runtime.remember
+        import androidx.compose.runtime.setValue
+        import androidx.compose.ui.Modifier
+        import androidx.compose.ui.input.pointer.pointerInput
+        import androidx.compose.ui.platform.LocalContext
+        import androidx.compose.ui.platform.LocalDensity
+        import androidx.compose.ui.unit.Density
+        import androidx.lifecycle.compose.collectAsStateWithLifecycle
+        import org.koin.androidx.compose.koinViewModel
+        import tv.own.owntv.features.profiles.ProfilesViewModel
+
+        /** Two-finger pinch changes ONLY the text density inside the category panel. */
+        @Composable
+        fun MovioCategoryTextZoom(
+            modifier: Modifier = Modifier,
+            enabled: Boolean = true,
+            content: @Composable () -> Unit,
+        ) {
+            val context = LocalContext.current
+            val profiles: ProfilesViewModel = koinViewModel()
+            val profileId by profiles.activeProfileId.collectAsStateWithLifecycle()
+            val key = "category_font_" + (profileId ?: -1L)
+            val prefs = remember(context) { context.getSharedPreferences("moviotv_category_fonts_v74", Context.MODE_PRIVATE) }
+            var zoom by remember(key) { mutableFloatStateOf(prefs.getFloat(key, 1f).coerceIn(1f, 1.85f)) }
+            val base = LocalDensity.current
+            Box(modifier.then(if (enabled) Modifier.pointerInput(key) {
+                detectTransformGestures { _, _, amount, _ ->
+                    val next = (zoom * amount).coerceIn(1f, 1.85f)
+                    if (kotlin.math.abs(next - zoom) >= 0.004f) {
+                        zoom = next
+                        prefs.edit().putFloat(key, next).apply()
+                    }
+                }
+            } else Modifier)) {
+                CompositionLocalProvider(LocalDensity provides Density(base.density, base.fontScale * zoom)) {
+                    content()
+                }
+            }
+        }
+        ''',encoding='utf-8')
+        print('Created',zoom_path)
+
+        # 4. Movie + series poster rating and release year as light overlays. No network metadata calls.
+        s=read('vod')
+        s=once(s,'import androidx.compose.ui.unit.Dp\n', 'import androidx.compose.ui.unit.Dp\nimport androidx.compose.ui.unit.sp\nimport androidx.compose.ui.text.font.FontWeight\n', 'poster badge imports')
+        s=once(s,
+         'internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)\n',
+         '''internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)
+
+        /** On-poster badge layout: bold top-left rating, soft-glass bottom-right release year. */
+        @Composable
+        internal fun VodPosterBadgedArt(
+            url: String?, placeholder: OwnTVIcon, rating: Double?, year: Int?, large: Boolean,
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                VodPosterArt(url, placeholder)
+                if (rating != null && rating > 0.0) {
+                    Text(
+                        "★ ${vodRating(rating)}", color = Color.White,
+                        fontSize = if (large) 17.sp else 13.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.mpx)
+                            .background(Color.Black.copy(alpha = 0.80f), RoundedCornerShape(6.mpx))
+                            .padding(horizontal = 6.mpx, vertical = 4.mpx),
+                    )
+                }
+                if (year != null && year in 1880..2200) {
+                    Text(
+                        year.toString(), color = Color.White,
+                        fontSize = if (large) 13.sp else 11.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 6.mpx, bottom = 11.mpx)
+                            // 70% transparent background; keep text solid for readability on bright posters.
+                            .background(Color.Black.copy(alpha = 0.30f), RoundedCornerShape(6.mpx))
+                            .padding(horizontal = 6.mpx, vertical = 3.mpx),
+                    )
+                }
+            }
+        }
+        ''','poster badges composable')
+        write('vod',s)
+        for key,entity,icon in [('movies','movie','MOVIES'),('series','show','SERIES')]:
+            s=read(key)
+            s=once(s,'import tv.own.owntv.features.shell.components.VodPosterArt\n',
+                   'import tv.own.owntv.features.shell.components.VodPosterArt\nimport tv.own.owntv.features.shell.components.VodPosterBadgedArt\n',key+' badge import')
+            needle='                onCategories = { categoriesOpen = true },\n                categories = { catModifier ->'
+            # Only touch poster browser: this anchor is unique per section.
+            s=once(s,needle,
+               '                onCategories = { categoriesOpen = true },\n                onSort = { sortOpen = true },\n                categories = { catModifier ->',key+' mobile sort wiring')
+            needle=f'    rating = {entity}.rating?.takeIf {{ it > 0 }}?.let(::vodRating),'
+            # All StagePoster positions (touch, cinematic, separate) include rating; no need to alter other detail cards.
+            actual=s.count(needle)
+            if actual<2 or actual>5:
+                raise SystemExit(f'{key}: unexpected StagePoster rating count {actual}')
+            s=s.replace(needle,'    rating = null,')
+            art=f'VodPosterArt(posterOf({entity}), OwnTVIcon.{icon})'
+            occurrences=s.count(art)
+            if occurrences<2 or occurrences>5:
+                raise SystemExit(f'{key}: unexpected poster content count {occurrences}')
+            s=s.replace(art,f'VodPosterBadgedArt(posterOf({entity}), OwnTVIcon.{icon}, {entity}.rating, {entity}.year, large = !touchUi)')
+            s=once(s,
+                  '        if (categoriesOpen) {\n            LiveCategories(',
+                  '''        if (categoriesOpen) {
+                    tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {
+                    LiveCategories(''',key+' sheet pinch wrapper start')
+            # End of if categoriesOpen block; unique anchor before sort menu on each screen.
+            s=once(s, '                    .fillMaxHeight(),\n            )\n        }\n    }\n\n    if (sortOpen) {', '                    .fillMaxHeight(),\n            )\n            }\n        }\n    }\n\n    if (sortOpen) {', key+' sheet pinch wrapper end')
+            s=once(s,
+              'x = if (cinematic) 470f else 880f, top = if (cinematic) 250.mpx else 186.mpx,',
+              'x = if (touchUi) 120f else if (cinematic) 470f else 880f, top = if (touchUi) 80.mpx else if (cinematic) 250.mpx else 186.mpx,',key+' mobile sort popup placement')
+            write(key,s)
+
+        # 5. Diagnostics: reuse the existing verified provider source tester; safe, fast, non-destructive.
+        s=read('profile')
+        s=once(s,'    var showVisualPicker by remember { mutableStateOf(false) }',
+        '''    var showDiagnostics by remember { mutableStateOf(false) }
+            val diagnosis by visualSettingsVm.sourceTest.collectAsStateWithLifecycle()
+            var showVisualPicker by remember { mutableStateOf(false) }''','profile diagnostic state')
+        s=once(s,
+         '''    // Device pairing and display preferences sit together in the personal dashboard.
+        ''',
+         '''    // A read-only provider/authentication check, plus device networking/VPN status in its report.
+            StageSettingRow(
+                icon = OwnTVIcon.INFO,
+                title = stringResource(R.string.moviotv_diagnostics_title),
+                desc = stringResource(R.string.moviotv_diagnostics_description),
+                value = null,
+                onClick = {
+                    if (currentSource == null) onOpenSources()
+                    else { showDiagnostics = true; visualSettingsVm.testSource(currentSource) }
+                },
+            )
+            if (showDiagnostics && diagnosis != null) {
+                SourceTestDialog(
+                    state = diagnosis!!,
+                    onDismiss = { showDiagnostics = false; visualSettingsVm.dismissSourceTest() },
+                )
+            }
+            // Device pairing and display preferences sit together in the personal dashboard.
+        ''','manual profile diagnostics')
+        write('profile',s)
+        # Enhance the same existing liveness report with network/VPN assessment; no probe of a stream unless requested.
+        s=read('source_test')
+        s=once(s, '        val line = tv.own.owntv.ui.theme.stageText(18, 500)\n        when (state) {', '        val line = tv.own.owntv.ui.theme.stageText(18, 500)\n        val cm = LocalContext.current.getSystemService(android.net.ConnectivityManager::class.java)\n        val capabilities = cm?.getNetworkCapabilities(cm.activeNetwork)\n        val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true\n        val usingVpn = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true\n        Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {\n            Text(stringResource(if (online) R.string.moviotv_diagnostics_internet_ok else R.string.moviotv_diagnostics_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)\n            Text(stringResource(if (usingVpn) R.string.moviotv_diagnostics_vpn_on else R.string.moviotv_diagnostics_vpn_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)\n            when (state) {', 'connection and vpn display')
+        s=once(s, '                if (ignoreLimit == true) {\n                    Text(stringResource(R.string.settings_sources_ignore_limit_on), style = tv.own.owntv.ui.theme.stageText(17, 500), color = tv.own.owntv.ui.theme.StageColors.Muted)\n                }\n            }\n        }\n    }\n}\n\n@Composable\nprivate fun SourceTestReport', '                if (ignoreLimit == true) {\n                    Text(stringResource(R.string.settings_sources_ignore_limit_on), style = tv.own.owntv.ui.theme.stageText(17, 500), color = tv.own.owntv.ui.theme.StageColors.Muted)\n                }\n            }\n        }\n        }\n    }\n}\n\n@Composable\nprivate fun SourceTestReport', 'close diagnostics info column')
+        write('source_test',s)
+
+        # 6. Status clock: avoid covering movie header on narrower screens.
+        s=read('status')
+        s=once(s,
+         '        StageClock(weatherInfo, weatherFahrenheit, clockColors)\n',
+         '        StageClock(weatherInfo, weatherFahrenheit, clockColors, compact = LocalConfiguration.current.screenWidthDp < 1100)\n',
+         'compact header clock invocation')
+        s=once(s,'fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColors) {',
+         'fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColors, compact: Boolean = false) {',
+         'compact header clock signature')
+        s=once(s,
+         'style = stageText(40, 700, (-0.5).mpxSp).copy(fontFeatureSettings = "tnum", shadow = shadow, lineHeight = 40.mpxSp),',
+         'style = stageText(if (compact) 26 else 40, 700, (-0.5).mpxSp).copy(fontFeatureSettings = "tnum", shadow = shadow, lineHeight = (if (compact) 28 else 40).mpxSp),',
+         'compact header time size')
+        s=once(s,
+         '            val sub: TextStyle = stageText(17, 400).copy(shadow = shadow)',
+         '            val sub: TextStyle = stageText(if (compact) 13 else 17, 400).copy(shadow = shadow)',
+         'compact header sub size')
+        write('status',s)
+
+        # 7. Resource strings and version.
+        s=read('strings')
+        s=once(s,'<string name="moviotv_version">v7.3</string>',
+               '<string name="moviotv_version">v7.4</string>','bump small version badge')
+        s=once(s,
+         '    <string name="moviotv_categories">☰  Categories</string>',
+         '''    <string name="moviotv_categories">☰  Categories</string>
+            <string name="moviotv_sort">Filter ▾</string>
+            <string name="moviotv_diagnostics_title">Streaming diagnostics</string>
+            <string name="moviotv_diagnostics_description">Check internet, VPN, provider and account connectivity</string>
+            <string name="moviotv_diagnostics_internet_ok">Internet: connected</string>
+            <string name="moviotv_diagnostics_internet_off">Internet: unavailable or limited</string>
+            <string name="moviotv_diagnostics_vpn_on">VPN: active</string>
+            <string name="moviotv_diagnostics_vpn_off">VPN: not detected (enable it if your provider requires one)</string>''', 'diagnostic and filter strings')
+        write('strings',s)
+        print('MovioTV V7.4 polish patch applied successfully')
+        V74_PATCH_SCRIPT
+        python3 /tmp/moviotv_v74_patch.py
+    - name: Verify strings and translations
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+    - name: Keep V7.4 test installation separate from working V7.3
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'V74_PACKAGE'
+        from pathlib import Path
+        p = Path('app/build.gradle.kts')
+        src = p.read_text(encoding='utf-8')
+        before='applicationIdSuffix = ".moviotv7"'
+        assert src.count(before)==1, 'Unexpected existing app package suffix. Refusing to overwrite baseline.'
+        p.write_text(src.replace(before, 'applicationIdSuffix = ".moviotv74"'), encoding='utf-8')
+        V74_PACKAGE
+    - name: Configure Java 25
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '25'
+    - name: Configure Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        packages: platform-tools
+    - name: Configure Gradle cache
+      uses: gradle/actions/setup-gradle@v6
+    - name: Run unit tests, lint and compile V7.4
+      shell: bash
+      run: |
+        set -euo pipefail
+        chmod +x ./gradlew
+        ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+    - name: Verify APK identity and branded version
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(app/build/outputs/apk/standard/debug/*.apk)
+        test "${#apks[@]}" -eq 1
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+        test -x "$aapt"
+        "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v74-badging.txt
+        grep -F "package: name='tv.own.owntv.moviotv74'" /tmp/moviotv-v74-badging.txt
+        grep -F "application-label:'MovioTV'" /tmp/moviotv-v74-badging.txt
+        grep -F "versionName='7.4'" /tmp/moviotv-v74-badging.txt
+        grep -F "versionCode='100011'" /tmp/moviotv-v74-badging.txt
+    - name: Upload isolated MovioTV V7.4 APK
+      uses: actions/upload-artifact@v7
+      with:
+        name: MovioTV-V7.4-Polish-Diagnostics-TEST-APK
+        path: app/build/outputs/apk/standard/debug/*.apk
+        if-no-files-found: error
+    - name: Save tested V7.4 Kotlin source to the polish branch only
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config user.name 'github-actions[bot]'
+        git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        git add app/src/main
+        if git diff --cached --quiet; then
+          echo 'V7.4 code already saved.'
+        else
+          git commit -m 'MovioTV V7.4: accessible posters, categories, mini-player and diagnostics'
+          git push origin HEAD:refs/heads/feature/moviotv-v7-polish
+        fi
+    - name: Upload build diagnostics on failure
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: MovioTV-V7.4-Build-Diagnostics
+        path: |
+          app/build/reports/tests/**
+          app/build/reports/lint-results-*.html
+          app/build/reports/lint-results-*.txt
+        if-no-files-found: warn
