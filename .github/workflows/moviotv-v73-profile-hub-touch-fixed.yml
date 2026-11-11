@@ -1,0 +1,362 @@
+# MovioTV V7.3 TEST — based on the verified V7.2 branch commit.
+# Safe isolated Android APK; main and the installed V7.2 test app are untouched.
+name: MovioTV V7.3 - personal profile hub and touch controls
+"on":
+  push:
+    branches:
+      - feature/moviotv-v7-themes
+    paths:
+      - .github/workflows/moviotv-v73-profile-hub-touch-fixed.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v73-profile-hub-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v73-test:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-themes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      VERSION_CODE: '100010'
+      VERSION_NAME: '7.3'
+    steps:
+      - name: Check out isolated features branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/moviotv-v7-themes
+          persist-credentials: true
+
+      - name: Apply V7.3 profile hub, source actions and touch More button
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v73_patch.py <<'V73_PATCH_PY'
+          from pathlib import Path
+
+          ROOT = Path('app/src/main/java/tv/own/owntv')
+          FILES = {
+              'shell': ROOT / 'features/shell/OwnTVShell.kt',
+              'touch': ROOT / 'features/home/MovioTouchBrowse.kt',
+              'settings': ROOT / 'features/shell/components/SettingsScreen.kt',
+              'profile': ROOT / 'features/settings/ProfileSettingsRows.kt',
+              'sources': ROOT / 'features/settings/ManageSourcesScreen.kt',
+              'strings': Path('app/src/main/res/values/strings_moviotv.xml'),
+          }
+
+          def once(s, old, new, label):
+              if new in s:
+                  print('Already applied:', label)
+                  return s
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected exactly one anchor, found {n}: {old[:100]!r}')
+              return s.replace(old, new, 1)
+
+          def save(name, new):
+              path = FILES[name]
+              old = path.read_text(encoding='utf-8')
+              if old != new:
+                  path.write_text(new, encoding='utf-8')
+                  print('Updated:', path)
+              else:
+                  print('No changes:', path)
+
+          # 1. Touch profile chip should open the actual profile hub rather than Who's watching.
+          s = FILES['shell'].read_text(encoding='utf-8')
+          s = once(s,
+              'onProfileClick = onSwitchProfile,',
+              '''onProfileClick = {
+                                           settingsStart = tv.own.owntv.features.shell.components.SettingsStart(
+                                               tv.own.owntv.features.shell.components.SettingsGroup.PROFILE.ordinal, false,
+                                           )
+                                           onSelectSection(MainSection.SETTINGS)
+                                       },''',
+              'Profile chip opens profile hub')
+          s = once(s,
+              'onOpenPlaylist = {},',
+              'onOpenPlaylist = {},\n                            onSwitchProfile = onSwitchProfile,',
+              'Settings can switch viewer')
+          save('shell', s)
+
+          # 2. More is a critical navigation item: never filter it out in touch mode.
+          s = FILES['touch'].read_text(encoding='utf-8')
+          s = once(s,
+              ').filter { it.first in visible || it.first == MainSection.HOME }',
+              ').filter { it.first in visible || it.first == MainSection.HOME || it.first == MainSection.MORE }',
+              'Permanent touch More tab')
+          save('touch', s)
+
+          # 3. Connect personal hub to the existing app's authenticated paths, keeping the source
+          #    editor, profile gate, and established Settings sections unchanged.
+          s = FILES['settings'].read_text(encoding='utf-8')
+          s = once(s,
+              '    onOpenPlaylist: () -> Unit,',
+              '    onOpenPlaylist: () -> Unit,\n    onSwitchProfile: () -> Unit = {},',
+              'Settings profile-gate callback')
+          s = once(s,
+              '''group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows(
+                              onOpenSync = { tab = SettingsTab.LOCAL_SYNC },
+                              onOpenSources = { tab = SettingsTab.SOURCES },
+                          )''',
+              '''group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows(
+                              onOpenSync = { tab = SettingsTab.LOCAL_SYNC },
+                              onOpenSources = { tab = SettingsTab.SOURCES },
+                              onOpenAppearance = { selectedGroup = SettingsGroup.APPEARANCE.ordinal },
+                              onOpenLayout = { selectedGroup = SettingsGroup.LAYOUT.ordinal },
+                              onOpenAllSettings = { onBack?.invoke() },
+                              onSwitchProfile = onSwitchProfile,
+                          )''',
+              'Profile hub navigation')
+          save('settings', s)
+
+          # 4. Profile hub: connected provider, direct *normal* refresh, paired sync, theme,
+          #    interface settings, full settings and a deliberate switch-viewer action.
+          s = FILES['profile'].read_text(encoding='utf-8')
+          s = once(s,
+              'internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () -> Unit = {}) {',
+              '''internal fun ProfileSettingsRows(
+              onOpenSync: () -> Unit = {},
+              onOpenSources: () -> Unit = {},
+              onOpenAppearance: () -> Unit = {},
+              onOpenLayout: () -> Unit = {},
+              onOpenAllSettings: () -> Unit = {},
+              onSwitchProfile: () -> Unit = {},
+          ) {''',
+              'Hub callbacks')
+          s = once(s,
+              '    val currentVisualPreset = if (visualAccent == AccentColor.VIOLET && visualCustom.isBlank()) "PURPLE" else "CLASSIC"',
+              '''    val currentVisualPreset = if (visualAccent == AccentColor.VIOLET && visualCustom.isBlank()) "PURPLE" else "CLASSIC"
+              val linkedSources by visualSettingsVm.sources.collectAsStateWithLifecycle()
+              val defaultSourceId by visualSettingsVm.defaultSourceId.collectAsStateWithLifecycle()
+              val currentSource = linkedSources.firstOrNull { it.id == defaultSourceId } ?: linkedSources.firstOrNull()
+              val sourceSyncFlow = remember(currentSource?.id) {
+                  currentSource?.let { visualSettingsVm.syncState(it.id) }
+                      ?: kotlinx.coroutines.flow.flowOf<tv.own.owntv.core.sync.work.CatalogSyncState>(
+                          tv.own.owntv.core.sync.work.CatalogSyncState.Idle
+                      )
+              }
+              val sourceSync by sourceSyncFlow.collectAsStateWithLifecycle(
+                  tv.own.owntv.core.sync.work.CatalogSyncState.Idle
+              )''',
+              'Observe linked source and refresh progress')
+          s = once(s,
+              '    // Use the app\'s existing, tested pairing and source resync pages; never erase library state.',
+              '''    // A visible account card and a real one-tap normal refresh for the current playlist.
+              // Clean resync is deliberately NOT used here: keep provider-shrink safeguards intact.
+              StageSettingRow(
+                  icon = OwnTVIcon.PLAYLIST,
+                  title = stringResource(R.string.moviotv_profile_source_title),
+                  desc = stringResource(R.string.moviotv_profile_source_desc),
+                  value = SettingValue.Choice(currentSource?.name ?: stringResource(R.string.moviotv_no_provider)),
+                  onClick = onOpenSources,
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.REFRESH,
+                  title = stringResource(R.string.moviotv_profile_sources_title),
+                  desc = if (sourceSync.isActive) stringResource(R.string.moviotv_profile_refresh_running)
+                      else stringResource(R.string.moviotv_profile_refresh_desc),
+                  value = null,
+                  onClick = {
+                      when {
+                          currentSource == null -> onOpenSources()
+                          sourceSync.isActive -> onOpenSources()
+                          else -> visualSettingsVm.resync(currentSource)
+                      }
+                  },
+              )
+              // Device pairing and display preferences sit together in the personal dashboard.''',
+              'Personal source card and real refresh')
+          s = once(s,
+              '''    StageSettingRow(
+                  icon = OwnTVIcon.REFRESH,
+                  title = stringResource(R.string.moviotv_profile_sources_title),
+                  desc = stringResource(R.string.moviotv_profile_sources_desc),
+                  value = null,
+                  onClick = onOpenSources,
+              )
+              profiles.forEach { p ->''',
+              '''    StageSettingRow(
+                  icon = OwnTVIcon.PALETTE,
+                  title = stringResource(R.string.moviotv_profile_gui_title),
+                  desc = stringResource(R.string.moviotv_profile_gui_desc),
+                  value = null,
+                  onClick = onOpenAppearance,
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.LIST_GRID,
+                  title = stringResource(R.string.moviotv_profile_layout_title),
+                  desc = stringResource(R.string.moviotv_profile_layout_desc),
+                  value = null,
+                  onClick = onOpenLayout,
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.SETTINGS,
+                  title = stringResource(R.string.moviotv_profile_all_settings_title),
+                  desc = stringResource(R.string.moviotv_profile_all_settings_desc),
+                  value = null,
+                  onClick = onOpenAllSettings,
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.PERSON,
+                  title = stringResource(R.string.moviotv_profile_switch_title),
+                  desc = stringResource(R.string.moviotv_profile_switch_desc),
+                  value = null,
+                  onClick = onSwitchProfile,
+              )
+              profiles.forEach { p ->''',
+              'Replace misleading shortcut with GUI and profile actions')
+          save('profile', s)
+
+          # 5. Fix the inactive Source row on touch. A tap should open accessible visible
+          #    actions, rather than only attempting D-pad focus on a hidden menu.
+          s = FILES['sources'].read_text(encoding='utf-8')
+          s = once(s,
+              '    val back = rowFocus ?: remember { FocusRequester() }',
+              '''    val touchMode = tv.own.owntv.features.home.LocalMovioTouchMode.current
+              var touchActionsOpen by remember { mutableStateOf(false) }
+              if (touchActionsOpen) {
+                  tv.own.owntv.ui.stage.StagePopup(
+                      onDismiss = { touchActionsOpen = false },
+                      title = source.name,
+                      body = stringResource(R.string.settings_playlists_description),
+                      buttons = {
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.common_cancel), onClick = { touchActionsOpen = false },
+                              height = 56.mpx, textSize = 19,
+                          )
+                      },
+                  ) {
+                      tv.own.owntv.ui.stage.StagePopupOption(
+                          title = stringResource(R.string.settings_sources_resync),
+                          onClick = { touchActionsOpen = false; onResync() },
+                          leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.REFRESH) },
+                      )
+                      tv.own.owntv.ui.stage.StagePopupOption(
+                          title = stringResource(R.string.settings_sources_edit),
+                          onClick = { touchActionsOpen = false; onEdit() },
+                          leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.PENCIL) },
+                      )
+                      tv.own.owntv.ui.stage.StagePopupOption(
+                          title = stringResource(R.string.settings_sources_info),
+                          onClick = { touchActionsOpen = false; onTest() },
+                          leading = { tv.own.owntv.ui.stage.StagePopupIcon(OwnTVIcon.INFO) },
+                      )
+                  }
+              }
+              val back = rowFocus ?: remember { FocusRequester() }''',
+              'Touch source action sheet')
+          s = once(s,
+              '        onClick = { runCatching { actionsFocus.requestFocus() } },',
+              '        onClick = { if (touchMode) touchActionsOpen = true else runCatching { actionsFocus.requestFocus() } },',
+              'Source row tap')
+          save('sources', s)
+
+          # 6. User-facing labels live in string resources so strict i18n remains enabled.
+          s = FILES['strings'].read_text(encoding='utf-8')
+          s = once(s,
+              '<string name="moviotv_version">v7.2</string>',
+              '<string name="moviotv_version">v7.3</string>',
+              'V7.3 version badge')
+          s = once(s,
+              '    <string name="moviotv_profile_sources_desc">Manage connections and safely resync channels, films and series</string>',
+              '''    <string name="moviotv_profile_sources_desc">Manage connections and safely resync channels, films and series</string>
+              <string name="moviotv_profile_source_title">Streaming account</string>
+              <string name="moviotv_profile_source_desc">View or manage your connected SmartTV provider</string>
+              <string name="moviotv_profile_refresh_desc">Tap to refresh live channels, movies and series without clearing history</string>
+              <string name="moviotv_profile_refresh_running">Refreshing now. Tap to view progress</string>
+              <string name="moviotv_profile_gui_title">GUI and appearance settings</string>
+              <string name="moviotv_profile_gui_desc">Colours, backgrounds, interface and text options</string>
+              <string name="moviotv_profile_layout_title">Layout and navigation</string>
+              <string name="moviotv_profile_layout_desc">Adjust touch, TV and browsing layout</string>
+              <string name="moviotv_profile_all_settings_title">More settings</string>
+              <string name="moviotv_profile_all_settings_desc">Open the complete settings menu</string>
+              <string name="moviotv_profile_switch_title">Switch profile</string>
+              <string name="moviotv_profile_switch_desc">Choose another viewer without changing this profile</string>''',
+              'Profile hub labels')
+          save('strings', s)
+          print('MovioTV V7.3 profile hub patch completed')
+          V73_PATCH_PY
+          python3 /tmp/moviotv_v73_patch.py
+
+      - name: Strict translation safety check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+
+      - name: Use separate V7.3 test install package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'V73_PACKAGE_PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          original = p.read_text(encoding='utf-8')
+          before = 'applicationIdSuffix = ".moviotv7"'
+          assert original.count(before) == 1, 'Unexpected package declaration; no safe overwrite'
+          p.write_text(original.replace(before, 'applicationIdSuffix = ".moviotv73"'), encoding='utf-8')
+          V73_PACKAGE_PY
+
+      - name: Configure Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+      - name: Run unit tests, full lint, compile and assemble
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify install package, branding and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v73-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv73'" /tmp/moviotv-v73-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v73-badging.txt
+          grep -F "versionName='7.3'" /tmp/moviotv-v73-badging.txt
+          grep -F "versionCode='100010'" /tmp/moviotv-v73-badging.txt
+      - name: Upload isolated MovioTV V7.3 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.3-Profile-Hub-Touch-Test-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+      - name: Save tested code to V7 themes feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main
+          if git diff --cached --quiet; then
+            echo 'V7.3 source already saved.'
+          else
+            git commit -m 'MovioTV V7.3: profile hub, safe refresh, touch navigation'
+            git push origin HEAD:refs/heads/feature/moviotv-v7-themes
+          fi
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.3-Build-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
