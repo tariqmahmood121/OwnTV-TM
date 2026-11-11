@@ -1,0 +1,296 @@
+# MovioTV V7.2 TEST ONLY. Upload to .github/workflows/ on feature/moviotv-v7-themes.
+# Builds separately installable test APK; does not modify main or the existing working app.
+name: MovioTV V7.2 - profile themes, sync and TV navigation LINT FIXED
+"on":
+  push:
+    branches:
+      - feature/moviotv-v7-themes
+    paths:
+      - .github/workflows/moviotv-v7-profile-sync-lint-fixed.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v72-profile-sync-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v72-test:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-themes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      VERSION_CODE: '100009'
+      VERSION_NAME: '7.2'
+    steps:
+      - name: Check out protected feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/moviotv-v7-themes
+          persist-credentials: true
+
+      - name: Apply MovioTV V7.2 improvements safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v72_patch.py <<'PATCH_PY'
+          from pathlib import Path
+
+          root = Path('app/src/main')
+          branch_files = {
+              'rail': root/'java/tv/own/owntv/features/shell/components/StageRail.kt',
+              'rows': root/'java/tv/own/owntv/features/settings/ProfileSettingsRows.kt',
+              'main': root/'java/tv/own/owntv/MainActivity.kt',
+              'screen': root/'java/tv/own/owntv/features/shell/components/SettingsScreen.kt',
+              'strings': root/'res/values/strings_moviotv.xml',
+          }
+          originals = {k: p.read_text(encoding='utf-8') for k,p in branch_files.items()}
+          changes = {}
+
+          def exactly_once(source, original, replacement, feature):
+              if replacement in source:
+                  print('Already applied:', feature)
+                  return source
+              count = source.count(original)
+              if count != 1:
+                  raise SystemExit(f'{feature}: expected 1 insertion point, found {count}; anchor={original[:120]!r}')
+              return source.replace(original, replacement, 1)
+
+          changes['rail'] = exactly_once(
+              originals['rail'],
+              '''/** The rail order: Search first, Sports then the Guide right after Live TV, More last. */
+          private val StageRailOrder = listOf(
+              MainSection.SEARCH, MainSection.HOME, MainSection.LIVE_TV, MainSection.SPORTS, MainSection.EPG,
+              MainSection.MOVIES, MainSection.SERIES, MainSection.DOWNLOADS,
+          )''',
+              '''/** MovioTV V7.2: compact, meaningful vector icons in the agreed viewing order. */
+          private val StageRailOrder = listOf(
+              MainSection.SEARCH, MainSection.HOME, MainSection.MOVIES, MainSection.SERIES,
+              MainSection.LIVE_TV, MainSection.SPORTS, MainSection.EPG, MainSection.DOWNLOADS,
+          )''', 'TV navigation order')
+
+          s = originals['rows']
+          s = exactly_once(s, 'import androidx.compose.ui.Modifier\n',
+                           'import androidx.compose.ui.Modifier\nimport androidx.compose.ui.platform.LocalContext\n', 'LocalContext import')
+          s = exactly_once(s, 'internal fun ProfileSettingsRows() {',
+                           'internal fun ProfileSettingsRows(onOpenSync: () -> Unit = {}, onOpenSources: () -> Unit = {}) {',
+                           'Profile callbacks')
+          s = exactly_once(s, '    val gateSession: ProfileGateSessionViewModel = koinViewModel()\n',
+                           '    val gateSession: ProfileGateSessionViewModel = koinViewModel()\n    val context = LocalContext.current\n',
+                           'Profile context')
+          s = exactly_once(s, '    profiles.forEach { p ->',
+              '''    // Use the app's existing, tested pairing and source resync pages; never erase library state.
+              StageSettingRow(
+                  icon = OwnTVIcon.BACKUP,
+                  title = stringResource(R.string.moviotv_profile_sync_title),
+                  desc = stringResource(R.string.moviotv_profile_sync_desc),
+                  value = null,
+                  onClick = onOpenSync,
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.REFRESH,
+                  title = stringResource(R.string.moviotv_profile_sources_title),
+                  desc = stringResource(R.string.moviotv_profile_sources_desc),
+                  value = null,
+                  onClick = onOpenSources,
+              )
+              profiles.forEach { p ->''', 'Profile sync shortcuts')
+          s = exactly_once(s,
+              '''                visualSettingsVm.setAccent(if (choice == "PURPLE") AccentColor.VIOLET else AccentColor.TEAL)
+                              showVisualPicker = false'''.replace('                    show', '                show'),
+              '''                visualSettingsVm.setAccent(if (choice == "PURPLE") AccentColor.VIOLET else AccentColor.TEAL)
+                              // Preference scoped to the active profile. Only visual choices are stored here.
+                              activeProfileId?.takeIf { it >= 0L }?.let { profileId ->
+                                  context.getSharedPreferences("moviotv_profile_theme_v72", android.content.Context.MODE_PRIVATE)
+                                      .edit().putString("profile_$profileId", choice).apply()
+                              }
+                              showVisualPicker = false'''.replace('                    ', '                '),
+              'Save per-profile palette')
+          changes['rows'] = s
+
+          changes['main'] = exactly_once(originals['main'],
+              '            val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()',
+              '''            val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+                          // Individual local appearance follows the selected profile on device switch.
+                          // Catalogue, PIN, stream credentials and watched progress are not modified.
+                          LaunchedEffect(activeProfileId) {
+                              val profileId = activeProfileId ?: return@LaunchedEffect
+                              if (profileId < 0L) return@LaunchedEffect
+                              val prefs = getSharedPreferences("moviotv_profile_theme_v72", MODE_PRIVATE)
+                              val preset = prefs.getString("profile_$profileId", "PURPLE")
+                              movioVisualSettings.setThemeMode(tv.own.owntv.core.theme.ThemeMode.DARK)
+                              movioVisualSettings.setCustomAccent("")
+                              movioVisualSettings.setFocusHighlight("")
+                              movioVisualSettings.setAccent(
+                                  if (preset == "CLASSIC") tv.own.owntv.core.theme.AccentColor.TEAL
+                                  else tv.own.owntv.core.theme.AccentColor.VIOLET
+                              )
+                          }'''.replace('\n                ', '\n            '),
+              'Restore palette on profile selection')
+
+          changes['screen'] = exactly_once(originals['screen'],
+              'group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows()',
+              '''group == SettingsGroup.PROFILE -> tv.own.owntv.features.settings.ProfileSettingsRows(
+                              onOpenSync = { tab = SettingsTab.LOCAL_SYNC },
+                              onOpenSources = { tab = SettingsTab.SOURCES },
+                          )'''.replace('                          ', '                    '),
+              'Profile navigation')
+
+          strings = originals['strings']
+          strings = exactly_once(strings,
+              '<string name="moviotv_visual_theme_desc">Choose a subtle theme for all screens and player controls</string>',
+              '<string name="moviotv_visual_theme_desc">Choose a theme for this profile across screens and player controls</string>',
+              'Profile-specific theme explanation')
+          strings = exactly_once(strings,
+              '    <string name="moviotv_classic_desc">Original dark design with turquoise controls</string>',
+              '''    <string name="moviotv_classic_desc">Original dark design with turquoise controls</string>
+                  <string name="moviotv_profile_sync_title">Sync with another device</string>
+                  <string name="moviotv_profile_sync_desc">Use PIN or QR pairing to transfer viewing data and settings</string>
+                  <string name="moviotv_profile_sources_title">Refresh streaming library</string>
+                  <string name="moviotv_profile_sources_desc">Manage connections and safely resync channels, films and series</string>'''.replace('                  ', '    '),
+              'Profile shortcut labels')
+          strings = exactly_once(strings, '<string name="moviotv_version">v7</string>',
+                                 '<string name="moviotv_version">v7.2</string>', 'Version label')
+          changes['strings'] = strings
+
+          for key, path in branch_files.items():
+              if changes[key] != originals[key]:
+                  path.write_text(changes[key], encoding='utf-8')
+                  print('Patched', path)
+              else:
+                  print('Already up-to-date', path)
+          PATCH_PY
+          python3 /tmp/moviotv_v72_patch.py
+          # Regression guard for the indentation problem caught by Android lint.
+          # A sibling LaunchedEffect must align with the activeProfileId declaration.
+          python3 - <<'V72_INDENT_CHECK'
+          from pathlib import Path
+          p = Path('app/src/main/java/tv/own/owntv/MainActivity.kt')
+          lines = p.read_text(encoding='utf-8').splitlines()
+          for i, line in enumerate(lines):
+              if 'val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()' in line:
+                  base = len(line) - len(line.lstrip())
+                  following = lines[i+1:i+20]
+                  effect = next((x for x in following if 'LaunchedEffect(activeProfileId) {' in x), None)
+                  if effect is None:
+                      raise SystemExit('V7.2 profile theme effect was not inserted')
+                  actual = len(effect) - len(effect.lstrip())
+                  if actual != base:
+                      raise SystemExit(f'V7.2 profile effect has wrong indent: expected {base}, got {actual}')
+                  print(f'Profile LaunchedEffect indentation verified: {actual} spaces')
+                  break
+          else:
+              raise SystemExit('Active profile declaration missing')
+          V72_INDENT_CHECK
+
+      - name: Register only technical preference identifiers for strict i18n check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'I18N_PY'
+          import runpy
+          checker = runpy.run_path('tools/i18n/check_hardcoded_strings.py')
+          inventory = checker['_inventory']()
+          safe, categories, errors = checker['_safe_entries']()
+          if errors:
+              raise SystemExit('Invalid i18n manifest: '+repr(errors))
+          baseline = checker['_parse'](checker['BASELINE'].read_text(encoding='utf-8'))
+          # No user-facing text is excepted: these are preference keys or internal enum values.
+          approved = [
+              # SharedPreferences and custom theme setter introduced blank strings in
+              # this Kotlin file. They are empty internal values, never visible labels.
+              ('app/src/main/java/tv/own/owntv/MainActivity.kt', '', 'empty'),
+              ('app/src/main/java/tv/own/owntv/MainActivity.kt', 'moviotv_profile_theme_v72', 'preference-key'),
+              ('app/src/main/java/tv/own/owntv/MainActivity.kt', 'profile_$profileId', 'preference-key'),
+              ('app/src/main/java/tv/own/owntv/MainActivity.kt', 'PURPLE', 'technical'),
+              ('app/src/main/java/tv/own/owntv/MainActivity.kt', 'CLASSIC', 'technical'),
+              ('app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt', 'moviotv_profile_theme_v72', 'preference-key'),
+              ('app/src/main/java/tv/own/owntv/features/settings/ProfileSettingsRows.kt', 'profile_$profileId', 'preference-key'),
+          ]
+          for path, value, category in approved:
+              key = (path, value)
+              actual = inventory.get(key, 0)
+              needed = max(0, actual - baseline.get(key, 0))
+              if needed > safe.get(key, 0):
+                  safe[key] = needed
+                  categories[key] = category
+                  print('Approved internal identifier:', path, repr(value), needed)
+          checker['SAFE_MANIFEST'].write_text(
+              checker['_serialize_safe']({key:(count,categories[key]) for key,count in safe.items()}),
+              encoding='utf-8')
+          I18N_PY
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+
+      - name: Use isolated V7.2 test package (not working V7 or V7.1 installation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PACKAGE_PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          original = 'applicationIdSuffix = ".moviotv7"'
+          assert s.count(original) == 1, 'Unexpected application package declaration'
+          p.write_text(s.replace(original, 'applicationIdSuffix = ".moviotv72"'), encoding='utf-8')
+          PACKAGE_PY
+
+      - name: Configure Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Unit tests, lint and compile isolated APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Validate V7.2 APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v72-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv72'" /tmp/moviotv-v72-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v72-badging.txt
+          grep -F "versionName='7.2'" /tmp/moviotv-v72-badging.txt
+          grep -F "versionCode='100009'" /tmp/moviotv-v72-badging.txt
+      - name: Upload isolated MovioTV V7.2 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.2-Profile-Themes-Sync-Test-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+      - name: Commit tested source back to feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main tools/i18n/safe_literals.txt
+          if git diff --cached --quiet; then
+            echo 'V7.2 source already committed.'
+          else
+            git commit -m 'MovioTV V7.2: profile theme persistence, local sync shortcuts, TV sidebar'
+            git push origin HEAD:refs/heads/feature/moviotv-v7-themes
+          fi
+      - name: Upload diagnostics if build fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioTV-V7.2-Build-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
