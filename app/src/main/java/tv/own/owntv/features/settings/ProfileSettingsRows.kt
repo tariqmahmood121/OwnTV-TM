@@ -82,6 +82,8 @@ internal fun ProfileSettingsRows(
     var showDiagnostics by remember { mutableStateOf(false) }
     val diagnosis by visualSettingsVm.sourceTest.collectAsStateWithLifecycle()
     var showVisualPicker by remember { mutableStateOf(false) }
+    var showRatingPicker by remember { mutableStateOf(false) }
+    val movioMovieOptions = tv.own.owntv.features.home.MovioMoviePrefs.get(context, activeProfileId)
     var editing by remember { mutableStateOf<ProfileEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<ProfileEntity?>(null) }
@@ -131,6 +133,34 @@ internal fun ProfileSettingsRows(
             title = stringResource(R.string.moviotv_visual_theme),
             text = stringResource(R.string.moviotv_visual_theme_desc),
         ),
+    )
+    // V7.7: per-profile poster and movie-opening behaviour.
+    StageSettingRow(
+        icon = OwnTVIcon.PALETTE,
+        title = stringResource(R.string.moviotv_rating_size_title),
+        desc = stringResource(R.string.moviotv_rating_size_desc),
+        value = SettingValue.Choice(stringResource(when (movioMovieOptions.ratingSize) {
+            "MEDIUM" -> R.string.moviotv_rating_medium
+            "LARGE" -> R.string.moviotv_rating_large
+            else -> R.string.moviotv_rating_small
+        })),
+        onClick = { showRatingPicker = true },
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.MOVIES,
+        title = stringResource(R.string.moviotv_show_movie_year),
+        desc = stringResource(R.string.moviotv_show_movie_year_desc),
+        value = SettingValue.Choice(stringResource(if (movioMovieOptions.showYear) R.string.common_on else R.string.common_off)),
+        onClick = { tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+            movioMovieOptions.copy(showYear = !movioMovieOptions.showYear)) },
+    )
+    StageSettingRow(
+        icon = OwnTVIcon.PLAY,
+        title = stringResource(R.string.moviotv_details_first),
+        desc = stringResource(R.string.moviotv_details_first_desc),
+        value = SettingValue.Choice(stringResource(if (movioMovieOptions.detailsFirst) R.string.common_on else R.string.common_off)),
+        onClick = { tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+            movioMovieOptions.copy(detailsFirst = !movioMovieOptions.detailsFirst)) },
     )
     // A visible account card and a real one-tap normal refresh for the current playlist.
     // Clean resync is deliberately NOT used here: keep provider-shrink safeguards intact.
@@ -273,6 +303,24 @@ internal fun ProfileSettingsRows(
                 "PURPLE" to stringResource(R.string.moviotv_purple_desc),
                 "CLASSIC" to stringResource(R.string.moviotv_classic_desc),
             ),
+        )
+    }
+
+    if (showRatingPicker) {
+        PickerDialog(
+            title = stringResource(R.string.moviotv_rating_size_title),
+            options = listOf(
+                "SMALL" to stringResource(R.string.moviotv_rating_small),
+                "MEDIUM" to stringResource(R.string.moviotv_rating_medium),
+                "LARGE" to stringResource(R.string.moviotv_rating_large),
+            ),
+            selected = movioMovieOptions.ratingSize,
+            onSelect = { selected ->
+                tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+                    movioMovieOptions.copy(ratingSize = selected))
+                showRatingPicker = false
+            },
+            onDismiss = { showRatingPicker = false },
         )
     }
 

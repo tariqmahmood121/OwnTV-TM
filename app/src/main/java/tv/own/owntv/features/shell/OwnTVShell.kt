@@ -751,24 +751,33 @@ fun OwnTVShell(
     val v76LatestSources by rememberUpdatedState(v76Sources)
     val v76PlaybackError by dockedEngine.error.collectAsStateWithLifecycle()
     val v76Buffering by dockedEngine.buffering.collectAsStateWithLifecycle()
+    val v77AutoTest by v76DiagnosticsVm.sourceTest.collectAsStateWithLifecycle()
+    var v77AutoDiagnosticVisible by remember { mutableStateOf(false) }
     val v76LastCheckBySource = remember { mutableMapOf<Long, Long>() }
     val v76CheckingLabel = stringResource(R.string.moviotv_diagnostics_title)
-    LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode) {
+    LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode, isOffline) {
         val sourceId = watchingSourceId ?: return@LaunchedEffect
         if (playerMode == PlayerMode.NONE || multiview != null) return@LaunchedEffect
-        if (v76PlaybackError == null && !v76Buffering) return@LaunchedEffect
-        kotlinx.coroutines.delay(12_000L)
+        if (!isOffline && v76PlaybackError == null && !v76Buffering) return@LaunchedEffect
+        kotlinx.coroutines.delay(10_000L)
         // If the stream recovered during the grace period, do nothing.
-        if (dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect
+        if (!isOffline && dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect
         val now = android.os.SystemClock.elapsedRealtime()
         val previous = v76LastCheckBySource[sourceId] ?: 0L
         if (previous != 0L && now - previous < 90_000L) return@LaunchedEffect
         val source = v76LatestSources.firstOrNull { it.id == sourceId } ?: return@LaunchedEffect
         v76LastCheckBySource[sourceId] = now
-        localSubToast.show(v76CheckingLabel)
+        v77AutoDiagnosticVisible = true
         // Existing source tester checks provider connectivity/auth without opening a
         // second playback stream or risking the currently playing session.
         v76DiagnosticsVm.testSource(source)
+    }
+    // If connectivity returns while the panel is visible, automatically re-check the source.
+    LaunchedEffect(isOffline, v77AutoDiagnosticVisible) {
+        if (!isOffline && v77AutoDiagnosticVisible && playerMode != PlayerMode.NONE) {
+            kotlinx.coroutines.delay(2_000L)
+            v76LatestSources.firstOrNull { it.id == watchingSourceId }?.let(v76DiagnosticsVm::testSource)
+        }
     }
     // Leaving the app while video plays can keep it going in a picture-in-picture window, which shows
     // the video alone. Coming back from the window always lands on full screen.
@@ -2107,6 +2116,16 @@ fun OwnTVShell(
         // Interrupted restore: the marker outlives the process, so if it's still set at launch
         // the last restore didn't complete. Acknowledging clears it.
         val restoreSettings = koinInject<tv.own.owntv.core.settings.SettingsRepository>()
+    // Persistent result panel. It can be dismissed explicitly; no vanishing toast.
+    if (v77AutoDiagnosticVisible && v77AutoTest != null && playerMode != PlayerMode.NONE) {
+        tv.own.owntv.features.settings.SourceTestDialog(
+            state = v77AutoTest!!,
+            onDismiss = { v77AutoDiagnosticVisible = false; v76DiagnosticsVm.dismissSourceTest() },
+            onRetest = v76LatestSources.firstOrNull { it.id == watchingSourceId }?.let { source ->
+                { v76DiagnosticsVm.testSource(source) }
+            },
+        )
+    }
     val incompleteRestore by restoreSettings.restoreInProgress.collectAsStateWithLifecycle(initialValue = null)
     var restoreNoticeDismissed by remember { mutableStateOf(false) }
     incompleteRestore?.takeIf { !restoreNoticeDismissed }?.let { description ->

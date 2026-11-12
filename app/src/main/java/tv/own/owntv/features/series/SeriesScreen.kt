@@ -261,6 +261,10 @@ private fun SeriesGrid(
     val selectedSeriesMeta by vm.selectedSeriesMeta.collectAsStateWithLifecycle()
     val metadataMode by vm.metadataMode.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val v77Profiles: tv.own.owntv.features.profiles.ProfilesViewModel = koinViewModel()
+    val v77ProfileId by v77Profiles.activeProfileId.collectAsStateWithLifecycle()
+    val v77MoviePrefs = tv.own.owntv.features.home.MovioMoviePrefs.get(context, v77ProfileId)
+    var v77DetailsFirstSeries by remember { mutableStateOf<Pair<tv.own.owntv.core.database.entity.SeriesEntity, Int>?>(null) }
     val toast = rememberInAppToast()
     val series = vm.series.collectAsLazyPagingItems()
     val moveState by vm.moveState.collectAsStateWithLifecycle()
@@ -671,10 +675,10 @@ private fun SeriesGrid(
                             rating = null,
                             width = width, height = width * 1.5f, compact = true,
                             progress = seriesProgress[show.id],
-                            onClick = { onOpenAt(index); vm.openSeries(show) },
+                            onClick = { if (v77MoviePrefs.detailsFirst) v77DetailsFirstSeries = show to index else { onOpenAt(index); vm.openSeries(show) } },
                             onLongClick = { openMenu(show, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onShowFocus(show) },
-                        ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
+                        ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                     }
                 },
             )
@@ -735,7 +739,7 @@ private fun SeriesGrid(
                                         rating = null,
                                         width = 196.mpx, height = 294.mpx,
                                         progress = seriesProgress[show.id],
-                                        onClick = { onOpenAt(index); vm.openSeries(show) },
+                                        onClick = { if (v77MoviePrefs.detailsFirst) v77DetailsFirstSeries = show to index else { onOpenAt(index); vm.openSeries(show) } },
                                         onLongClick = { openMenu(show, index) },
                                         modifier = Modifier
                                             .gridFocusTarget(
@@ -754,7 +758,7 @@ private fun SeriesGrid(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
+                                    ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                                 }
                             }
                         }
@@ -851,7 +855,7 @@ private fun SeriesGrid(
                                     placeholder = OwnTVIcon.SERIES,
                                     progress = seriesProgress[show.id],
                                     mark = playlistMarks[show.sourceId],
-                                    onClick = { onOpenAt(index); vm.openSeries(show) },
+                                    onClick = { if (v77MoviePrefs.detailsFirst) v77DetailsFirstSeries = show to index else { onOpenAt(index); vm.openSeries(show) } },
                                     onLongClick = { openMenu(show, index) },
                                     modifier = Modifier
                                         .gridFocusTarget(
@@ -900,7 +904,7 @@ private fun SeriesGrid(
                                     width = posterW, height = posterW * 1.5f,
                                     compact = true,
                                     progress = seriesProgress[show.id],
-                                    onClick = { onOpenAt(index); vm.openSeries(show) },
+                                    onClick = { if (v77MoviePrefs.detailsFirst) v77DetailsFirstSeries = show to index else { onOpenAt(index); vm.openSeries(show) } },
                                     onLongClick = { openMenu(show, index) },
                                     modifier = Modifier
                                         .gridFocusTarget(
@@ -913,7 +917,7 @@ private fun SeriesGrid(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(show, index); true } else false
                                         },
-                                ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
+                                ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                             }
                         }
                     }
@@ -1076,6 +1080,36 @@ private fun SeriesGrid(
         if (detailsSeries == null && contextSeriesId != null) {
             withFrameNanos { }
             runCatching { contextFocus.requestFocus() }
+        }
+    }
+    v77DetailsFirstSeries?.let { (show, index) ->
+        val cache = selectedSeriesMeta?.takeIf { it.seriesId == show.id }?.cache
+        val info = buildSeriesDetails(show, cache, metadataMode.tmdbWins)
+        tv.own.owntv.ui.stage.StagePopup(
+            onDismiss = { v77DetailsFirstSeries = null },
+            title = info.title, body = info.metaLine,
+            buttons = {
+                tv.own.owntv.ui.stage.StageButton(
+                    stringResource(R.string.moviotv_view_episodes),
+                    onClick = { v77DetailsFirstSeries = null; onOpenAt(index); vm.openSeries(show) },
+                    height = 56.mpx, textSize = 19, tinted = true,
+                )
+                tv.own.owntv.ui.stage.StageButton(stringResource(R.string.common_back),
+                    onClick = { v77DetailsFirstSeries = null }, height = 56.mpx, textSize = 19)
+            },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+                androidx.tv.material3.Text(
+                    info.plot?.takeIf { it.isNotBlank() } ?: stringResource(R.string.moviotv_movie_no_synopsis),
+                    style = tv.own.owntv.ui.theme.stageText(18, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Text,
+                )
+                if (info.cast.isNotEmpty()) androidx.tv.material3.Text(
+                    stringResource(R.string.moviotv_movie_credits, info.cast.take(12).joinToString(", ") { it.name }),
+                    style = tv.own.owntv.ui.theme.stageText(16, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Muted,
+                )
+            }
         }
     }
     detailsSeries?.let { s ->

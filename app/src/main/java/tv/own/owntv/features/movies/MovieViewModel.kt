@@ -87,6 +87,7 @@ import tv.own.owntv.core.live.serialize
 import tv.own.owntv.core.settings.SourceOverrides
 
 class MovieViewModel(
+    private val appContext: android.content.Context,
     private val movieDao: MovieDao,
     /** Lets the browse screen tell core's drain which category to fill first. */
     private val catalogPriority: tv.own.owntv.core.sync.CatalogPriority,
@@ -246,10 +247,15 @@ class MovieViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** List ordering for this section (Provider order vs A–Z), persisted in DataStore. */
+    private val _v77YearSort = MutableStateFlow(0)
+    val v77YearSort: StateFlow<Int> = _v77YearSort.asStateFlow()
+    fun setYearSortOrder(order: Int) { _v77YearSort.value = order.coerceIn(-1, 1) }
+
     val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortMovies
         .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.SortMode.ALPHA)
 
     fun setSort(mode: SettingsRepository.SortMode) {
+        _v77YearSort.value = 0
         viewModelScope.launch { settings.setSortMovies(mode) }
     }
 
@@ -441,6 +447,7 @@ class MovieViewModel(
     val movies: Flow<PagingData<MovieEntity>> = combine(
         _selected, ctx, _search.map { it.trim() }.debounce(300).distinctUntilChanged(), sortMode, _listRefresh,
     ) { key, c, query, sort, _ -> Args(key, c, query, sort) }
+        .combine(_v77YearSort) { args, order -> args.copy(yearSortOrder = order) }
         .combine(custResolved.filterNotNull()) { args, cs -> args to cs }
         // Rebuild the pager when a folder gains/loses manual order: the fast-path plain
         // PagingSource doesn't observe content_order, so the switch must recreate it.
@@ -449,7 +456,7 @@ class MovieViewModel(
             // Hidden items/categories are filtered on each fresh PagingData inside the pager chain —
             // a customization change re-creates the pager (same pattern as Live TV).
             Pager(PagingConfig(pageSize = 60, prefetchDistance = 30, initialLoadSize = 90, maxSize = 300)) {
-                pagingSource(args.key, args.ctx, args.query, args.sort)
+                pagingSource(args.key, args.ctx, args.query, args.sort, args.yearSortOrder)
             }.flow.map { paging ->
                 val cust = cs.cust
                 val movedFrom = cust.movedFromOrigin
@@ -469,7 +476,7 @@ class MovieViewModel(
         }
         .cachedIn(viewModelScope)
 
-    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode)
+    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode, val yearSortOrder: Int = 0)
 
     val count: StateFlow<Int> = combine(_selected, ctx, hiddenCategoryIds, sealedCategoryIds) { key, c, hidden, sealed -> countFlow(key, c, hidden, sealed) }
         .flatMapLatest { it.throttleLatest() } // Cap live COUNT re-runs during bulk sync
@@ -1015,7 +1022,11 @@ class MovieViewModel(
         }
     }
 
-    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode): PagingSource<Int, MovieEntity> {
+    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode, yearOrder: Int = 0): PagingSource<Int, MovieEntity> {
+        if (yearOrder != 0) return MovioYearMoviePagingSource(
+            context = appContext, dao = movieDao, sourceIds = c.sourceIds, profileId = c.profileId,
+            key = key, search = query, newestFirst = yearOrder > 0,
+        )
         val ids = c.sourceIds.ifEmpty { listOf(-1L) }
         val playlist = sort == SettingsRepository.SortMode.PLAYLIST
         val rating = sort == SettingsRepository.SortMode.RATING

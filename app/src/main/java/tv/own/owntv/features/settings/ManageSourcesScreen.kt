@@ -656,11 +656,26 @@ internal fun SourceTestDialog(
         val line = tv.own.owntv.ui.theme.stageText(18, 500)
         val cm = LocalContext.current.getSystemService(android.net.ConnectivityManager::class.java)
         val capabilities = cm?.getNetworkCapabilities(cm.activeNetwork)
-        val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val networkAvailable = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
         val usingVpn = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
         Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
-            Text(stringResource(if (online) R.string.moviotv_diagnostics_internet_ok else R.string.moviotv_diagnostics_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(if (networkAvailable) R.string.moviotv_diagnostics_step_device_ok else R.string.moviotv_diagnostics_step_device_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(if (online) R.string.moviotv_diagnostics_step_internet_ok else R.string.moviotv_diagnostics_step_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
             Text(stringResource(if (usingVpn) R.string.moviotv_diagnostics_vpn_on else R.string.moviotv_diagnostics_vpn_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(when {
+                !online -> R.string.moviotv_diagnostics_step_provider_pending
+                state !is SourceTestUi.Done -> R.string.moviotv_diagnostics_step_provider_running
+                state.result is SourceTestResult.Unreachable -> R.string.moviotv_diagnostics_step_provider_fail
+                else -> R.string.moviotv_diagnostics_step_provider_ok
+            }), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(when {
+                !online || state !is SourceTestUi.Done -> R.string.moviotv_diagnostics_step_account_pending
+                state.result is SourceTestResult.Ok -> R.string.moviotv_diagnostics_step_account_ok
+                state.result is SourceTestResult.AuthFailed || state.result is SourceTestResult.Expired -> R.string.moviotv_diagnostics_step_account_fail
+                else -> R.string.moviotv_diagnostics_step_account_pending
+            }), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(R.string.moviotv_diagnostics_step_playback), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
             when (state) {
             is SourceTestUi.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
                 OwnTVSpinner(sizeDp = 22)

@@ -69,13 +69,14 @@
 <string name="companion_saved_page_title">MovioTV \u2014 Sent</string>
 <string name="companion_edit_page_title">MovioTV \u2014 Edit source</string>
 <string name="companion_backup_page_title">MovioTV \u2014 Restore backup</string>
-<string name="companion_backup_description">Choose an MovioTV backup file (.own, or an older .json) and press Send. It is transferred to the TV \u2014 pick up the remote and choose what to restore there.</string>
+<string name="companion_backup_description">Choose a MovioTV backup file (.own, or an older .json) and press Send. It is transferred to the TV \u2014 pick up the remote and choose what to restore there.</string>
 <string name="companion_image_page_title">MovioTV \u2014 Background image</string>
 <string name="companion_download_page_title">MovioTV \u2014 Download backup</string>
-<string name="companion_download_description">Your TV has prepared an MovioTV backup file. Tap the button to save it to this device (owntv-backup.own). Keep it somewhere safe \u2014 you can restore from it later.</string>
+<string name="companion_download_description">Your TV has prepared a MovioTV backup file. Tap the button to save it to this device (moviotv-backup.own). Keep it somewhere safe \u2014 you can restore from it later.</string>
 <string name="local_sync_browser_title">MovioTV local sync</string>
 <string name="local_sync_browser_body">This address is for the MovioTV app on your other device. Open Local sync there and pick this device from the list.</string>
 <string name="setup_welcome_title">Welcome to MovioTV</string>
 <string name="setup_line_app_icon">How MovioTV appears on the TV’s home screen</string>
 <string name="setup_line_app_icon_mobile">How MovioTV appears on your home screen</string>
+<string name="app_name">MovioTV</string>
 </resources>

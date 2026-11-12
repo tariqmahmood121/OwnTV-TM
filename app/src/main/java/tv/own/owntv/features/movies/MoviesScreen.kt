@@ -193,6 +193,11 @@ fun MoviesScreen(
     var contextMovieSubs by remember { mutableStateOf<List<tv.own.owntv.core.database.dao.LinkedSubtitle>>(emptyList()) }
     var showDeleteSubs by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val v77Profiles: tv.own.owntv.features.profiles.ProfilesViewModel = koinViewModel()
+    val v77ProfileId by v77Profiles.activeProfileId.collectAsStateWithLifecycle()
+    val v77MoviePrefs = tv.own.owntv.features.home.MovioMoviePrefs.get(context, v77ProfileId)
+    LaunchedEffect(v77ProfileId, v77MoviePrefs.yearOrder) { vm.setYearSortOrder(v77MoviePrefs.yearOrder) }
+    var v77DetailsMovie by remember { mutableStateOf<MovieEntity?>(null) }
     val toast = rememberInAppToast()
     // Id + list position of the movie the context menu was opened on. The id re-focuses the same item
     // when it survives (Favourite/Download/Cancel); when the item is REMOVED (Remove from history, or
@@ -218,7 +223,7 @@ fun MoviesScreen(
     // Resume flow: AUTO continues silently, ASK prompts (≥10s saved), NEVER starts from zero.
     val scope = rememberCoroutineScope()
     var resumePrompt by remember { mutableStateOf<Pair<MovieEntity, Long>?>(null) }
-    val startMovie: (MovieEntity) -> Unit = { m ->
+    val actuallyStartMovie: (MovieEntity) -> Unit = { m ->
         scope.launch {
             val pos = vm.savedPositionMs(m)
             when {
@@ -227,6 +232,9 @@ fun MoviesScreen(
                 else -> { vm.play(m, 0); goFullscreen() }
             }
         }
+    }
+    val startMovie: (MovieEntity) -> Unit = { movie ->
+        if (v77MoviePrefs.detailsFirst) v77DetailsMovie = movie else actuallyStartMovie(movie)
     }
 
     val gridState = rememberLazyGridState()
@@ -603,7 +611,7 @@ fun MoviesScreen(
                             onClick = { startMovie(movie) },
                             onLongClick = { openMenu(movie, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
-                        ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
+                        ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                     }
                 },
             )
@@ -632,7 +640,7 @@ fun MoviesScreen(
                             modifier = Modifier.width(440.mpx).focusRequester(listSearchFocus).then(searchLeft),
                             onEditingChange = { searchEditing = it },
                         )
-                        VodSortTool(sortMode, Modifier.focusRequester(sortFocus)) { sortOpen = true }
+                        VodSortTool(sortMode, Modifier.focusRequester(sortFocus), yearSort = v77MoviePrefs.yearOrder) { sortOpen = true }
                         StageTool(text = stringResource(R.string.content_category_browser_title), icon = OwnTVIcon.LIST, onClick = { categoriesOpen = true })
                         Spacer(Modifier.weight(1f))
                         StageKeyHints(listOf(playHint, optionsHint, "◀" to stringResource(R.string.content_category_browser_title)))
@@ -686,7 +694,7 @@ fun MoviesScreen(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
+                                    ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                                 }
                             }
                         }
@@ -745,7 +753,7 @@ fun MoviesScreen(
                         modifier = Modifier.weight(1f).focusRequester(listSearchFocus).then(searchLeft),
                         onEditingChange = { searchEditing = it },
                     )
-                    StageTool(text = null, icon = OwnTVIcon.SORT, value = vodSortLabel(sortMode), trailingIcon = OwnTVIcon.CHEVRON_DOWN, onClick = { sortOpen = true }, modifier = Modifier.focusRequester(sortFocus))
+                    StageTool(text = null, icon = OwnTVIcon.SORT, value = when { v77MoviePrefs.yearOrder > 0 -> stringResource(R.string.moviotv_year_newest); v77MoviePrefs.yearOrder < 0 -> stringResource(R.string.moviotv_year_oldest); else -> vodSortLabel(sortMode) }, trailingIcon = OwnTVIcon.CHEVRON_DOWN, onClick = { sortOpen = true }, modifier = Modifier.focusRequester(sortFocus))
                     StageSegmented(
                         options = listOf(stringResource(R.string.settings_view_grid), stringResource(R.string.settings_view_list)),
                         selected = if (viewMode == SettingsRepository.VodViewMode.LIST) 1 else 0,
@@ -850,7 +858,7 @@ fun MoviesScreen(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(movie, index); true } else false
                                         },
-                                ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
+                                ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                             }
                         }
                     }
@@ -903,8 +911,16 @@ fun MoviesScreen(
         VodSortMenu(
             series = false, current = sortMode,
             x = if (touchUi) 120f else if (cinematic) 470f else 880f, top = if (touchUi) 80.mpx else if (cinematic) 250.mpx else 186.mpx,
-            onPick = vm::setSort,
+            onPick = { selected ->
+                tv.own.owntv.features.home.MovioMoviePrefs.save(context, v77ProfileId, v77MoviePrefs.copy(yearOrder = 0))
+                vm.setSort(selected)
+            },
             onDismiss = { sortOpen = false; runCatching { sortFocus.requestFocus() } },
+            yearSort = v77MoviePrefs.yearOrder,
+            onYearSort = { year ->
+                tv.own.owntv.features.home.MovioMoviePrefs.save(context, v77ProfileId, v77MoviePrefs.copy(yearOrder = year))
+                vm.setYearSortOrder(year)
+            },
         )
     }
 
@@ -973,7 +989,7 @@ fun MoviesScreen(
             }
             add(MenuAction("hide", stringResource(R.string.common_hide), OwnTVIcon.EYE_OFF, group = VodGroupOrganise) { vm.hideMovie(m); contextMovie = null })
             add(MenuAction("tmdb_details", stringResource(R.string.content_movie_details), OwnTVIcon.INFO, group = VodGroupDetails) {
-                if (cacheForM != null) { contextMovie = null; detailsMovie = m }
+                contextMovie = null; detailsMovie = m
             })
             // Update details and Set TMDB name: only while enrichment is on.
             if (metadataMode.enrich) {
@@ -1066,6 +1082,46 @@ fun MoviesScreen(
         if (detailsMovie == null && contextMovieId != null) {
             withFrameNanos { }
             runCatching { contextFocus.requestFocus() }
+        }
+    }
+
+    // V7.7 optional details-first page: always has a clearly focused Play action.
+    v77DetailsMovie?.let { movie ->
+        val cache = selectedMovieMeta?.takeIf { it.movieId == movie.id }?.cache
+        val info = buildMovieDetails(movie, cache, metadataMode.tmdbWins)
+        tv.own.owntv.ui.stage.StagePopup(
+            onDismiss = { v77DetailsMovie = null },
+            title = info.title,
+            body = info.metaLine,
+            buttons = {
+                tv.own.owntv.ui.stage.StageButton(
+                    stringResource(R.string.moviotv_play_movie),
+                    onClick = { v77DetailsMovie = null; actuallyStartMovie(movie) },
+                    height = 56.mpx, textSize = 19, tinted = true,
+                )
+                tv.own.owntv.ui.stage.StageButton(
+                    stringResource(R.string.common_back),
+                    onClick = { v77DetailsMovie = null }, height = 56.mpx, textSize = 19,
+                )
+            },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+                androidx.tv.material3.Text(
+                    info.plot?.takeIf { it.isNotBlank() } ?: stringResource(R.string.moviotv_movie_no_synopsis),
+                    style = tv.own.owntv.ui.theme.stageText(18, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Text,
+                )
+                if (info.genres.isNotEmpty()) androidx.tv.material3.Text(
+                    stringResource(R.string.moviotv_movie_genres, info.genres.joinToString(", ")),
+                    style = tv.own.owntv.ui.theme.stageText(16, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Muted,
+                )
+                if (info.cast.isNotEmpty()) androidx.tv.material3.Text(
+                    stringResource(R.string.moviotv_movie_credits, info.cast.take(12).joinToString(", ") { it.name }),
+                    style = tv.own.owntv.ui.theme.stageText(16, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Muted,
+                )
+            }
         }
     }
 

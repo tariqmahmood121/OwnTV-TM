@@ -138,6 +138,7 @@ internal fun vodReleaseYear(year: Int?, name: String): Int? =
 @Composable
 internal fun VodPosterBadgedArt(
     url: String?, placeholder: OwnTVIcon, rating: Double?, year: Int?, large: Boolean,
+    badgeSize: String = "SMALL", showYear: Boolean = true,
 ) {
     Box(Modifier.fillMaxSize()) {
         VodPosterArt(url, placeholder)
@@ -148,14 +149,14 @@ internal fun VodPosterBadgedArt(
                     withStyle(SpanStyle(color = Color(0xFFFFCC33))) { append(badgeLabel.take(1)) }
                     append(badgeLabel.drop(1))
                 }, color = Color.White,
-                fontSize = if (large) 17.sp else 13.sp, fontWeight = FontWeight.Bold,
+                fontSize = when (badgeSize) { "LARGE" -> if (large) 17.sp else 15.sp; "MEDIUM" -> if (large) 14.sp else 13.sp; else -> if (large) 11.sp else 10.sp }, fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.TopStart).padding(6.mpx)
                     .background(Color.Black.copy(alpha = 0.80f), RoundedCornerShape(6.mpx))
-                    .padding(horizontal = 6.mpx, vertical = 4.mpx),
+                    .padding(horizontal = if (badgeSize == "SMALL") 4.mpx else 6.mpx, vertical = if (badgeSize == "SMALL") 2.mpx else 4.mpx),
             )
         }
-        if (year != null && year in 1880..2200) {
+        if (showYear && year != null && year in 1880..2200) {
             Text(
                 year.toString(), color = Color.White,
                 fontSize = if (large) 13.sp else 11.sp, fontWeight = FontWeight.SemiBold,
@@ -517,8 +518,12 @@ internal fun vodSortLabel(mode: SortMode): String = stringResource(VodSorts.firs
 
 /** Cinematic's "Sort: **Date added** ▾" (the label from "Sort: %1$s", the order in full colour). */
 @Composable
-internal fun VodSortTool(mode: SortMode, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val label = vodSortLabel(mode)
+internal fun VodSortTool(mode: SortMode, modifier: Modifier = Modifier, yearSort: Int = 0, onClick: () -> Unit) {
+    val label = when {
+        yearSort > 0 -> stringResource(R.string.moviotv_year_newest)
+        yearSort < 0 -> stringResource(R.string.moviotv_year_oldest)
+        else -> vodSortLabel(mode)
+    }
     val full = stringResource(R.string.content_epg_sort_button, label)
     // Bold only the order when the language puts it last ("Sort: A–Z"); otherwise the whole phrase.
     val prefix = full.removeSuffix(label).trimEnd().takeIf { full.endsWith(label) && it.isNotBlank() }
@@ -530,7 +535,7 @@ internal fun VodSortTool(mode: SortMode, modifier: Modifier = Modifier, onClick:
 
 /** Sort: "Sort movies · Applies to every category in this section", 560 wide; ✓ on the current order. */
 @Composable
-internal fun VodSortMenu(series: Boolean, current: SortMode, x: Float, top: Dp, onPick: (SortMode) -> Unit, onDismiss: () -> Unit) {
+internal fun VodSortMenu(series: Boolean, current: SortMode, x: Float, top: Dp, onPick: (SortMode) -> Unit, onDismiss: () -> Unit, yearSort: Int = 0, onYearSort: ((Int) -> Unit)? = null) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     GuideMenuHost(x = x, top = top, width = 560.mpx, onDismiss = onDismiss) {
@@ -539,13 +544,22 @@ internal fun VodSortMenu(series: Boolean, current: SortMode, x: Float, top: Dp, 
             subtitle = stringResource(R.string.content_sort_applies_hint),
         )
         VodSorts.forEach { (mode, label, hint) ->
-            val on = mode == current
+            val on = mode == current && yearSort == 0
             StageMenuItem(
                 text = stringResource(label), icon = OwnTVIcon.SORT,
                 value = if (on) null else hint?.let { stringResource(it) }, checked = on,
                 onClick = { onPick(mode); onDismiss() },
                 modifier = if (on) Modifier.focusRequester(focus) else Modifier,
             )
+        }
+        if (!series && onYearSort != null) {
+            listOf(1 to R.string.moviotv_year_newest, -1 to R.string.moviotv_year_oldest).forEach { (order, label) ->
+                StageMenuItem(
+                    text = stringResource(label), icon = OwnTVIcon.SORT,
+                    checked = yearSort == order,
+                    onClick = { onYearSort(order); onDismiss() },
+                )
+            }
         }
     }
 }
