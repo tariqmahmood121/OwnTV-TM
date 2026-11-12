@@ -615,6 +615,7 @@ internal fun SourceTestDialog(
     /** The playlist's "Ignore connection limit"; null hides the button (no saved playlist). */
     ignoreLimit: Boolean? = null,
     onToggleIgnoreLimit: () -> Unit = {},
+    showHandoverAdvice: Boolean = false,
 ) {
     val focus = remember { FocusRequester() }
     // Keyed on *which* button carries the requester, not on first composition: while measuring it is
@@ -690,7 +691,19 @@ internal fun SourceTestDialog(
             }
             is SourceTestUi.Done -> Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
                 SourceTestReport(state.result, state.limit)
-                if (ignoreLimit == true) {
+                    val account = state.result as? SourceTestResult.Ok
+                    if (showHandoverAdvice && account != null && account.maxConnections > 0 &&
+                        account.activeConnections >= account.maxConnections) {
+                        Text(stringResource(R.string.moviotv_v78_limit_title),
+                            style = tv.own.owntv.ui.theme.stageText(20,700),
+                            color = tv.own.owntv.ui.theme.StageColors.Danger)
+                        Text(stringResource(R.string.moviotv_v78_limit_count,
+                                account.activeConnections,account.maxConnections),
+                            style = line,color = tv.own.owntv.ui.theme.StageColors.Muted)
+                        Text(stringResource(R.string.moviotv_v78_limit_advice),
+                            style = line,color = tv.own.owntv.ui.theme.StageColors.Muted)
+                    }
+                    if (ignoreLimit == true) {
                     Text(stringResource(R.string.settings_sources_ignore_limit_on), style = tv.own.owntv.ui.theme.stageText(17, 500), color = tv.own.owntv.ui.theme.StageColors.Muted)
                 }
             }

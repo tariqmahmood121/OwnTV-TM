@@ -602,6 +602,14 @@ class MovieViewModel(
      * Manual "Refetch TMDB details": clear this movie's cached match/details (incl. a 7-day
      * negative cache) and re-trigger [resolveMovie] for the focused movie via the meta-refresh tick.
      */
+    /** Deliberately fetch one film's provider details, not a new stream. */
+    internal suspend fun loadProviderVodDetails(movie: MovieEntity): MovioProviderVodInfo? {
+        val source = sourceDao.getById(movie.sourceId) ?: return null
+        return MovioProviderVodLookup.load(source, movie.remoteId.orEmpty())
+    }
+    suspend fun loadMovieDetailsMetadata(movie: MovieEntity):
+        tv.own.owntv.core.database.entity.MetadataCacheEntity? =
+        runCatching { metadata.resolveMovie(movie) }.getOrNull()
     fun refetchMovieMeta(movie: MovieEntity) {
         viewModelScope.launch {
             runCatching { metadata.clearMovie(movie) }

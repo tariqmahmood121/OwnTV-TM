@@ -228,6 +228,7 @@
 1	log	app/src/main/java/tv/own/owntv/features/movies/MovieViewModel.kt	saveProgressNow progress save failed movieId=${m.id} profile=$pid
 1	log	app/src/main/java/tv/own/owntv/features/movies/MovieViewModel.kt	stalker VOD reconnect resolve failed movieId=${movie.id}
 2	log	app/src/main/java/tv/own/owntv/features/movies/MovieViewModel.kt	stalker resolve failed movieId=${movie.id}
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	%.1f
 2	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	,
 2	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	delete_subtitles
 1	preference-key	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	download
@@ -246,6 +247,38 @@
 1	url	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	w1280
 1	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	·
 1	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	◀
+1	empty	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	\0
+1	url	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	$server/player_api.php?username=${q(user)}&password=${q(pass)}&action=get_vod_info&vod_id=${q(vodId)}
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	,
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	/player_api.php
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	0
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	:
+1	mime	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	Accept
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	UTF-8
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	actors
+1	mime	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	application/json
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	cast
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	description
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	director
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	duration
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	duration_seconds
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	duration_secs
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	genre
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	genres
+1	url	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	http://
+1	url	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	https://
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	info
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	movie_data
+1	technical	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	null
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	overview
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	plot
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	rating
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	rating_5based
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	releaseDate
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	release_date
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	releasedate
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	starring
+1	json	app/src/main/java/tv/own/owntv/features/movies/MovioProviderVodInfo.kt	storyline
 1	sql	app/src/main/java/tv/own/owntv/features/movies/MovioYearMoviePagingSource.kt	$year $order, name COLLATE NOCASE ASC, id ASC LIMIT ? OFFSET ?
 1	sql	app/src/main/java/tv/own/owntv/features/movies/MovioYearMoviePagingSource.kt	%$search%
 1	sql	app/src/main/java/tv/own/owntv/features/movies/MovioYearMoviePagingSource.kt	,

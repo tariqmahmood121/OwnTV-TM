@@ -198,6 +198,21 @@ fun MoviesScreen(
     val v77MoviePrefs = tv.own.owntv.features.home.MovioMoviePrefs.get(context, v77ProfileId)
     LaunchedEffect(v77ProfileId, v77MoviePrefs.yearOrder) { vm.setYearSortOrder(v77MoviePrefs.yearOrder) }
     var v77DetailsMovie by remember { mutableStateOf<MovieEntity?>(null) }
+    data class V78Info(
+        val id: Long,
+        val provider: MovioProviderVodInfo?,
+        val tmdb: tv.own.owntv.core.database.entity.MetadataCacheEntity?,
+        val complete: Boolean,
+    )
+    var v78Info by remember { mutableStateOf<V78Info?>(null) }
+    LaunchedEffect(v77DetailsMovie?.id) {
+        v78Info = null
+        val movie = v77DetailsMovie ?: return@LaunchedEffect
+        val provider = runCatching { vm.loadProviderVodDetails(movie) }.getOrNull()
+        v78Info = V78Info(movie.id, provider, null, complete = false)
+        val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
+        v78Info = V78Info(movie.id, provider, tmdb, complete = true)
+    }
     val toast = rememberInAppToast()
     // Id + list position of the movie the context menu was opened on. The id re-focuses the same item
     // when it survives (Favourite/Download/Cancel); when the item is REMOVED (Remove from history, or
@@ -1085,42 +1100,64 @@ fun MoviesScreen(
         }
     }
 
-    // V7.7 optional details-first page: always has a clearly focused Play action.
+    // V7.8: smaller details panel, provider get_vod_info plus cached TMDB fallback.
     v77DetailsMovie?.let { movie ->
-        val cache = selectedMovieMeta?.takeIf { it.movieId == movie.id }?.cache
-        val info = buildMovieDetails(movie, cache, metadataMode.tmdbWins)
+        val loaded=v78Info?.takeIf { it.id==movie.id }
+        val cache=loaded?.tmdb ?: selectedMovieMeta?.takeIf { it.movieId==movie.id }?.cache
+        val info=buildMovieDetails(movie,cache,metadataMode.tmdbWins)
+        val provider=loaded?.provider
+        val synopsis=info.plot?.takeIf { it.isNotBlank() } ?: provider?.synopsis
+        val genres=if(info.genres.isNotEmpty()) info.genres else provider?.genres.orEmpty()
+        val cast=if(info.cast.isNotEmpty()) info.cast.map { it.name } else provider?.cast.orEmpty()
+        val duration=if ((movie.durationSecs ?: 0) <= 0) provider?.durationSeconds?.let { secs ->
+            if (secs>=3600) stringResource(R.string.content_duration_hours,secs/3600,(secs%3600)/60)
+            else stringResource(R.string.content_duration_minutes,secs/60)
+        } else null
+        val rating=if ((movie.rating ?: 0.0) <= 0.0 && (cache?.rating ?: 0.0) <= 0.0)
+            provider?.rating?.let { stringResource(R.string.moviotv_v78_rating, "%.1f".format(java.util.Locale.US,it)) }
+        else null
+        val meta=listOfNotNull(info.metaLine.takeIf { it.isNotBlank() },rating,duration)
+            .joinToString(stringResource(R.string.content_metadata_separator))
         tv.own.owntv.ui.stage.StagePopup(
-            onDismiss = { v77DetailsMovie = null },
-            title = info.title,
-            body = info.metaLine,
-            buttons = {
+            onDismiss={v77DetailsMovie=null}, title=movie.name,
+            body=meta.takeIf { it.isNotBlank() }, width=690.mpx,
+            buttons={
                 tv.own.owntv.ui.stage.StageButton(
                     stringResource(R.string.moviotv_play_movie),
-                    onClick = { v77DetailsMovie = null; actuallyStartMovie(movie) },
-                    height = 56.mpx, textSize = 19, tinted = true,
-                )
+                    onClick={v77DetailsMovie=null; actuallyStartMovie(movie)},
+                    height=56.mpx,textSize=19,tinted=true)
                 tv.own.owntv.ui.stage.StageButton(
                     stringResource(R.string.common_back),
-                    onClick = { v77DetailsMovie = null }, height = 56.mpx, textSize = 19,
-                )
-            },
+                    onClick={v77DetailsMovie=null},height=56.mpx,textSize=19)
+            }
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+            Column(verticalArrangement=Arrangement.spacedBy(10.mpx)) {
                 androidx.tv.material3.Text(
-                    info.plot?.takeIf { it.isNotBlank() } ?: stringResource(R.string.moviotv_movie_no_synopsis),
-                    style = tv.own.owntv.ui.theme.stageText(18, 500),
-                    color = tv.own.owntv.ui.theme.StageColors.Text,
-                )
-                if (info.genres.isNotEmpty()) androidx.tv.material3.Text(
-                    stringResource(R.string.moviotv_movie_genres, info.genres.joinToString(", ")),
-                    style = tv.own.owntv.ui.theme.stageText(16, 500),
-                    color = tv.own.owntv.ui.theme.StageColors.Muted,
-                )
-                if (info.cast.isNotEmpty()) androidx.tv.material3.Text(
-                    stringResource(R.string.moviotv_movie_credits, info.cast.take(12).joinToString(", ") { it.name }),
-                    style = tv.own.owntv.ui.theme.stageText(16, 500),
-                    color = tv.own.owntv.ui.theme.StageColors.Muted,
-                )
+                    synopsis ?: stringResource(if (loaded?.complete == true)
+                        R.string.moviotv_movie_no_synopsis else R.string.moviotv_v78_loading),
+                    maxLines=4,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style=tv.own.owntv.ui.theme.stageText(18,500),
+                    color=tv.own.owntv.ui.theme.StageColors.Text)
+                provider?.releaseDate?.let { date ->
+                    androidx.tv.material3.Text(stringResource(R.string.moviotv_v78_released,date),
+                        style=tv.own.owntv.ui.theme.stageText(16,500),
+                        color=tv.own.owntv.ui.theme.StageColors.Muted)
+                }
+                if(genres.isNotEmpty()) androidx.tv.material3.Text(
+                    stringResource(R.string.moviotv_movie_genres,genres.joinToString(", ")),
+                    style=tv.own.owntv.ui.theme.stageText(16,500),
+                    color=tv.own.owntv.ui.theme.StageColors.Muted,maxLines=2,
+                    overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                provider?.director?.let { director ->
+                    androidx.tv.material3.Text(stringResource(R.string.moviotv_v78_director,director),
+                        style=tv.own.owntv.ui.theme.stageText(16,500),
+                        color=tv.own.owntv.ui.theme.StageColors.Muted)
+                }
+                if(cast.isNotEmpty()) androidx.tv.material3.Text(
+                    stringResource(R.string.moviotv_movie_credits,cast.take(8).joinToString(", ")),
+                    style=tv.own.owntv.ui.theme.stageText(16,500),
+                    color=tv.own.owntv.ui.theme.StageColors.Muted,maxLines=2,
+                    overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
     }

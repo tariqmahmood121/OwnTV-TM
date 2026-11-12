@@ -38,7 +38,7 @@
     <string name="moviotv_diagnostics_internet_off">Internet: unavailable or limited</string>
     <string name="moviotv_diagnostics_vpn_on">VPN: active</string>
     <string name="moviotv_diagnostics_vpn_off">VPN: not detected (enable it if your provider requires one)</string>
-    <string name="moviotv_version">v7.7</string>
+    <string name="moviotv_version">v7.8</string>
     <string name="moviotv_profile_label">PROFILE</string>
     <string name="moviotv_provider_label">PROVIDER</string>
     <string name="moviotv_manage_provider">Manage connection</string>
@@ -99,4 +99,11 @@
     <string name="moviotv_diagnostics_step_account_fail">5. Account: rejected or expired</string>
     <string name="moviotv_diagnostics_step_account_pending">5. Account: not yet checked</string>
     <string name="moviotv_diagnostics_step_playback">6. Playback: retry after network and account checks</string>
+    <string name="moviotv_v78_loading">Retrieving movie information…</string>
+    <string name="moviotv_v78_director">Director: %1$s</string>
+    <string name="moviotv_v78_released">Released: %1$s</string>
+    <string name="moviotv_v78_rating">★ %1$s</string>
+    <string name="moviotv_v78_limit_title">Streaming connection limit reached</string>
+    <string name="moviotv_v78_limit_count">Provider connections in use: %1$d / %2$d.</string>
+    <string name="moviotv_v78_limit_advice">Your current stream may be counted. If another device is playing, stop it and choose Re-test. Remote sign-out is not available for unrelated IPTV players.</string>
 </resources>

@@ -2120,6 +2120,7 @@ fun OwnTVShell(
     if (v77AutoDiagnosticVisible && v77AutoTest != null && playerMode != PlayerMode.NONE) {
         tv.own.owntv.features.settings.SourceTestDialog(
             state = v77AutoTest!!,
+            showHandoverAdvice = true,
             onDismiss = { v77AutoDiagnosticVisible = false; v76DiagnosticsVm.dismissSourceTest() },
             onRetest = v76LatestSources.firstOrNull { it.id == watchingSourceId }?.let { source ->
                 { v76DiagnosticsVm.testSource(source) }
