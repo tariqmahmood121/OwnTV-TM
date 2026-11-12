@@ -1,7 +1,10 @@
 /* MovioTV touch navigation and browsing surfaces. GPL-3.0, Created by ZIGGS. */
 package tv.own.owntv.features.home
 
+import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,7 +32,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.androidx.compose.koinViewModel
+import tv.own.owntv.features.profiles.ProfilesViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -122,6 +134,16 @@ fun MovioTouchPosterBrowser(
     poster: @Composable (Int, Dp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val profiles: ProfilesViewModel = koinViewModel()
+    val profileId by profiles.activeProfileId.collectAsStateWithLifecycle()
+    val posterZoomKey = "poster_zoom_" + (profileId ?: -1L) + "_" + title
+    val posterPrefs = remember(context) {
+        context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE)
+    }
+    var posterScale by remember(posterZoomKey) {
+        mutableFloatStateOf(posterPrefs.getFloat(posterZoomKey, 1f).coerceIn(0.60f, 2.30f))
+    }
     BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
         val tablet = maxWidth >= 700.dp && categoryEnabled
         val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
@@ -155,8 +177,24 @@ fun MovioTouchPosterBrowser(
                         Text(emptyText, color = pale, fontSize = 16.sp)
                     }
                 } else {
-                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                        val columns = ((maxWidth + 12.dp) / 158.dp).toInt().coerceIn(2, 6)
+                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)
+                        .pointerInput(posterZoomKey) {
+                            // Capture zoom from two fingers; never consume one-finger grid scrolling.
+                            awaitEachGesture {
+                                do {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.count { it.pressed } >= 2) {
+                                        val updated = (posterScale * event.calculateZoom()).coerceIn(0.60f, 2.30f)
+                                        if (kotlin.math.abs(updated - posterScale) > 0.003f) {
+                                            posterScale = updated
+                                            posterPrefs.edit().putFloat(posterZoomKey, updated).apply()
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        }) {
+                        val columns = ((maxWidth + 12.dp) / (150.dp * posterScale)).toInt().coerceIn(1, 6)
                         val posterWidth = (maxWidth - 12.dp * (columns - 1) - 8.dp) / columns
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(columns), state = gridState,

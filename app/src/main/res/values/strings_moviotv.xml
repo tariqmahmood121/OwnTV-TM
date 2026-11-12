@@ -38,7 +38,7 @@
     <string name="moviotv_diagnostics_internet_off">Internet: unavailable or limited</string>
     <string name="moviotv_diagnostics_vpn_on">VPN: active</string>
     <string name="moviotv_diagnostics_vpn_off">VPN: not detected (enable it if your provider requires one)</string>
-    <string name="moviotv_version">v7.4</string>
+    <string name="moviotv_version">v7.5</string>
     <string name="moviotv_profile_label">PROFILE</string>
     <string name="moviotv_provider_label">PROVIDER</string>
     <string name="moviotv_manage_provider">Manage connection</string>

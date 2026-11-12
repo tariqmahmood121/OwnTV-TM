@@ -11,6 +11,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import tv.own.owntv.features.shell.PlayerMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -262,6 +266,24 @@ open class MainActivity : ComponentActivity() {
             }
 
             val viewModel: ShellViewModel = koinViewModel()
+            // Default immersive viewing on phones/foldables. Restore system bars on exit.
+            // TV and picture-in-picture remain governed by Android.
+            val touchscreen = remember {
+                packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN) &&
+                    (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+                    android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+            }
+            val isImmersiveVideo = touchscreen && viewModel.playerMode.value == PlayerMode.FULLSCREEN &&
+                !isInPictureInPictureMode
+            LaunchedEffect(isImmersiveVideo, touchscreen) {
+                if (touchscreen) {
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    controller.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    if (isImmersiveVideo) controller.hide(WindowInsetsCompat.Type.systemBars())
+                    else controller.show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val accent by viewModel.accent.collectAsStateWithLifecycle()
             val customAccent by viewModel.customAccent.collectAsStateWithLifecycle()

@@ -126,6 +126,14 @@ internal data class VodTitleInfo(
 /** A rating as the design writes it: one decimal, in the user's number format ("8.4", "8,4"). */
 internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)
 
+// Never guess a release year. The provider year wins; otherwise use a year
+// explicitly trailing the title, as in "Example (2025)" or "Example - 2025".
+private val movioTrailingYear = Regex("""(?:\(|\[| - | )((?:19|20)\d{2})(?:\)|\]|$)""")
+internal fun vodReleaseYear(year: Int?, name: String): Int? =
+    year?.takeIf { it in 1880..2100 }
+        ?: movioTrailingYear.find(name)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1880..2100 }
+
+
 /** On-poster badge layout: bold top-left rating, soft-glass bottom-right release year. */
 @Composable
 internal fun VodPosterBadgedArt(
@@ -134,8 +142,12 @@ internal fun VodPosterBadgedArt(
     Box(Modifier.fillMaxSize()) {
         VodPosterArt(url, placeholder)
         if (rating != null && rating > 0.0) {
+            val badgeLabel = stringResource(R.string.moviotv_rating_badge, vodRating(rating))
             Text(
-                stringResource(R.string.moviotv_rating_badge, vodRating(rating)), color = Color.White,
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = Color(0xFFFFCC33))) { append(badgeLabel.take(1)) }
+                    append(badgeLabel.drop(1))
+                }, color = Color.White,
                 fontSize = if (large) 17.sp else 13.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.TopStart).padding(6.mpx)

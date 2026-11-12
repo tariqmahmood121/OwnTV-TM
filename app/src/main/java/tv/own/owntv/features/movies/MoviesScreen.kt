@@ -30,6 +30,7 @@ import tv.own.owntv.features.shell.components.VodListRow
 import tv.own.owntv.features.shell.components.VodOptionsMenu
 import tv.own.owntv.features.shell.components.VodPosterArt
 import tv.own.owntv.features.shell.components.VodPosterBadgedArt
+import tv.own.owntv.features.shell.components.vodReleaseYear
 import tv.own.owntv.features.shell.components.VodSortMenu
 import tv.own.owntv.features.shell.components.VodSortTool
 import tv.own.owntv.features.shell.components.VodStepper
@@ -602,7 +603,7 @@ fun MoviesScreen(
                             onClick = { startMovie(movie) },
                             onLongClick = { openMenu(movie, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
-                        ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
+                        ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
                     }
                 },
             )
@@ -685,7 +686,7 @@ fun MoviesScreen(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
+                                    ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
                                 }
                             }
                         }
@@ -849,7 +850,7 @@ fun MoviesScreen(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(movie, index); true } else false
                                         },
-                                ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
+                                ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi) }
                             }
                         }
                     }

@@ -4,6 +4,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -353,9 +355,12 @@ private fun RailEdgeGlow(modifier: Modifier) {
 /** The mark (50), with the wordmark beside it when the rail is open (`.brandrow`, 0 10 18 padding). */
 @Composable
 private fun ColumnScope.RailBrand(open: Boolean, namesAlpha: () -> Float) {
-    val icon = rememberAppliedIcon()
     if (!open) {
-        BrandMark(icon, 50.mpx, Modifier.padding(bottom = 12.mpx))
+        Image(
+            painter = painterResource(R.drawable.moviotv_launcher),
+            contentDescription = stringResource(R.string.moviotv_app_name),
+            modifier = Modifier.size(50.mpx).padding(bottom = 12.mpx),
+        )
         return
     }
     Row(
@@ -363,9 +368,15 @@ private fun ColumnScope.RailBrand(open: Boolean, namesAlpha: () -> Float) {
         horizontalArrangement = Arrangement.spacedBy(14.mpx),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BrandMark(icon, 50.mpx)
-        // The wordmark, 130 wide (`.brandrow`, `wordmarkC()`).
-        Box(Modifier.graphicsLayer { alpha = namesAlpha() }) { Wordmark(130.mpx) }
+        Image(
+            painter = painterResource(R.drawable.moviotv_launcher),
+            contentDescription = stringResource(R.string.moviotv_app_name),
+            modifier = Modifier.size(50.mpx),
+        )
+        Box(Modifier.graphicsLayer { alpha = namesAlpha() }) {
+            Text(stringResource(R.string.moviotv_app_name), style = stageText(22, 700),
+                color = Color.White, maxLines = 1)
+        }
     }
 }
 

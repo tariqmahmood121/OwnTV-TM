@@ -31,6 +31,7 @@ import tv.own.owntv.features.shell.components.VodListRow
 import tv.own.owntv.features.shell.components.VodOptionsMenu
 import tv.own.owntv.features.shell.components.VodPosterArt
 import tv.own.owntv.features.shell.components.VodPosterBadgedArt
+import tv.own.owntv.features.shell.components.vodReleaseYear
 import tv.own.owntv.features.shell.components.VodSortMenu
 import tv.own.owntv.features.shell.components.VodSortTool
 import tv.own.owntv.features.shell.components.VodStepper
@@ -673,7 +674,7 @@ private fun SeriesGrid(
                             onClick = { onOpenAt(index); vm.openSeries(show) },
                             onLongClick = { openMenu(show, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onShowFocus(show) },
-                        ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
+                        ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
                     }
                 },
             )
@@ -753,7 +754,7 @@ private fun SeriesGrid(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
+                                    ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
                                 }
                             }
                         }
@@ -912,7 +913,7 @@ private fun SeriesGrid(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(show, index); true } else false
                                         },
-                                ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
+                                ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, vodReleaseYear(show.year, show.name), large = !touchUi) }
                             }
                         }
                     }
