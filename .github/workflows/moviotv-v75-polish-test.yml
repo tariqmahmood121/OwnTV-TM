@@ -1,0 +1,271 @@
+# MovioTV V7.5 isolated test workflow. Upload to .github/workflows on feature/moviotv-v7-polish.
+# Protects the stable main branch and existing app package.
+name: MovioTV V7.5 - Immersive and Polish TEST
+"on":
+  push:
+    branches:
+      - feature/moviotv-v7-polish
+    paths:
+      - .github/workflows/moviotv-v75-polish-test.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  moviotv-v75:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-polish'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      VERSION_CODE: "100012"
+      VERSION_NAME: "7.5"
+    steps:
+      - name: Checkout isolated V7.5 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v7-polish
+          persist-credentials: true
+      - name: Apply V7.5 polish and isolated test package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v75_patch.py <<'V75_PATCH_PY'
+          from pathlib import Path
+
+          def patch(path, before, after, expected=1, replace_count=None):
+              p = Path(path)
+              value = p.read_text(encoding='utf-8')
+              count = value.count(before)
+              if count != expected:
+                  raise SystemExit(f'V7.5 source mismatch: {path} — {count} of {expected}: {before[:80]!r}')
+              p.write_text(value.replace(before, after, expected if replace_count is None else replace_count), encoding='utf-8')
+              print('Updated', path)
+
+          vod = 'app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt'
+          patch(vod,
+              'internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)',
+              '''internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)
+
+          // Never guess a release year. The provider year wins; otherwise use a year
+          // explicitly trailing the title, as in "Example (2025)" or "Example - 2025".
+          private val movioTrailingYear = Regex(\"\"\"(?:\\(|\\[| - | )((?:19|20)\\d{2})(?:\\)|\\]|$)\"\"\")
+          internal fun vodReleaseYear(year: Int?, name: String): Int? =
+              year?.takeIf { it in 1880..2100 }
+                  ?: movioTrailingYear.find(name)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1880..2100 }
+          ''')
+          patch(vod,
+              '''            Text(
+                          stringResource(R.string.moviotv_rating_badge, vodRating(rating)), color = Color.White,''',
+              '''            val badgeLabel = stringResource(R.string.moviotv_rating_badge, vodRating(rating))
+                      Text(
+                          buildAnnotatedString {
+                              withStyle(SpanStyle(color = Color(0xFFFFCC33))) { append(badgeLabel.take(1)) }
+                              append(badgeLabel.drop(1))
+                          }, color = Color.White,''')
+
+          for sub, entity in [('movies/MoviesScreen.kt', 'movie'), ('series/SeriesScreen.kt', 'show')]:
+              path = 'app/src/main/java/tv/own/owntv/features/' + sub
+              patch(path,
+                    'import tv.own.owntv.features.shell.components.VodPosterBadgedArt',
+                    'import tv.own.owntv.features.shell.components.VodPosterBadgedArt\nimport tv.own.owntv.features.shell.components.vodReleaseYear')
+              patch(path,
+                    f'{entity}.rating, {entity}.year, large = !touchUi)',
+                    f'{entity}.rating, vodReleaseYear({entity}.year, {entity}.name), large = !touchUi)', expected=3)
+
+          rail = 'app/src/main/java/tv/own/owntv/features/shell/components/StageRail.kt'
+          patch(rail, 'import androidx.compose.foundation.background',
+                'import androidx.compose.foundation.Image\nimport androidx.compose.foundation.background')
+          patch(rail, 'import androidx.compose.ui.res.stringResource',
+                'import androidx.compose.ui.res.painterResource\nimport androidx.compose.ui.res.stringResource')
+          patch(rail, '''    val icon = rememberAppliedIcon()
+              if (!open) {
+                  BrandMark(icon, 50.mpx, Modifier.padding(bottom = 12.mpx))
+                  return
+              }''',
+              '''    if (!open) {
+                  Image(
+                      painter = painterResource(R.drawable.moviotv_launcher),
+                      contentDescription = stringResource(R.string.moviotv_app_name),
+                      modifier = Modifier.size(50.mpx).padding(bottom = 12.mpx),
+                  )
+                  return
+              }''')
+          patch(rail,
+              '''        BrandMark(icon, 50.mpx)
+                  // The wordmark, 130 wide (`.brandrow`, `wordmarkC()`).
+                  Box(Modifier.graphicsLayer { alpha = namesAlpha() }) { Wordmark(130.mpx) }''',
+              '''        Image(
+                      painter = painterResource(R.drawable.moviotv_launcher),
+                      contentDescription = stringResource(R.string.moviotv_app_name),
+                      modifier = Modifier.size(50.mpx),
+                  )
+                  Box(Modifier.graphicsLayer { alpha = namesAlpha() }) {
+                      Text(stringResource(R.string.moviotv_app_name), style = stageText(22, 700),
+                          color = Color.White, maxLines = 1)
+                  }''')
+
+          touch = 'app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt'
+          patch(touch, 'import androidx.compose.foundation.ExperimentalFoundationApi',
+              '''import android.content.Context
+          import androidx.compose.foundation.ExperimentalFoundationApi
+          import androidx.compose.foundation.gestures.awaitEachGesture
+          import androidx.compose.foundation.gestures.calculateZoom''')
+          patch(touch, 'import androidx.compose.runtime.Composable',
+              '''import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableFloatStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue''')
+          patch(touch, 'import androidx.compose.ui.Alignment',
+              '''import androidx.compose.ui.Alignment
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.lifecycle.compose.collectAsStateWithLifecycle
+          import org.koin.androidx.compose.koinViewModel
+          import tv.own.owntv.features.profiles.ProfilesViewModel''')
+          patch(touch,
+              '''    BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
+                  val tablet = maxWidth >= 700.dp && categoryEnabled''',
+              '''    val context = LocalContext.current
+              val profiles: ProfilesViewModel = koinViewModel()
+              val profileId by profiles.activeProfileId.collectAsStateWithLifecycle()
+              val posterZoomKey = "poster_zoom_" + (profileId ?: -1L) + "_" + title
+              val posterPrefs = remember(context) {
+                  context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE)
+              }
+              var posterScale by remember(posterZoomKey) {
+                  mutableFloatStateOf(posterPrefs.getFloat(posterZoomKey, 1f).coerceIn(0.60f, 2.30f))
+              }
+              BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
+                  val tablet = maxWidth >= 700.dp && categoryEnabled''', expected=2, replace_count=1)
+          patch(touch,
+              '''                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                                  val columns = ((maxWidth + 12.dp) / 158.dp).toInt().coerceIn(2, 6)''',
+              '''                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)
+                                  .pointerInput(posterZoomKey) {
+                                      // Capture zoom from two fingers; never consume one-finger grid scrolling.
+                                      awaitEachGesture {
+                                          do {
+                                              val event = awaitPointerEvent()
+                                              if (event.changes.count { it.pressed } >= 2) {
+                                                  val updated = (posterScale * event.calculateZoom()).coerceIn(0.60f, 2.30f)
+                                                  if (kotlin.math.abs(updated - posterScale) > 0.003f) {
+                                                      posterScale = updated
+                                                      posterPrefs.edit().putFloat(posterZoomKey, updated).apply()
+                                                      event.changes.forEach { it.consume() }
+                                                  }
+                                              }
+                                          } while (event.changes.any { it.pressed })
+                                      }
+                                  }) {
+                                  val columns = ((maxWidth + 12.dp) / (150.dp * posterScale)).toInt().coerceIn(1, 6)''')
+
+          activity = 'app/src/main/java/tv/own/owntv/MainActivity.kt'
+          patch(activity,
+              'import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen',
+              '''import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+          import tv.own.owntv.features.shell.PlayerMode''')
+          patch(activity,
+              '''            val viewModel: ShellViewModel = koinViewModel()
+                      val themeMode''',
+              '''            val viewModel: ShellViewModel = koinViewModel()
+                      // Default immersive viewing on phones/foldables. Restore system bars on exit.
+                      // TV and picture-in-picture remain governed by Android.
+                      val touchscreen = remember {
+                          packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN) &&
+                              (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
+                              android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+                      }
+                      val isImmersiveVideo = touchscreen && viewModel.playerMode.value == PlayerMode.FULLSCREEN &&
+                          !isInPictureInPictureMode
+                      LaunchedEffect(isImmersiveVideo, touchscreen) {
+                          if (touchscreen) {
+                              val controller = WindowCompat.getInsetsController(window, window.decorView)
+                              controller.systemBarsBehavior =
+                                  WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                              if (isImmersiveVideo) controller.hide(WindowInsetsCompat.Type.systemBars())
+                              else controller.show(WindowInsetsCompat.Type.systemBars())
+                          }
+                      }
+                      val themeMode''')
+
+          strings = 'app/src/main/res/values/strings_moviotv.xml'
+          patch(strings, '<string name="moviotv_version">v7.4</string>',
+                '<string name="moviotv_version">v7.5</string>')
+          patch('app/build.gradle.kts', 'applicationIdSuffix = ".moviotv7"',
+                'applicationIdSuffix = ".moviotv75"')
+
+          safe = Path('tools/i18n/safe_literals.txt')
+          value = safe.read_text(encoding='utf-8')
+          for literal in ('poster_zoom_', 'moviotv_poster_grid_v75'):
+              entry = f'1\tpreference-key\t{touch}\t{literal}\n'
+              if entry not in value:
+                  value += entry
+          safe.write_text(value, encoding='utf-8')
+          print('MovioTV V7.5 improvements patched.')
+          V75_PATCH_PY
+          python3 /tmp/moviotv_v75_patch.py
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run unit tests, lint and build V7.5
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify MovioTV V7.5 APK package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v75-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv75'" /tmp/moviotv-v75-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v75-badging.txt
+          grep -F "versionName='7.5'" /tmp/moviotv-v75-badging.txt
+          grep -F "versionCode='100012'" /tmp/moviotv-v75-badging.txt
+      - name: Upload V7.5 test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.5-Immersive-Polish-TEST-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save compiled V7.5 changes to polish branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main/java/tv/own/owntv/MainActivity.kt app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt app/src/main/java/tv/own/owntv/features/shell/components/StageRail.kt app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt app/src/main/java/tv/own/owntv/features/series/SeriesScreen.kt app/src/main/res/values/strings_moviotv.xml tools/i18n/safe_literals.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'MovioTV V7.5: mobile poster pinch, year, stars, immersive player and TV branding'
+            git push origin HEAD:feature/moviotv-v7-polish
+          fi
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.5-Failure-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
