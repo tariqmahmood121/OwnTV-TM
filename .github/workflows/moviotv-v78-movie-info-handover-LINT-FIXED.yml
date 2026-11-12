@@ -1,0 +1,406 @@
+# Upload this single file to .github/workflows/moviotv-v78-movie-info-handover-LINT-FIXED.yml
+# on feature/moviotv-v77. Creates a separate V7.8 branch and APK after tests.
+name: MovioTV V7.8 - Movie Info and Diagnostics LINT FIXED
+'on':
+  push:
+    branches: [feature/moviotv-v77]
+    paths: [.github/workflows/moviotv-v78-movie-info-handover-LINT-FIXED.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v78-test
+  cancel-in-progress: false
+jobs:
+  build-v78:
+    if: github.ref == 'refs/heads/feature/moviotv-v77'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 70
+    env:
+      VERSION_CODE: '100015'
+      VERSION_NAME: '7.8'
+    steps:
+      - name: Check out protected V7.7 source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v77
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Work on separate V7.8 branch
+        run: git switch -c feature/moviotv-v78
+      - name: Apply small checked V7.8 app patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          R=Path('app/src/main/java/tv/own/owntv')
+          def patch(p, old, new):
+              p=Path(p)
+              s=p.read_text(encoding='utf8')
+              n=s.count(old)
+              if n!=1: raise SystemExit(f'SAFE PATCH FAILED: {p} expected 1 anchor, got {n}: {old[:80]!r}')
+              p.write_text(s.replace(old,new,1),encoding='utf8')
+              print('PATCHED',p)
+          patch('app/build.gradle.kts','applicationIdSuffix = ".moviotv77"','applicationIdSuffix = ".moviotv78"')
+          p=Path('app/src/main/res/values/strings_moviotv.xml')
+          s=p.read_text(encoding='utf8')
+          if s.count('<string name="moviotv_version">v7.7</string>')!=1: raise SystemExit('Wrong version source')
+          s=s.replace('<string name="moviotv_version">v7.7</string>','<string name="moviotv_version">v7.8</string>')
+          extra={
+            'moviotv_v78_loading':'Retrieving movie information…',
+            'moviotv_v78_director':'Director: %1$s',
+            'moviotv_v78_released':'Released: %1$s',
+            'moviotv_v78_rating':'★ %1$s',
+            'moviotv_v78_limit_title':'Streaming connection limit reached',
+            'moviotv_v78_limit_count':'Provider connections in use: %1$d / %2$d.',
+            'moviotv_v78_limit_advice':'Your current stream may be counted. If another device is playing, stop it and choose Re-test. Remote sign-out is not available for unrelated IPTV players.',
+          }
+          for k,v in extra.items():
+              if f'name="{k}"' in s: raise SystemExit('Duplicate string '+k)
+              s=s.replace('</resources>',f'    <string name="{k}">{v}</string>\n</resources>')
+          p.write_text(s,encoding='utf8')
+
+          # Read only metadata endpoint. Never log stored source credentials.
+          # No second playback connection is opened, preserving 1/1 accounts.
+          helper=r'''package tv.own.owntv.features.movies
+
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.ConcurrentHashMap
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import tv.own.owntv.core.database.entity.SourceEntity
+          import tv.own.owntv.core.model.SourceType
+
+          internal data class MovioProviderVodInfo(
+              val synopsis: String?,
+              val genres: List<String>,
+              val cast: List<String>,
+              val director: String?,
+              val releaseDate: String?,
+              val durationSeconds: Int?,
+              val rating: Double?,
+          )
+
+          internal object MovioProviderVodLookup {
+              private data class Cached(val at: Long, val value: MovioProviderVodInfo?)
+              private val cache = ConcurrentHashMap<String, Cached>()
+              suspend fun load(source: SourceEntity, vodId: String): MovioProviderVodInfo? {
+                  if (source.type != SourceType.XTREAM) return null
+                  val user = source.username.orEmpty()
+                  val pass = source.password.orEmpty()
+                  val server = source.url.trim().trimEnd('/').removeSuffix("/player_api.php")
+                  if (!(server.startsWith("https://", true) || server.startsWith("http://", true)) ||
+                      user.isBlank() || pass.isBlank() || vodId.isBlank()) return null
+                  val key = source.id.toString() + ":" + vodId
+                  val now = System.currentTimeMillis()
+                  cache[key]?.let {
+                      if (now - it.at < (if (it.value == null) 60_000L else 600_000L)) return it.value
+                  }
+                  val result = withContext(Dispatchers.IO) {
+                      runCatching {
+                          fun q(s: String) = URLEncoder.encode(s, "UTF-8")
+                          val endpoint = "$server/player_api.php?username=${q(user)}&password=${q(pass)}&action=get_vod_info&vod_id=${q(vodId)}"
+                          val connection = URL(endpoint).openConnection() as HttpURLConnection
+                          try {
+                              connection.connectTimeout = 5500
+                              connection.readTimeout = 5500
+                              connection.instanceFollowRedirects = false
+                              connection.setRequestProperty("Accept", "application/json")
+                              if (connection.responseCode !in 200..299) null
+                              else {
+                                  val payload = connection.inputStream.bufferedReader().use { reader ->
+                                      val buffer = CharArray(4096)
+                                      val text = StringBuilder()
+                                      while (text.length < 128_000) {
+                                          val n = reader.read(buffer, 0, minOf(buffer.size, 128_000-text.length))
+                                          if (n < 0) break
+                                          text.append(buffer, 0, n)
+                                      }
+                                      text.toString()
+                                  }
+                                  parse(payload)
+                              }
+                          } finally { connection.disconnect() }
+                      }.getOrNull()
+                  }
+                  if (cache.size > 600) cache.clear()
+                  cache[key] = Cached(now, result)
+                  return result
+              }
+              private fun parse(json: String): MovioProviderVodInfo? {
+                  val root=JSONObject(json)
+                  val info=root.optJSONObject("info")
+                  val data=root.optJSONObject("movie_data")
+                  fun field(vararg names: String): String? {
+                      for (obj in listOfNotNull(info,data,root)) for (name in names) {
+                          val v=obj.opt(name) ?: continue
+                          val text=when(v) {
+                              is JSONArray -> (0 until v.length()).joinToString(", ") { i -> v.optString(i) }
+                              is String, is Number -> v.toString()
+                              else -> ""
+                          }.trim()
+                          if (text.isNotEmpty() && !text.equals("null",true) && text!="0") return text
+                      }
+                      return null
+                  }
+                  fun names(raw: String?): List<String> = raw.orEmpty().split(',', ';', '|')
+                      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(10)
+                  val rawTime=field("duration_secs","duration_seconds","duration")
+                  val seconds=rawTime?.toIntOrNull()?.takeIf { it > 0 }
+                      ?: rawTime?.split(':')?.takeIf { it.size in 2..3 && it.all { s -> s.toIntOrNull()!=null } }
+                          ?.map { it.toInt() }?.fold(0) { a,v -> a*60+v }?.takeIf { it>0 }
+                  return MovioProviderVodInfo(
+                      synopsis=field("plot","description","overview","storyline"),
+                      genres=names(field("genre","genres")),
+                      cast=names(field("cast","actors","starring")),
+                      director=field("director"),
+                      releaseDate=field("releasedate","release_date","releaseDate"),
+                      durationSeconds=seconds,
+                      rating=field("rating","rating_5based")?.toDoubleOrNull()?.takeIf { it in 0.1..10.0 },
+                  )
+              }
+          }
+          '''
+          target=R/'features/movies/MovioProviderVodInfo.kt'
+          if target.exists(): raise SystemExit('Provider VOD file already exists; refusing overwrite')
+          target.write_text(helper,encoding='utf8')
+          vm=R/'features/movies/MovieViewModel.kt'
+          patch(vm,'    fun refetchMovieMeta(movie: MovieEntity) {', '''    /** Deliberately fetch one film's provider details, not a new stream. */
+              internal suspend fun loadProviderVodDetails(movie: MovieEntity): MovioProviderVodInfo? {
+                  val source = sourceDao.getById(movie.sourceId) ?: return null
+                  return MovioProviderVodLookup.load(source, movie.remoteId.orEmpty())
+              }
+              suspend fun loadMovieDetailsMetadata(movie: MovieEntity):
+                  tv.own.owntv.core.database.entity.MetadataCacheEntity? =
+                  runCatching { metadata.resolveMovie(movie) }.getOrNull()
+              fun refetchMovieMeta(movie: MovieEntity) {''')
+
+          screen=R/'features/movies/MoviesScreen.kt'
+          patch(screen,'    var v77DetailsMovie by remember { mutableStateOf<MovieEntity?>(null) }', '''    var v77DetailsMovie by remember { mutableStateOf<MovieEntity?>(null) }
+              data class V78Info(
+                  val id: Long,
+                  val provider: MovioProviderVodInfo?,
+                  val tmdb: tv.own.owntv.core.database.entity.MetadataCacheEntity?,
+                  val complete: Boolean,
+              )
+              var v78Info by remember { mutableStateOf<V78Info?>(null) }
+              LaunchedEffect(v77DetailsMovie?.id) {
+                  v78Info = null
+                  val movie = v77DetailsMovie ?: return@LaunchedEffect
+                  val provider = runCatching { vm.loadProviderVodDetails(movie) }.getOrNull()
+                  v78Info = V78Info(movie.id, provider, null, complete = false)
+                  val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
+                  v78Info = V78Info(movie.id, provider, tmdb, complete = true)
+              }''')
+          s=screen.read_text(encoding='utf8')
+          start='    // V7.7 optional details-first page: always has a clearly focused Play action.\n'
+          end='    // Windowed TMDB details popup — read-only, Back exits.\n'
+          if s.count(start)!=1 or s.count(end)!=1: raise SystemExit('Movie details block changed, refusing unsafe patch')
+          block='''    // V7.8: smaller details panel, provider get_vod_info plus cached TMDB fallback.
+              v77DetailsMovie?.let { movie ->
+                  val loaded=v78Info?.takeIf { it.id==movie.id }
+                  val cache=loaded?.tmdb ?: selectedMovieMeta?.takeIf { it.movieId==movie.id }?.cache
+                  val info=buildMovieDetails(movie,cache,metadataMode.tmdbWins)
+                  val provider=loaded?.provider
+                  val synopsis=info.plot?.takeIf { it.isNotBlank() } ?: provider?.synopsis
+                  val genres=if(info.genres.isNotEmpty()) info.genres else provider?.genres.orEmpty()
+                  val cast=if(info.cast.isNotEmpty()) info.cast.map { it.name } else provider?.cast.orEmpty()
+                  val duration=if ((movie.durationSecs ?: 0) <= 0) provider?.durationSeconds?.let { secs ->
+                      if (secs>=3600) stringResource(R.string.content_duration_hours,secs/3600,(secs%3600)/60)
+                      else stringResource(R.string.content_duration_minutes,secs/60)
+                  } else null
+                  val rating=if ((movie.rating ?: 0.0) <= 0.0 && (cache?.rating ?: 0.0) <= 0.0)
+                      provider?.rating?.let { stringResource(R.string.moviotv_v78_rating, "%.1f".format(java.util.Locale.US,it)) }
+                  else null
+                  val meta=listOfNotNull(info.metaLine.takeIf { it.isNotBlank() },rating,duration)
+                      .joinToString(stringResource(R.string.content_metadata_separator))
+                  tv.own.owntv.ui.stage.StagePopup(
+                      onDismiss={v77DetailsMovie=null}, title=movie.name,
+                      body=meta.takeIf { it.isNotBlank() }, width=690.mpx,
+                      buttons={
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.moviotv_play_movie),
+                              onClick={v77DetailsMovie=null; actuallyStartMovie(movie)},
+                              height=56.mpx,textSize=19,tinted=true)
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.common_back),
+                              onClick={v77DetailsMovie=null},height=56.mpx,textSize=19)
+                      }
+                  ) {
+                      Column(verticalArrangement=Arrangement.spacedBy(10.mpx)) {
+                          androidx.tv.material3.Text(
+                              synopsis ?: stringResource(if (loaded?.complete == true)
+                                  R.string.moviotv_movie_no_synopsis else R.string.moviotv_v78_loading),
+                              maxLines=4,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                              style=tv.own.owntv.ui.theme.stageText(18,500),
+                              color=tv.own.owntv.ui.theme.StageColors.Text)
+                          provider?.releaseDate?.let { date ->
+                              androidx.tv.material3.Text(stringResource(R.string.moviotv_v78_released,date),
+                                  style=tv.own.owntv.ui.theme.stageText(16,500),
+                                  color=tv.own.owntv.ui.theme.StageColors.Muted)
+                          }
+                          if(genres.isNotEmpty()) androidx.tv.material3.Text(
+                              stringResource(R.string.moviotv_movie_genres,genres.joinToString(", ")),
+                              style=tv.own.owntv.ui.theme.stageText(16,500),
+                              color=tv.own.owntv.ui.theme.StageColors.Muted,maxLines=2,
+                              overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                          provider?.director?.let { director ->
+                              androidx.tv.material3.Text(stringResource(R.string.moviotv_v78_director,director),
+                                  style=tv.own.owntv.ui.theme.stageText(16,500),
+                                  color=tv.own.owntv.ui.theme.StageColors.Muted)
+                          }
+                          if(cast.isNotEmpty()) androidx.tv.material3.Text(
+                              stringResource(R.string.moviotv_movie_credits,cast.take(8).joinToString(", ")),
+                              style=tv.own.owntv.ui.theme.stageText(16,500),
+                              color=tv.own.owntv.ui.theme.StageColors.Muted,maxLines=2,
+                              overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                      }
+                  }
+              }
+
+          '''
+          s=s[:s.index(start)]+block+s[s.index(end):]
+          screen.write_text(s,encoding='utf8')
+
+          # Confirm saturation ONLY when server reports active_cons >= max_connections.
+          # Current playback can count; don't pretend we can remotely log out another IPTV app.
+          settings=R/'features/settings/ManageSourcesScreen.kt'
+          patch(settings,'    onToggleIgnoreLimit: () -> Unit = {},\n) {',
+                '    onToggleIgnoreLimit: () -> Unit = {},\n    showHandoverAdvice: Boolean = false,\n) {')
+          patch(settings,'                SourceTestReport(state.result, state.limit)\n                if (ignoreLimit == true) {', '''                SourceTestReport(state.result, state.limit)
+                              val account = state.result as? SourceTestResult.Ok
+                              if (showHandoverAdvice && account != null && account.maxConnections > 0 &&
+                                  account.activeConnections >= account.maxConnections) {
+                                  Text(stringResource(R.string.moviotv_v78_limit_title),
+                                      style = tv.own.owntv.ui.theme.stageText(20,700),
+                                      color = tv.own.owntv.ui.theme.StageColors.Danger)
+                                  Text(stringResource(R.string.moviotv_v78_limit_count,
+                                          account.activeConnections,account.maxConnections),
+                                      style = line,color = tv.own.owntv.ui.theme.StageColors.Muted)
+                                  Text(stringResource(R.string.moviotv_v78_limit_advice),
+                                      style = line,color = tv.own.owntv.ui.theme.StageColors.Muted)
+                              }
+                              if (ignoreLimit == true) {''')
+          shell=R/'features/shell/OwnTVShell.kt'
+          patch(shell,'            state = v77AutoTest!!,\n            onDismiss =',
+                '            state = v77AutoTest!!,\n            showHandoverAdvice = true,\n            onDismiss =')
+          print('V7.8 application patch completed; source isolated from existing versions')
+          PY
+      - name: Classify reviewed technical literals without relaxing the translation check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import runpy
+          mod=runpy.run_path('tools/i18n/check_hardcoded_strings.py')
+          inventory=mod['_inventory']()
+          baseline_path=mod['BASELINE']
+          baseline=mod['_parse'](baseline_path.read_text(encoding='utf-8'))
+          safe,categories,errors=mod['_safe_entries']()
+          if errors: raise SystemExit('Invalid existing safe manifest: '+str(errors[:5]))
+          def category(path,literal):
+              # This whole file is a parser and network transport for IPTV protocol fields.
+              # It has no screen labels or user messages. Its strings are provider JSON
+              # keys, URL segments, HTTP headers and format delimiters.
+              if path.endswith('/features/movies/MovioProviderVodInfo.kt'):
+                  if literal in ('',): return 'empty'
+                  if literal.startswith(('http://','https://','$server/player_api.php')): return 'url'
+                  if literal in ('Accept','application/json'): return 'mime'
+                  if literal in ('info','movie_data','plot','description','overview','storyline',
+                      'genre','genres','cast','actors','starring','director','releasedate',
+                      'release_date','releaseDate','duration_secs','duration_seconds',
+                      'duration','rating','rating_5based'): return 'json'
+                  return 'technical'
+              # One Kotlin-only formatter was introduced in the compact movie screen.
+              if path.endswith('/features/movies/MoviesScreen.kt') and literal in ('%.1f',):
+                  return 'technical'
+              return None
+          changes=[]
+          pending=[]
+          for key,count in inventory.items():
+              existing=baseline.get(key,0)+safe.get(key,0)
+              if count<=existing: continue
+              path,literal=key
+              kind=category(path,literal)
+              if kind is None:
+                  pending.append((path,literal,count-existing))
+                  continue
+              safe[key]=max(0,count-baseline.get(key,0))
+              categories[key]=kind
+              changes.append((path,literal,kind))
+          if pending:
+              for p,v,n in pending[:25]: print('UNREVIEWED LITERAL',p,repr(v),n)
+              raise SystemExit('Unknown literals: refusing to weaken translation gate')
+          if not changes: raise SystemExit('No expected V7.8 technical literals found')
+          entries={key:(number,categories[key]) for key,number in safe.items()}
+          mod['SAFE_MANIFEST'].write_text(mod['_serialize_safe'](entries),encoding='utf-8')
+          if mod['_parse'](baseline_path.read_text(encoding='utf-8'))!=baseline:
+              raise SystemExit('Translation baseline changed unexpectedly')
+          print('Reviewed and classified',len(changes),'non-UI literals')
+          PY
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Test, lint and compile APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify isolated V7.8 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v78-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv78'" /tmp/moviotv-v78-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v78-badging.txt
+          grep -F "versionName='7.8'" /tmp/moviotv-v78-badging.txt
+          grep -F "versionCode='100015'" /tmp/moviotv-v78-badging.txt
+      - name: Upload V7.8 test APK for phone and TV
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.8-TEST-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
+      - name: Save compiled source ONLY on V7.8 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/i18n/safe_literals.txt app/build.gradle.kts app/src/main/res/values/strings_moviotv.xml app/src/main/java/tv/own/owntv/features/
+          git diff --cached --quiet && exit 0
+          git commit -m 'MovioTV V7.8 - on-demand VOD info and 1/1 diagnostics'
+          git push origin HEAD:refs/heads/feature/moviotv-v78
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.8-Compile-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
