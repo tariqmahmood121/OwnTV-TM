@@ -1,0 +1,618 @@
+# MovioTV V7.7 — isolated test build. Upload ONLY this file to the path below
+# .github/workflows/moviotv-v77-build-fixed.yml on feature/moviotv-v76.
+# Does NOT modify main, V7.5 or V7.6. Do not merge it until tested on phone and TV.
+name: MovioTV V7.7 - Details Ratings Year Sort Diagnostics FIXED
+'on':
+  push:
+    branches:
+      - feature/moviotv-v76
+    paths:
+      - .github/workflows/moviotv-v77-build-fixed.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v77-fixed-test-build
+  cancel-in-progress: false
+jobs:
+  build-v77:
+    if: github.ref == 'refs/heads/feature/moviotv-v76'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 70
+    env:
+      VERSION_CODE: '100014'
+      VERSION_NAME: '7.7'
+    steps:
+      - name: Check out V7.6 source (protected reference)
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v76
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Work on separate V7.7 test branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch -c feature/moviotv-v77
+      - name: Apply tightly checked V7.7 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          ROOT = Path('app/src/main/java/tv/own/owntv')
+
+          def patch(path, before, after, n=1):
+              p=Path(path)
+              s=p.read_text(encoding='utf-8')
+              hits=s.count(before)
+              if hits!=n: raise SystemExit(f'V7.7 safe-patch FAILED {path}: expected {n} anchors, got {hits}: {before[:100]!r}')
+              p.write_text(s.replace(before,after,n),encoding='utf-8')
+              print('PATCH',path,'(',n,')')
+
+          def add_resource(path, values):
+              p=Path(path)
+              s=p.read_text(encoding='utf-8')
+              for key, value in values.items():
+                  if re.search(r'<string name="'+re.escape(key)+r'"',s):
+                      raise SystemExit('V7.7 attempted duplicate resource: '+key)
+                  # XML text already escaped by caller
+                  s=s.replace('</resources>',f'    <string name="{key}">{value}</string>\n</resources>')
+              p.write_text(s,encoding='utf-8')
+
+          # V7.7 always installs side by side and never overwrites protected V7.5/V7.6.
+          patch('app/build.gradle.kts','applicationIdSuffix = ".moviotv76"','applicationIdSuffix = ".moviotv77"')
+          patch('app/src/main/res/values/strings_moviotv.xml','<string name="moviotv_version">v7.6</string>','<string name="moviotv_version">v7.7</string>')
+
+          # The companion browser's big header is R.string.app_name inside the published Core dependency.
+          # Overriding the app_name resource, not changing protocol names or backup extensions, fixes all
+          # browser modes (PIN, add/edit source, remote backup, images, sync), without forking Core.
+          core_brands=Path('app/src/main/res/values/strings_moviotv_core_brand.xml')
+          brands=core_brands.read_text(encoding='utf-8')
+          if '<string name="app_name">' not in brands:
+              brands=brands.replace('</resources>','<string name="app_name">MovioTV</string>\n</resources>')
+          brands=brands.replace('Choose an MovioTV backup file','Choose a MovioTV backup file')
+          brands=brands.replace('prepared an MovioTV backup file','prepared a MovioTV backup file')
+          brands=brands.replace('owntv-backup.own','moviotv-backup.own')
+          core_brands.write_text(brands,encoding='utf-8')
+
+          add_resource('app/src/main/res/values/strings_moviotv.xml',{
+              'moviotv_rating_size_title':'Movie rating size',
+              'moviotv_rating_size_desc':'Size of yellow star ratings on posters',
+              'moviotv_rating_small':'Small',
+              'moviotv_rating_medium':'Medium',
+              'moviotv_rating_large':'Large',
+              'moviotv_show_movie_year':'Show release year',
+              'moviotv_show_movie_year_desc':'Display the year on posters (on by default)',
+              'moviotv_details_first':'Open details before playing',
+              'moviotv_details_first_desc':'Show synopsis and credits before Play (off by default)',
+              'moviotv_year_newest':'Release year: newest first',
+              'moviotv_year_oldest':'Release year: oldest first',
+              'moviotv_play_movie':'Play movie',
+              'moviotv_view_episodes':'View episodes',
+              'moviotv_movie_credits':'Cast: %1$s',
+              'moviotv_movie_genres':'Genres: %1$s',
+              'moviotv_movie_no_synopsis':'No description is available for this title.',
+              'moviotv_diagnostics_step_device_ok':'1. Device network: connected',
+              'moviotv_diagnostics_step_device_off':'1. Device network: disconnected',
+              'moviotv_diagnostics_step_internet_ok':'2. Internet access: verified',
+              'moviotv_diagnostics_step_internet_off':'2. Internet access: unavailable or limited',
+              'moviotv_diagnostics_step_provider_running':'4. Provider connection: checking…',
+              'moviotv_diagnostics_step_provider_ok':'4. Provider connection: reachable',
+              'moviotv_diagnostics_step_provider_fail':'4. Provider connection: cannot reach server (DNS, routing or server issue)',
+              'moviotv_diagnostics_step_provider_pending':'4. Provider connection: waiting for internet',
+              'moviotv_diagnostics_step_account_ok':'5. Account: accepted by provider',
+              'moviotv_diagnostics_step_account_fail':'5. Account: rejected or expired',
+              'moviotv_diagnostics_step_account_pending':'5. Account: not yet checked',
+              'moviotv_diagnostics_step_playback':'6. Playback: retry after network and account checks',
+          })
+
+          # Profile-scoped appearance & playback preferences. Compose state map updates every visible
+          # poster immediately; durable SharedPreferences mean they're retained after restarts.
+          pref_code=r'''package tv.own.owntv.features.home
+
+          import android.content.Context
+          import androidx.compose.runtime.mutableStateMapOf
+
+          data class MovioMovieOptions(
+              val ratingSize: String = "SMALL",
+              val showYear: Boolean = true,
+              val detailsFirst: Boolean = false,
+              val yearOrder: Int = 0,
+          )
+
+          object MovioMoviePrefs {
+              private val states = mutableStateMapOf<Long, MovioMovieOptions>()
+              private fun store(context: Context) = context.getSharedPreferences("moviotv_movie_options_v77", Context.MODE_PRIVATE)
+              fun get(context: Context, profileId: Long?): MovioMovieOptions {
+                  val id = profileId ?: -1L
+                  return states.getOrPut(id) {
+                      val p=store(context)
+                      MovioMovieOptions(
+                          ratingSize = p.getString("rating_$id", "SMALL")?.takeIf { it in listOf("SMALL", "MEDIUM", "LARGE") } ?: "SMALL",
+                          showYear = p.getBoolean("year_$id", true),
+                          detailsFirst = p.getBoolean("details_$id", false),
+                          yearOrder = p.getInt("sortyear_$id", 0).coerceIn(-1,1),
+                      )
+                  }
+              }
+              fun save(context: Context, profileId: Long?, next: MovioMovieOptions) {
+                  val id = profileId ?: -1L
+                  states[id] = next
+                  store(context).edit().putString("rating_$id", next.ratingSize)
+                      .putBoolean("year_$id", next.showYear)
+                      .putBoolean("details_$id", next.detailsFirst)
+                      .putInt("sortyear_$id", next.yearOrder)
+                      .apply()
+              }
+          }
+          '''
+          pref_path=ROOT/'features/home/MovioMoviePrefs.kt'
+          if pref_path.exists(): raise SystemExit('V7.7 preferences already exists; refuse overwriting')
+          pref_path.write_text(pref_code,encoding='utf-8')
+
+          # Profile settings: a single uncomplicated settings group, all per-profile.
+          profile=ROOT/'features/settings/ProfileSettingsRows.kt'
+          ps=profile.read_text(encoding='utf-8')
+          patch(profile,
+              '    var showVisualPicker by remember { mutableStateOf(false) }',
+              '''    var showVisualPicker by remember { mutableStateOf(false) }
+              var showRatingPicker by remember { mutableStateOf(false) }
+              val movioMovieOptions = tv.own.owntv.features.home.MovioMoviePrefs.get(context, activeProfileId)''')
+          insert='''    // V7.7: per-profile poster and movie-opening behaviour.
+              StageSettingRow(
+                  icon = OwnTVIcon.PALETTE,
+                  title = stringResource(R.string.moviotv_rating_size_title),
+                  desc = stringResource(R.string.moviotv_rating_size_desc),
+                  value = SettingValue.Choice(stringResource(when (movioMovieOptions.ratingSize) {
+                      "MEDIUM" -> R.string.moviotv_rating_medium
+                      "LARGE" -> R.string.moviotv_rating_large
+                      else -> R.string.moviotv_rating_small
+                  })),
+                  onClick = { showRatingPicker = true },
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.MOVIES,
+                  title = stringResource(R.string.moviotv_show_movie_year),
+                  desc = stringResource(R.string.moviotv_show_movie_year_desc),
+                  value = SettingValue.Choice(stringResource(if (movioMovieOptions.showYear) R.string.common_on else R.string.common_off)),
+                  onClick = { tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+                      movioMovieOptions.copy(showYear = !movioMovieOptions.showYear)) },
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.PLAY,
+                  title = stringResource(R.string.moviotv_details_first),
+                  desc = stringResource(R.string.moviotv_details_first_desc),
+                  value = SettingValue.Choice(stringResource(if (movioMovieOptions.detailsFirst) R.string.common_on else R.string.common_off)),
+                  onClick = { tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+                      movioMovieOptions.copy(detailsFirst = !movioMovieOptions.detailsFirst)) },
+              )
+          '''
+          patch(profile,'    // A visible account card and a real one-tap normal refresh for the current playlist.\n',insert+'    // A visible account card and a real one-tap normal refresh for the current playlist.\n')
+          patch(profile,'    if (creating) {', '''    if (showRatingPicker) {
+                  PickerDialog(
+                      title = stringResource(R.string.moviotv_rating_size_title),
+                      options = listOf(
+                          "SMALL" to stringResource(R.string.moviotv_rating_small),
+                          "MEDIUM" to stringResource(R.string.moviotv_rating_medium),
+                          "LARGE" to stringResource(R.string.moviotv_rating_large),
+                      ),
+                      selected = movioMovieOptions.ratingSize,
+                      onSelect = { selected ->
+                          tv.own.owntv.features.home.MovioMoviePrefs.save(context, activeProfileId,
+                              movioMovieOptions.copy(ratingSize = selected))
+                          showRatingPicker = false
+                      },
+                      onDismiss = { showRatingPicker = false },
+                  )
+              }
+
+              if (creating) {''')
+
+          # Poster badge uses one compact but legible size by default.
+          vod=ROOT/'features/shell/components/VodStage.kt'
+          patch(vod,'    url: String?, placeholder: OwnTVIcon, rating: Double?, year: Int?, large: Boolean,\n','    url: String?, placeholder: OwnTVIcon, rating: Double?, year: Int?, large: Boolean,\n    badgeSize: String = "SMALL", showYear: Boolean = true,\n')
+          patch(vod,'fontSize = if (large) 17.sp else 13.sp, fontWeight = FontWeight.Bold,','fontSize = when (badgeSize) { "LARGE" -> if (large) 17.sp else 15.sp; "MEDIUM" -> if (large) 14.sp else 13.sp; else -> if (large) 11.sp else 10.sp }, fontWeight = FontWeight.Bold,')
+          patch(vod,'                    .padding(horizontal = 6.mpx, vertical = 4.mpx),','                    .padding(horizontal = if (badgeSize == "SMALL") 4.mpx else 6.mpx, vertical = if (badgeSize == "SMALL") 2.mpx else 4.mpx),')
+          patch(vod,'        if (year != null && year in 1880..2200) {','        if (showYear && year != null && year in 1880..2200) {')
+
+          # Movie year sort is genuinely DB-backed, not a reorder of the current 60-poster page.
+          # Uses the existing on-device SQLite file read-only and then resolves IDs through Core DAO.
+          paging_code=r'''package tv.own.owntv.features.movies
+
+          import android.content.Context
+          import android.database.sqlite.SQLiteDatabase
+          import androidx.paging.PagingSource
+          import androidx.paging.PagingState
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import tv.own.owntv.core.database.dao.MovieDao
+          import tv.own.owntv.core.database.entity.MovieEntity
+          import tv.own.owntv.core.live.LiveKey
+
+          /** Large-catalogue release-year sort; unknown years always last in both directions. */
+          internal class MovioYearMoviePagingSource(
+              private val context: Context,
+              private val dao: MovieDao,
+              private val sourceIds: List<Long>,
+              private val profileId: Long,
+              private val key: LiveKey,
+              private val search: String,
+              private val newestFirst: Boolean,
+          ) : PagingSource<Int, MovieEntity>() {
+              override fun getRefreshKey(state: PagingState<Int, MovieEntity>): Int? = state.anchorPosition
+
+              override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MovieEntity> = try {
+                  withContext(Dispatchers.IO) {
+                      val offset = (params.key ?: 0).coerceAtLeast(0)
+                      val args = mutableListOf<String>()
+                      val where = mutableListOf<String>()
+                      val ids = sourceIds.ifEmpty { listOf(-1L) }
+                      where += "sourceId IN (${ids.joinToString(",") { "?" }})"
+                      ids.forEach { args += it.toString() }
+                      if (search.isNotBlank()) { where += "name LIKE ?"; args += "%$search%" }
+                      when (key) {
+                          is LiveKey.Folder -> { where += "categoryId = ?"; args += key.id.toString() }
+                          is LiveKey.Custom -> {
+                              where += "id IN (SELECT itemId FROM custom_category_members WHERE profileId = ? AND mediaType = 'MOVIE' AND contextKey = ?)"
+                              args += profileId.toString(); args += key.id
+                          }
+                          LiveKey.Favorites -> {
+                              where += "id IN (SELECT itemId FROM favorites WHERE profileId = ? AND mediaType = 'MOVIE')"
+                              args += profileId.toString()
+                          }
+                          LiveKey.History -> {
+                              where += "id IN (SELECT itemId FROM watch_history WHERE profileId = ? AND mediaType = 'MOVIE')"
+                              args += profileId.toString()
+                          }
+                          else -> Unit
+                      }
+                      val year = "COALESCE(NULLIF(year, 0), parsedYear)"
+                      val order = if (newestFirst) "DESC" else "ASC"
+                      val sql = "SELECT id FROM movies WHERE ${where.joinToString(" AND ")} " +
+                          "ORDER BY CASE WHEN $year BETWEEN 1880 AND 2100 THEN 0 ELSE 1 END ASC, " +
+                          "$year $order, name COLLATE NOCASE ASC, id ASC LIMIT ? OFFSET ?"
+                      args += params.loadSize.toString(); args += offset.toString()
+                      val db = SQLiteDatabase.openDatabase(
+                          context.getDatabasePath(tv.own.owntv.core.database.OwnTVDatabase.NAME).absolutePath,
+                          null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
+                      )
+                      val rowIds = try {
+                          db.rawQuery(sql, args.toTypedArray()).use { cur ->
+                              buildList { while (cur.moveToNext()) add(cur.getLong(0)) }
+                          }
+                      } finally { db.close() }
+                      val matches = dao.getByIds(rowIds).associateBy { it.id }
+                      val results = rowIds.mapNotNull { matches[it] }
+                      LoadResult.Page(
+                          data = results,
+                          prevKey = if (offset == 0) null else (offset - params.loadSize).coerceAtLeast(0),
+                          nextKey = if (rowIds.size < params.loadSize) null else offset + rowIds.size,
+                      )
+                  }
+              } catch (error: Exception) { LoadResult.Error(error) }
+          }
+          '''
+          ypath=ROOT/'features/movies/MovioYearMoviePagingSource.kt'
+          if ypath.exists():raise SystemExit('Year PagingSource already exists; refuse overwriting')
+          ypath.write_text(paging_code,encoding='utf-8')
+
+          vm=ROOT/'features/movies/MovieViewModel.kt'
+          patch(vm,'class MovieViewModel(\n    private val movieDao: MovieDao,','class MovieViewModel(\n    private val appContext: android.content.Context,\n    private val movieDao: MovieDao,')
+          patch(vm,'    val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortMovies','    private val _v77YearSort = MutableStateFlow(0)\n    val v77YearSort: StateFlow<Int> = _v77YearSort.asStateFlow()\n    fun setYearSortOrder(order: Int) { _v77YearSort.value = order.coerceIn(-1, 1) }\n\n    val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortMovies')
+          patch(vm,'    fun setSort(mode: SettingsRepository.SortMode) {\n        viewModelScope.launch { settings.setSortMovies(mode) }','    fun setSort(mode: SettingsRepository.SortMode) {\n        _v77YearSort.value = 0\n        viewModelScope.launch { settings.setSortMovies(mode) }')
+          patch(vm,') { key, c, query, sort, _ -> Args(key, c, query, sort) }\n        .combine(custResolved',') { key, c, query, sort, _ -> Args(key, c, query, sort) }\n        .combine(_v77YearSort) { args, order -> args.copy(yearSortOrder = order) }\n        .combine(custResolved')
+          patch(vm,'                pagingSource(args.key, args.ctx, args.query, args.sort)\n','                pagingSource(args.key, args.ctx, args.query, args.sort, args.yearSortOrder)\n')
+          patch(vm,'    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode)','    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode, val yearSortOrder: Int = 0)')
+          patch(vm,
+              '    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode): PagingSource<Int, MovieEntity> {\n',
+              '''    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode, yearOrder: Int = 0): PagingSource<Int, MovieEntity> {
+                  if (yearOrder != 0) return MovioYearMoviePagingSource(
+                      context = appContext, dao = movieDao, sourceIds = c.sourceIds, profileId = c.profileId,
+                      key = key, search = query, newestFirst = yearOrder > 0,
+                  )
+          ''')
+
+          # The common sort menu is shared by series. Only Movies gets two new year options.
+          patch(vod,
+              'internal fun VodSortTool(mode: SortMode, modifier: Modifier = Modifier, onClick: () -> Unit) {\n    val label = vodSortLabel(mode)',
+              '''internal fun VodSortTool(mode: SortMode, modifier: Modifier = Modifier, yearSort: Int = 0, onClick: () -> Unit) {
+              val label = when {
+                  yearSort > 0 -> stringResource(R.string.moviotv_year_newest)
+                  yearSort < 0 -> stringResource(R.string.moviotv_year_oldest)
+                  else -> vodSortLabel(mode)
+              }''')
+          patch(vod,
+              'internal fun VodSortMenu(series: Boolean, current: SortMode, x: Float, top: Dp, onPick: (SortMode) -> Unit, onDismiss: () -> Unit) {',
+              'internal fun VodSortMenu(series: Boolean, current: SortMode, x: Float, top: Dp, onPick: (SortMode) -> Unit, onDismiss: () -> Unit, yearSort: Int = 0, onYearSort: ((Int) -> Unit)? = null) {')
+          patch(vod,'            val on = mode == current\n            StageMenuItem(','            val on = mode == current && yearSort == 0\n            StageMenuItem(')
+          patch(vod,
+              '''        }
+              }
+          }
+
+          /** "1 h 42 min", or "48 min" under an hour. */''',
+              '''        }
+              }
+          }
+
+          /** "1 h 42 min", or "48 min" under an hour. */''') if False else None
+          # Insert year choices just after the loop in VodSortMenu (not any other StageMenuItem block).
+          s=vod.read_text(encoding='utf-8')
+          beg=s.index('internal fun VodSortMenu(')
+          end=s.index('\n}',beg)
+          sub=s[beg:end]
+          anchor='''        }
+              }'''
+          if not sub.endswith(anchor):raise SystemExit('V7.7 sort menu end marker changed')
+          addon='''        }
+                  if (!series && onYearSort != null) {
+                      listOf(1 to R.string.moviotv_year_newest, -1 to R.string.moviotv_year_oldest).forEach { (order, label) ->
+                          StageMenuItem(
+                              text = stringResource(label), icon = OwnTVIcon.SORT,
+                              checked = yearSort == order,
+                              onClick = { onYearSort(order); onDismiss() },
+                          )
+                      }
+                  }
+              }
+          '''
+          s=s[:beg]+sub[:-len(anchor)]+addon.rstrip('\n')+s[end:]
+          vod.write_text(s,encoding='utf-8')
+
+          # Movie posters/toolbar and their detail-first action, while keeping the existing resume flow.
+          movies=ROOT/'features/movies/MoviesScreen.kt'
+          patch(movies,'    val context = androidx.compose.ui.platform.LocalContext.current', '''    val context = androidx.compose.ui.platform.LocalContext.current
+              val v77Profiles: tv.own.owntv.features.profiles.ProfilesViewModel = koinViewModel()
+              val v77ProfileId by v77Profiles.activeProfileId.collectAsStateWithLifecycle()
+              val v77MoviePrefs = tv.own.owntv.features.home.MovioMoviePrefs.get(context, v77ProfileId)
+              LaunchedEffect(v77ProfileId, v77MoviePrefs.yearOrder) { vm.setYearSortOrder(v77MoviePrefs.yearOrder) }
+              var v77DetailsMovie by remember { mutableStateOf<MovieEntity?>(null) }''')
+          patch(movies,'    val startMovie: (MovieEntity) -> Unit = { m ->','    val actuallyStartMovie: (MovieEntity) -> Unit = { m ->')
+          patch(movies,'''    val actuallyStartMovie: (MovieEntity) -> Unit = { m ->
+                  scope.launch {''','''    val actuallyStartMovie: (MovieEntity) -> Unit = { m ->
+                  scope.launch {''') if False else None
+          # Locate the complete existing direct-play block without touching the resume cases.
+          s=movies.read_text(encoding='utf-8')
+          beg=s.index('    val actuallyStartMovie: (MovieEntity) -> Unit = { m ->')
+          end=s.index('    }\n',s.index('        scope.launch {',beg)+len('        scope.launch {')) # may find nested early? use exact suffix
+          anchor='''        }
+              }
+          '''
+          end=s.find(anchor,beg)
+          if end==-1:raise SystemExit('V7.7 movie direct play block not found')
+          insert='''    val startMovie: (MovieEntity) -> Unit = { movie ->
+                  if (v77MoviePrefs.detailsFirst) v77DetailsMovie = movie else actuallyStartMovie(movie)
+              }
+          '''
+          s=s[:end+len(anchor)]+insert+s[end+len(anchor):]
+          movies.write_text(s,encoding='utf-8')
+          # Three visible poster layouts all share the same preferences.
+          patch(movies,'large = !touchUi) }','large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }',3)
+          # Toolbar label, selected radio menu and year-sort persistence.
+          patch(movies,'VodSortTool(sortMode, Modifier.focusRequester(sortFocus)) { sortOpen = true }','VodSortTool(sortMode, Modifier.focusRequester(sortFocus), yearSort = v77MoviePrefs.yearOrder) { sortOpen = true }')
+          patch(movies,'value = vodSortLabel(sortMode), trailingIcon = OwnTVIcon.CHEVRON_DOWN, onClick = { sortOpen = true }','value = when { v77MoviePrefs.yearOrder > 0 -> stringResource(R.string.moviotv_year_newest); v77MoviePrefs.yearOrder < 0 -> stringResource(R.string.moviotv_year_oldest); else -> vodSortLabel(sortMode) }, trailingIcon = OwnTVIcon.CHEVRON_DOWN, onClick = { sortOpen = true }')
+          patch(movies,'''            onPick = vm::setSort,
+                      onDismiss = { sortOpen = false; runCatching { sortFocus.requestFocus() } },''','''            onPick = { selected ->
+                          tv.own.owntv.features.home.MovioMoviePrefs.save(context, v77ProfileId, v77MoviePrefs.copy(yearOrder = 0))
+                          vm.setSort(selected)
+                      },
+                      onDismiss = { sortOpen = false; runCatching { sortFocus.requestFocus() } },
+                      yearSort = v77MoviePrefs.yearOrder,
+                      onYearSort = { year ->
+                          tv.own.owntv.features.home.MovioMoviePrefs.save(context, v77ProfileId, v77MoviePrefs.copy(yearOrder = year))
+                          vm.setYearSortOrder(year)
+                      },''')
+          # Long press details should work even if TMDB has not enriched the movie.
+          patch(movies,'if (cacheForM != null) { contextMovie = null; detailsMovie = m }','contextMovie = null; detailsMovie = m')
+          # Optional details page includes Play action. Fallback story is not invented for missing metadata.
+          patch(movies,'    // Windowed TMDB details popup — read-only, Back exits.','''    // V7.7 optional details-first page: always has a clearly focused Play action.
+              v77DetailsMovie?.let { movie ->
+                  val cache = selectedMovieMeta?.takeIf { it.movieId == movie.id }?.cache
+                  val info = buildMovieDetails(movie, cache, metadataMode.tmdbWins)
+                  tv.own.owntv.ui.stage.StagePopup(
+                      onDismiss = { v77DetailsMovie = null },
+                      title = info.title,
+                      body = info.metaLine,
+                      buttons = {
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.moviotv_play_movie),
+                              onClick = { v77DetailsMovie = null; actuallyStartMovie(movie) },
+                              height = 56.mpx, textSize = 19, tinted = true,
+                          )
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.common_back),
+                              onClick = { v77DetailsMovie = null }, height = 56.mpx, textSize = 19,
+                          )
+                      },
+                  ) {
+                      Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+                          androidx.tv.material3.Text(
+                              info.plot?.takeIf { it.isNotBlank() } ?: stringResource(R.string.moviotv_movie_no_synopsis),
+                              style = tv.own.owntv.ui.theme.stageText(18, 500),
+                              color = tv.own.owntv.ui.theme.StageColors.Text,
+                          )
+                          if (info.genres.isNotEmpty()) androidx.tv.material3.Text(
+                              stringResource(R.string.moviotv_movie_genres, info.genres.joinToString(", ")),
+                              style = tv.own.owntv.ui.theme.stageText(16, 500),
+                              color = tv.own.owntv.ui.theme.StageColors.Muted,
+                          )
+                          if (info.cast.isNotEmpty()) androidx.tv.material3.Text(
+                              stringResource(R.string.moviotv_movie_credits, info.cast.take(12).joinToString(", ") { it.name }),
+                              style = tv.own.owntv.ui.theme.stageText(16, 500),
+                              color = tv.own.owntv.ui.theme.StageColors.Muted,
+                          )
+                      }
+                  }
+              }
+
+              // Windowed TMDB details popup — read-only, Back exits.''')
+
+          # Series uses the same badge appearance and optional details-first -> episodes action.
+          series=ROOT/'features/series/SeriesScreen.kt'
+          patch(series,'    val context = androidx.compose.ui.platform.LocalContext.current', '''    val context = androidx.compose.ui.platform.LocalContext.current
+              val v77Profiles: tv.own.owntv.features.profiles.ProfilesViewModel = koinViewModel()
+              val v77ProfileId by v77Profiles.activeProfileId.collectAsStateWithLifecycle()
+              val v77MoviePrefs = tv.own.owntv.features.home.MovioMoviePrefs.get(context, v77ProfileId)
+              var v77DetailsFirstSeries by remember { mutableStateOf<Pair<tv.own.owntv.core.database.entity.SeriesEntity, Int>?>(null) }''')
+          patch(series,'large = !touchUi) }','large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }',3)
+          patch(series,'onClick = { onOpenAt(index); vm.openSeries(show) },','onClick = { if (v77MoviePrefs.detailsFirst) v77DetailsFirstSeries = show to index else { onOpenAt(index); vm.openSeries(show) } },',4)
+          patch(series,'    detailsSeries?.let { s ->','''    v77DetailsFirstSeries?.let { (show, index) ->
+                  val cache = selectedSeriesMeta?.takeIf { it.seriesId == show.id }?.cache
+                  val info = buildSeriesDetails(show, cache, metadataMode.tmdbWins)
+                  tv.own.owntv.ui.stage.StagePopup(
+                      onDismiss = { v77DetailsFirstSeries = null },
+                      title = info.title, body = info.metaLine,
+                      buttons = {
+                          tv.own.owntv.ui.stage.StageButton(
+                              stringResource(R.string.moviotv_view_episodes),
+                              onClick = { v77DetailsFirstSeries = null; onOpenAt(index); vm.openSeries(show) },
+                              height = 56.mpx, textSize = 19, tinted = true,
+                          )
+                          tv.own.owntv.ui.stage.StageButton(stringResource(R.string.common_back),
+                              onClick = { v77DetailsFirstSeries = null }, height = 56.mpx, textSize = 19)
+                      },
+                  ) {
+                      Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+                          androidx.tv.material3.Text(
+                              info.plot?.takeIf { it.isNotBlank() } ?: stringResource(R.string.moviotv_movie_no_synopsis),
+                              style = tv.own.owntv.ui.theme.stageText(18, 500),
+                              color = tv.own.owntv.ui.theme.StageColors.Text,
+                          )
+                          if (info.cast.isNotEmpty()) androidx.tv.material3.Text(
+                              stringResource(R.string.moviotv_movie_credits, info.cast.take(12).joinToString(", ") { it.name }),
+                              style = tv.own.owntv.ui.theme.stageText(16, 500),
+                              color = tv.own.owntv.ui.theme.StageColors.Muted,
+                          )
+                      }
+                  }
+              }
+              detailsSeries?.let { s ->''')
+
+          # Auto-connection testing surfaces the existing tester's full report instead of a short toast.
+          # It uses the *active playback source*, not the first configured source.
+          shell=ROOT/'features/shell/OwnTVShell.kt'
+          patch(shell,'    val v76Buffering by dockedEngine.buffering.collectAsStateWithLifecycle()','''    val v76Buffering by dockedEngine.buffering.collectAsStateWithLifecycle()
+              val v77AutoTest by v76DiagnosticsVm.sourceTest.collectAsStateWithLifecycle()
+              var v77AutoDiagnosticVisible by remember { mutableStateOf(false) }''')
+          patch(shell,'LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode) {','LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode, isOffline) {')
+          patch(shell,'if (v76PlaybackError == null && !v76Buffering) return@LaunchedEffect','if (!isOffline && v76PlaybackError == null && !v76Buffering) return@LaunchedEffect')
+          patch(shell,'kotlinx.coroutines.delay(12_000L)','kotlinx.coroutines.delay(10_000L)',1)
+          patch(shell,'if (dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect','if (!isOffline && dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect')
+          patch(shell,'        localSubToast.show(v76CheckingLabel)','        v77AutoDiagnosticVisible = true')
+          patch(shell,'    // Leaving the app while video plays can keep it going in a picture-in-picture window, which shows','''    // If connectivity returns while the panel is visible, automatically re-check the source.
+              LaunchedEffect(isOffline, v77AutoDiagnosticVisible) {
+                  if (!isOffline && v77AutoDiagnosticVisible && playerMode != PlayerMode.NONE) {
+                      kotlinx.coroutines.delay(2_000L)
+                      v76LatestSources.firstOrNull { it.id == watchingSourceId }?.let(v76DiagnosticsVm::testSource)
+                  }
+              }
+              // Leaving the app while video plays can keep it going in a picture-in-picture window, which shows''')
+          patch(shell,'    val incompleteRestore by restoreSettings.restoreInProgress.collectAsStateWithLifecycle(initialValue = null)','''    // Persistent result panel. It can be dismissed explicitly; no vanishing toast.
+              if (v77AutoDiagnosticVisible && v77AutoTest != null && playerMode != PlayerMode.NONE) {
+                  tv.own.owntv.features.settings.SourceTestDialog(
+                      state = v77AutoTest!!,
+                      onDismiss = { v77AutoDiagnosticVisible = false; v76DiagnosticsVm.dismissSourceTest() },
+                      onRetest = v76LatestSources.firstOrNull { it.id == watchingSourceId }?.let { source ->
+                          { v76DiagnosticsVm.testSource(source) }
+                      },
+                  )
+              }
+              val incompleteRestore by restoreSettings.restoreInProgress.collectAsStateWithLifecycle(initialValue = null)''')
+
+          # The existing test dialog now gives a real progression: network, internet, VPN, source, auth.
+          # "Unreachable" deliberately does not claim whether DNS, VPN or the server is to blame.
+          sources=ROOT/'features/settings/ManageSourcesScreen.kt'
+          patch(sources,
+          '''        val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                  val usingVpn = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true''',
+          '''        val networkAvailable = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                  val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+                  val usingVpn = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true''')
+          patch(sources,
+          '''            Text(stringResource(if (online) R.string.moviotv_diagnostics_internet_ok else R.string.moviotv_diagnostics_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(if (usingVpn) R.string.moviotv_diagnostics_vpn_on else R.string.moviotv_diagnostics_vpn_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      when (state) {''',
+          '''            Text(stringResource(if (networkAvailable) R.string.moviotv_diagnostics_step_device_ok else R.string.moviotv_diagnostics_step_device_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(if (online) R.string.moviotv_diagnostics_step_internet_ok else R.string.moviotv_diagnostics_step_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(if (usingVpn) R.string.moviotv_diagnostics_vpn_on else R.string.moviotv_diagnostics_vpn_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(when {
+                          !online -> R.string.moviotv_diagnostics_step_provider_pending
+                          state !is SourceTestUi.Done -> R.string.moviotv_diagnostics_step_provider_running
+                          state.result is SourceTestResult.Unreachable -> R.string.moviotv_diagnostics_step_provider_fail
+                          else -> R.string.moviotv_diagnostics_step_provider_ok
+                      }), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(when {
+                          !online || state !is SourceTestUi.Done -> R.string.moviotv_diagnostics_step_account_pending
+                          state.result is SourceTestResult.Ok -> R.string.moviotv_diagnostics_step_account_ok
+                          state.result is SourceTestResult.AuthFailed || state.result is SourceTestResult.Expired -> R.string.moviotv_diagnostics_step_account_fail
+                          else -> R.string.moviotv_diagnostics_step_account_pending
+                      }), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      Text(stringResource(R.string.moviotv_diagnostics_step_playback), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+                      when (state) {''')
+
+          print('V7.7 source patches successfully applied. Baseline source, database and backup protocols unchanged.')
+          PY
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Verify strings, unit tests, lint and assemble APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify generated APK is isolated V7.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v77-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv77'" /tmp/moviotv-v77-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v77-badging.txt
+          grep -F "versionName='7.7'" /tmp/moviotv-v77-badging.txt
+          grep -F "versionCode='100014'" /tmp/moviotv-v77-badging.txt
+      - name: Upload V7.7 test APK for phone and TV
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.7-TEST-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
+      - name: Save compiled source ONLY on V7.7 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main/res/values/strings_moviotv.xml app/src/main/res/values/strings_moviotv_core_brand.xml app/src/main/java/tv/own/owntv/features/
+          git diff --cached --quiet && exit 0
+          git commit -m 'MovioTV V7.7: profile movie choices, real year sort, optional details, live diagnostics, browser branding'
+          git push origin HEAD:refs/heads/feature/moviotv-v77
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.7-Compile-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
