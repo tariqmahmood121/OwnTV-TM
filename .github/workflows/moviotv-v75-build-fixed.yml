@@ -1,0 +1,141 @@
+# MovioTV 7.5: retry of the existing V7.5 patch with the two technical literals
+# that caused the 2026-11-12 GitHub Actions i18n preflight failure classified.
+# Development branch only. Main/stable baseline remains untouched.
+name: MovioTV V7.5 - Development Build FIXED
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/moviotv-v7-polish
+    paths:
+      - .github/workflows/moviotv-v75-build-fixed.yml
+permissions:
+  contents: write
+jobs:
+  moviotv-v75-fixed:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-polish'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      VERSION_CODE: "100012"
+      VERSION_NAME: "7.5"
+    steps:
+      - name: Checkout isolated MovioTV development branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v7-polish
+          persist-credentials: true
+      - name: Apply V7.5 patch and fix exact i18n errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          import subprocess
+          import sys
+
+          original = Path('.github/workflows/moviotv-v75-polish-test.yml')
+          if not original.is_file():
+              sys.exit('Missing original V7.5 patch workflow; refusing an ungrounded build')
+          source = original.read_text(encoding='utf-8')
+          begin = "          cat > /tmp/moviotv_v75_patch.py <<'V75_PATCH_PY'\n"
+          finish = "\n          V75_PATCH_PY"
+          if source.count(begin) != 1 or source.count(finish) != 1:
+              sys.exit('V7.5 patch boundary changed; refusing a partial modification')
+          script = textwrap.dedent(source.split(begin, 1)[1].split(finish, 1)[0])
+          compile(script, 'moviotv_v75_patch.py', 'exec')
+          subprocess.run([sys.executable, '-c', script], check=True)
+
+          # The previous build stopped before compilation on precisely these two
+          # non-UI literals. Classify them; neither is a translation string.
+          safe = Path('tools/i18n/safe_literals.txt')
+          content = safe.read_text(encoding='utf-8')
+          additions = [
+              ('technical',
+               'app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt',
+               '_'),
+              ('regex',
+               'app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt',
+               r'(?:\(|\[| - | )((?:19|20)\d{2})(?:\)|\]|$)'),
+          ]
+          for category, filename, literal in additions:
+              encoded = literal.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n')
+              entry = f'1\t{category}\t{filename}\t{encoded}\n'
+              if entry not in content:
+                  content += entry
+          safe.write_text(content, encoding='utf-8')
+          subprocess.run(
+              [sys.executable, 'tools/i18n/check_hardcoded_strings.py', 'verify', '--bootstrap'],
+              check=True)
+          print('MovioTV V7.5 development patch and i18n preflight complete.')
+          PY
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile and test MovioTV V7.5
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Check APK package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v75-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv75'" /tmp/moviotv-v75-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v75-badging.txt
+          grep -F "versionName='7.5'" /tmp/moviotv-v75-badging.txt
+          grep -F "versionCode='100012'" /tmp/moviotv-v75-badging.txt
+      - name: Upload MovioTV V7.5 development APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.5-Development-FIXED-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save verified V7.5 patch on development branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts \
+            app/src/main/java/tv/own/owntv/MainActivity.kt \
+            app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt \
+            app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt \
+            app/src/main/java/tv/own/owntv/features/shell/components/StageRail.kt \
+            app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt \
+            app/src/main/java/tv/own/owntv/features/series/SeriesScreen.kt \
+            app/src/main/res/values/strings_moviotv.xml \
+            tools/i18n/safe_literals.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'MovioTV V7.5: verified immersive and polish development fixes'
+            git push origin HEAD:feature/moviotv-v7-polish
+          fi
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.5-Development-Failure-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
