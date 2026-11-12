@@ -29,6 +29,7 @@ import tv.own.owntv.features.shell.components.VodHero
 import tv.own.owntv.features.shell.components.VodListRow
 import tv.own.owntv.features.shell.components.VodOptionsMenu
 import tv.own.owntv.features.shell.components.VodPosterArt
+import tv.own.owntv.features.shell.components.VodPosterBadgedArt
 import tv.own.owntv.features.shell.components.VodSortMenu
 import tv.own.owntv.features.shell.components.VodSortTool
 import tv.own.owntv.features.shell.components.VodStepper
@@ -569,6 +570,7 @@ fun MoviesScreen(
                 onSearch = vm::setSearchQuery,
                 categoryEnabled = lockedKey == null,
                 onCategories = { categoriesOpen = true },
+                onSort = { sortOpen = true },
                 categories = { catModifier ->
                     LiveCategories(
                         searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
@@ -593,14 +595,14 @@ fun MoviesScreen(
                         val prog = movieProgress[movie.id]
                         StagePoster(
                             title = movie.name,
-                            rating = movie.rating?.takeIf { it > 0 }?.let(::vodRating),
+                            rating = null,
                             width = width, height = width * 1.5f, compact = true,
                             progress = prog?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
                             watched = prog?.let { vm.isMovieCompleted(it) } == true,
                             onClick = { startMovie(movie) },
                             onLongClick = { openMenu(movie, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
-                        ) { VodPosterArt(posterOf(movie), OwnTVIcon.MOVIES) }
+                        ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
                     }
                 },
             )
@@ -660,7 +662,7 @@ fun MoviesScreen(
                                     val done = prog?.let { vm.isMovieCompleted(it) } == true
                                     StagePoster(
                                         title = movie.name,
-                                        rating = movie.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                        rating = null,
                                         width = 196.mpx, height = 294.mpx,
                                         progress = prog?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
                                         watched = done,
@@ -683,7 +685,7 @@ fun MoviesScreen(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterArt(posterOf(movie), OwnTVIcon.MOVIES) }
+                                    ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
                                 }
                             }
                         }
@@ -829,7 +831,7 @@ fun MoviesScreen(
                                 val done = prog?.let { vm.isMovieCompleted(it) } == true
                                 StagePoster(
                                     title = movie.name,
-                                    rating = movie.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                    rating = null,
                                     width = posterW, height = posterW * 1.5f,
                                     compact = true,
                                     progress = prog?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
@@ -847,7 +849,7 @@ fun MoviesScreen(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(movie, index); true } else false
                                         },
-                                ) { VodPosterArt(posterOf(movie), OwnTVIcon.MOVIES) }
+                                ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, movie.year, large = !touchUi) }
                             }
                         }
                     }
@@ -867,6 +869,7 @@ fun MoviesScreen(
         }
 
         if (categoriesOpen) {
+            tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {
             LiveCategories(
                 searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
                 onSearchQueryChange = vm::setCategoryQuery,
@@ -891,13 +894,14 @@ fun MoviesScreen(
                     )
                     .fillMaxHeight(),
             )
+            }
         }
     }
 
     if (sortOpen) {
         VodSortMenu(
             series = false, current = sortMode,
-            x = if (cinematic) 470f else 880f, top = if (cinematic) 250.mpx else 186.mpx,
+            x = if (touchUi) 120f else if (cinematic) 470f else 880f, top = if (touchUi) 80.mpx else if (cinematic) 250.mpx else 186.mpx,
             onPick = vm::setSort,
             onDismiss = { sortOpen = false; runCatching { sortFocus.requestFocus() } },
         )

@@ -1477,3 +1477,5 @@
 1	technical	app/src/main/java/tv/own/owntv/ui/theme/Glass.kt	glassPosition
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/OwnTVColors.kt	\0
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/Theme.kt	\0
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/MovioCategoryTextZoom.kt	category_font_
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/MovioCategoryTextZoom.kt	moviotv_category_fonts_v74

@@ -115,6 +115,7 @@ fun MovioTouchPosterBrowser(
     categoryEnabled: Boolean,
     onCategories: () -> Unit,
     categories: @Composable (Modifier) -> Unit,
+    onSort: () -> Unit,
     itemCount: Int,
     gridState: LazyGridState,
     emptyText: String,
@@ -125,7 +126,9 @@ fun MovioTouchPosterBrowser(
         val tablet = maxWidth >= 700.dp && categoryEnabled
         val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
         Row(Modifier.fillMaxSize()) {
-            if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))
+            if (tablet) MovioCategoryTextZoom(
+                modifier = Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp),
+            ) { categories(Modifier.fillMaxSize()) }
             Column(Modifier.weight(1f).fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -138,6 +141,12 @@ fun MovioTouchPosterBrowser(
                         Spacer(Modifier.width(8.dp))
                     }
                     MovioTouchSearch(query, onSearch, Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF50326D)).clickable(onClick = onSort)
+                        .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                        Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp)
+                    }
                 }
                 Text(category, color = pale, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))

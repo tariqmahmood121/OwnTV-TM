@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
@@ -123,6 +125,37 @@ internal data class VodTitleInfo(
 
 /** A rating as the design writes it: one decimal, in the user's number format ("8.4", "8,4"). */
 internal fun vodRating(rating: Double): String = String.format(Locale.getDefault(), "%.1f", rating)
+
+/** On-poster badge layout: bold top-left rating, soft-glass bottom-right release year. */
+@Composable
+internal fun VodPosterBadgedArt(
+    url: String?, placeholder: OwnTVIcon, rating: Double?, year: Int?, large: Boolean,
+) {
+    Box(Modifier.fillMaxSize()) {
+        VodPosterArt(url, placeholder)
+        if (rating != null && rating > 0.0) {
+            Text(
+                stringResource(R.string.moviotv_rating_badge, vodRating(rating)), color = Color.White,
+                fontSize = if (large) 17.sp else 13.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.TopStart).padding(6.mpx)
+                    .background(Color.Black.copy(alpha = 0.80f), RoundedCornerShape(6.mpx))
+                    .padding(horizontal = 6.mpx, vertical = 4.mpx),
+            )
+        }
+        if (year != null && year in 1880..2200) {
+            Text(
+                year.toString(), color = Color.White,
+                fontSize = if (large) 13.sp else 11.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 6.mpx, bottom = 11.mpx)
+                    // 70% transparent background; keep text solid for readability on bright posters.
+                    .background(Color.Black.copy(alpha = 0.30f), RoundedCornerShape(6.mpx))
+                    .padding(horizontal = 6.mpx, vertical = 3.mpx),
+            )
+        }
+    }
+}
 
 /** "1 h 42 min", or "48 min" under an hour. */
 @Composable

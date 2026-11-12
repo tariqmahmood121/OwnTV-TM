@@ -79,6 +79,8 @@ internal fun ProfileSettingsRows(
     val sourceSync by sourceSyncFlow.collectAsStateWithLifecycle(
         tv.own.owntv.core.sync.work.CatalogSyncState.Idle
     )
+    var showDiagnostics by remember { mutableStateOf(false) }
+    val diagnosis by visualSettingsVm.sourceTest.collectAsStateWithLifecycle()
     var showVisualPicker by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ProfileEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -153,6 +155,23 @@ internal fun ProfileSettingsRows(
             }
         },
     )
+    // A read-only provider/authentication check, plus device networking/VPN status in its report.
+    StageSettingRow(
+        icon = OwnTVIcon.INFO,
+        title = stringResource(R.string.moviotv_diagnostics_title),
+        desc = stringResource(R.string.moviotv_diagnostics_description),
+        value = null,
+        onClick = {
+            if (currentSource == null) onOpenSources()
+            else { showDiagnostics = true; visualSettingsVm.testSource(currentSource) }
+        },
+    )
+    if (showDiagnostics && diagnosis != null) {
+        SourceTestDialog(
+            state = diagnosis!!,
+            onDismiss = { showDiagnostics = false; visualSettingsVm.dismissSourceTest() },
+        )
+    }
     // Device pairing and display preferences sit together in the personal dashboard.
     StageSettingRow(
         icon = OwnTVIcon.BACKUP,

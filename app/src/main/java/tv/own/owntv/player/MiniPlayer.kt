@@ -6,6 +6,7 @@ import tv.own.owntv.ui.theme.hudShade
 import tv.own.owntv.ui.theme.hudInk
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
@@ -89,6 +90,13 @@ fun MiniPlayer(
     val accent = hudAccent
 
     BoxWithConstraints(modifier = modifier.onFocusChanged { focused = it.hasFocus }.focusGroup()) {
+        // The video itself is an independent expand target (touch + TV remote focus).
+        // It is placed before the pill so individual pause/volume/window buttons still work.
+        Box(
+            Modifier.matchParentSize()
+                .then(entryFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                .clickable(onClick = onExpand),
+        )
         // The pill carries eight tiles at full width. Below this the window cannot hold them without
         // scrolling, so collapse first and let the scroll stay as the backstop it always was.
         val compact = maxWidth < 300.dp
@@ -146,7 +154,7 @@ fun MiniPlayer(
             MiniBtn(
                 if (isPlaying) OwnTVIcon.PAUSE else OwnTVIcon.PLAY,
                 lead = true,
-                modifier = entryFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
+                modifier = Modifier,
             ) { player.togglePlayPause() }
 
             // Volume is a plain mute toggle here on purpose — the three-step ladder belongs to the

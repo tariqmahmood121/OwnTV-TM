@@ -654,7 +654,14 @@ internal fun SourceTestDialog(
         },
     ) {
         val line = tv.own.owntv.ui.theme.stageText(18, 500)
-        when (state) {
+        val cm = LocalContext.current.getSystemService(android.net.ConnectivityManager::class.java)
+        val capabilities = cm?.getNetworkCapabilities(cm.activeNetwork)
+        val online = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val usingVpn = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+        Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
+            Text(stringResource(if (online) R.string.moviotv_diagnostics_internet_ok else R.string.moviotv_diagnostics_internet_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            Text(stringResource(if (usingVpn) R.string.moviotv_diagnostics_vpn_on else R.string.moviotv_diagnostics_vpn_off), style = line, color = tv.own.owntv.ui.theme.StageColors.Muted)
+            when (state) {
             is SourceTestUi.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
                 OwnTVSpinner(sizeDp = 22)
                 Spacer(Modifier.width(16.mpx))
@@ -672,6 +679,7 @@ internal fun SourceTestDialog(
                     Text(stringResource(R.string.settings_sources_ignore_limit_on), style = tv.own.owntv.ui.theme.stageText(17, 500), color = tv.own.owntv.ui.theme.StageColors.Muted)
                 }
             }
+        }
         }
     }
 }

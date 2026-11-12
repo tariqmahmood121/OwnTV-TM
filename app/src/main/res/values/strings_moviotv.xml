@@ -30,7 +30,15 @@
     <string name="moviotv_nav_live_tv">Live TV</string>
     <string name="moviotv_search_titles">Search titles</string>
     <string name="moviotv_categories">☰  Categories</string>
-    <string name="moviotv_version">v7.3</string>
+    <string name="moviotv_sort">Filter ▾</string>
+    <string name="moviotv_rating_badge">★ %1$s</string>
+    <string name="moviotv_diagnostics_title">Streaming diagnostics</string>
+    <string name="moviotv_diagnostics_description">Check internet, VPN, provider and account connectivity</string>
+    <string name="moviotv_diagnostics_internet_ok">Internet: connected</string>
+    <string name="moviotv_diagnostics_internet_off">Internet: unavailable or limited</string>
+    <string name="moviotv_diagnostics_vpn_on">VPN: active</string>
+    <string name="moviotv_diagnostics_vpn_off">VPN: not detected (enable it if your provider requires one)</string>
+    <string name="moviotv_version">v7.4</string>
     <string name="moviotv_profile_label">PROFILE</string>
     <string name="moviotv_provider_label">PROVIDER</string>
     <string name="moviotv_manage_provider">Manage connection</string>

@@ -30,6 +30,7 @@ import tv.own.owntv.features.shell.components.VodHero
 import tv.own.owntv.features.shell.components.VodListRow
 import tv.own.owntv.features.shell.components.VodOptionsMenu
 import tv.own.owntv.features.shell.components.VodPosterArt
+import tv.own.owntv.features.shell.components.VodPosterBadgedArt
 import tv.own.owntv.features.shell.components.VodSortMenu
 import tv.own.owntv.features.shell.components.VodSortTool
 import tv.own.owntv.features.shell.components.VodStepper
@@ -642,6 +643,7 @@ private fun SeriesGrid(
                 onSearch = vm::setSearchQuery,
                 categoryEnabled = lockedKey == null,
                 onCategories = { categoriesOpen = true },
+                onSort = { sortOpen = true },
                 categories = { catModifier ->
                     LiveCategories(
                         searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
@@ -665,13 +667,13 @@ private fun SeriesGrid(
                     if (show != null) {
                         StagePoster(
                             title = show.name,
-                            rating = show.rating?.takeIf { it > 0 }?.let(::vodRating),
+                            rating = null,
                             width = width, height = width * 1.5f, compact = true,
                             progress = seriesProgress[show.id],
                             onClick = { onOpenAt(index); vm.openSeries(show) },
                             onLongClick = { openMenu(show, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onShowFocus(show) },
-                        ) { VodPosterArt(posterOf(show), OwnTVIcon.SERIES) }
+                        ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
                     }
                 },
             )
@@ -729,7 +731,7 @@ private fun SeriesGrid(
                                     val show = series[index] ?: return@items
                                     StagePoster(
                                         title = show.name,
-                                        rating = show.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                        rating = null,
                                         width = 196.mpx, height = 294.mpx,
                                         progress = seriesProgress[show.id],
                                         onClick = { onOpenAt(index); vm.openSeries(show) },
@@ -751,7 +753,7 @@ private fun SeriesGrid(
                                                     else -> false
                                                 }
                                             },
-                                    ) { VodPosterArt(posterOf(show), OwnTVIcon.SERIES) }
+                                    ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
                                 }
                             }
                         }
@@ -893,7 +895,7 @@ private fun SeriesGrid(
                                 val show = series[index] ?: return@items
                                 StagePoster(
                                     title = show.name,
-                                    rating = show.rating?.takeIf { it > 0 }?.let(::vodRating),
+                                    rating = null,
                                     width = posterW, height = posterW * 1.5f,
                                     compact = true,
                                     progress = seriesProgress[show.id],
@@ -910,7 +912,7 @@ private fun SeriesGrid(
                                         .onPreviewKeyEvent { e ->
                                             if (e.type == KeyEventType.KeyDown && e.key == Key.Menu) { openMenu(show, index); true } else false
                                         },
-                                ) { VodPosterArt(posterOf(show), OwnTVIcon.SERIES) }
+                                ) { VodPosterBadgedArt(posterOf(show), OwnTVIcon.SERIES, show.rating, show.year, large = !touchUi) }
                             }
                         }
                     }
@@ -930,6 +932,7 @@ private fun SeriesGrid(
         }
 
         if (categoriesOpen) {
+            tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {
             LiveCategories(
                 searchQuery = vm.categoryQuery.collectAsStateWithLifecycle().value,
                 onSearchQueryChange = vm::setCategoryQuery,
@@ -954,13 +957,14 @@ private fun SeriesGrid(
                     )
                     .fillMaxHeight(),
             )
+            }
         }
     }
 
     if (sortOpen) {
         VodSortMenu(
             series = true, current = sortMode,
-            x = if (cinematic) 470f else 880f, top = if (cinematic) 250.mpx else 186.mpx,
+            x = if (touchUi) 120f else if (cinematic) 470f else 880f, top = if (touchUi) 80.mpx else if (cinematic) 250.mpx else 186.mpx,
             onPick = vm::setSort,
             onDismiss = { sortOpen = false; runCatching { sortFocus.requestFocus() } },
         )

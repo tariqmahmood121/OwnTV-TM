@@ -108,7 +108,7 @@ fun StageStatusCluster(
                     },
             )
         }
-        StageClock(weatherInfo, weatherFahrenheit, clockColors)
+        StageClock(weatherInfo, weatherFahrenheit, clockColors, compact = LocalConfiguration.current.screenWidthDp < 1100)
     }
 }
 
@@ -128,7 +128,7 @@ fun clockColor(stored: String, default: Color): Color = when (stored) {
  * part takes its colour from [colors] (Settings › Appearance › Date, time & weather).
  */
 @Composable
-fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColors) {
+fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColors, compact: Boolean = false) {
     val timeColor = clockColor(colors.time, StageColors.Text)
     val dateColor = clockColor(colors.date, StageColors.Muted)
     val weatherColor = clockColor(colors.weather, StageColors.Muted)
@@ -182,7 +182,7 @@ fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColo
     ) {
         Text(
             time,
-            style = stageText(40, 700, (-0.5).mpxSp).copy(fontFeatureSettings = "tnum", shadow = shadow, lineHeight = 40.mpxSp),
+            style = stageText(if (compact) 26 else 40, 700, (-0.5).mpxSp).copy(fontFeatureSettings = "tnum", shadow = shadow, lineHeight = (if (compact) 28 else 40).mpxSp),
             color = timeColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -192,7 +192,7 @@ fun StageClock(weatherInfo: WeatherInfo?, fahrenheit: Boolean, colors: ClockColo
             horizontalArrangement = Arrangement.spacedBy(10.mpx),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val sub: TextStyle = stageText(17, 400).copy(shadow = shadow)
+            val sub: TextStyle = stageText(if (compact) 13 else 17, 400).copy(shadow = shadow)
             Text(date, style = sub, color = dateColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (weatherInfo != null) {
                 Text("·", style = sub, color = StageColors.Muted.copy(alpha = 0.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
