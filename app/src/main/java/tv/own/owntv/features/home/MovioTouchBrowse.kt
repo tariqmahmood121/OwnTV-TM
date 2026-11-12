@@ -230,7 +230,9 @@ fun MovioTouchLiveBrowser(
         val tablet = maxWidth >= 700.dp && categoryEnabled
         val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
         Row(Modifier.fillMaxSize()) {
-            if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))
+            if (tablet) MovioCategoryTextZoom(
+        modifier = Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp),
+    ) { categories(Modifier.fillMaxSize()) }
             Column(Modifier.weight(1f).fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(stringResource(R.string.moviotv_nav_live_tv), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

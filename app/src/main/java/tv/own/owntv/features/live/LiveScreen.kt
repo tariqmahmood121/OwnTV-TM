@@ -630,6 +630,7 @@ fun LiveScreen(
                 },
             )
             if (categoriesOpen) {
+                tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {
                 LiveCategories(
                     entries = categoryEntries, selectedIndex = selectedIndex,
                     groupsHeading = groupsHeading, sheet = true,
@@ -646,6 +647,7 @@ fun LiveScreen(
                         .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
                         .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),
                 )
+                }
             }
         } else {
         val margin = fx(64)

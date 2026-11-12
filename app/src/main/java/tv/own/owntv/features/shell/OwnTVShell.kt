@@ -742,30 +742,33 @@ fun OwnTVShell(
     // keys act on while the window is docked.
     val dockedEngine = if (liveOnExo) liveVm.previewEngine else mpvEngine
     val dockedPlaying by dockedEngine.isPlaying.collectAsStateWithLifecycle()
-    // V7.4: a failed video triggers one lightweight provider diagnostic, not a full catalogue refresh.
-    // Keep at least 60 seconds between probes to avoid spamming a struggling provider.
-    val v74TestVm: tv.own.owntv.features.settings.SettingsViewModel = org.koin.androidx.compose.koinViewModel()
-    val v74PlaybackError by player.error.collectAsStateWithLifecycle()
-    var v74LastProbeAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    LaunchedEffect(v74PlaybackError) {
+    // V7.6: active-source diagnostics after a sustained interruption (not a short buffer).
+    // Query the active player, including ExoPlayer live TV, rather than mpv-only errors.
+    // Subscribe to sources: the underlying StateFlow is lazy, so reading .value
+    // without collecting it used to leave the list empty and skip diagnostics.
+    val v76DiagnosticsVm: tv.own.owntv.features.settings.SettingsViewModel = org.koin.androidx.compose.koinViewModel()
+    val v76Sources by v76DiagnosticsVm.sources.collectAsStateWithLifecycle()
+    val v76LatestSources by rememberUpdatedState(v76Sources)
+    val v76PlaybackError by dockedEngine.error.collectAsStateWithLifecycle()
+    val v76Buffering by dockedEngine.buffering.collectAsStateWithLifecycle()
+    val v76LastCheckBySource = remember { mutableMapOf<Long, Long>() }
+    val v76CheckingLabel = stringResource(R.string.moviotv_diagnostics_title)
+    LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode) {
+        val sourceId = watchingSourceId ?: return@LaunchedEffect
+        if (playerMode == PlayerMode.NONE || multiview != null) return@LaunchedEffect
+        if (v76PlaybackError == null && !v76Buffering) return@LaunchedEffect
+        kotlinx.coroutines.delay(12_000L)
+        // If the stream recovered during the grace period, do nothing.
+        if (dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect
         val now = android.os.SystemClock.elapsedRealtime()
-        if (v74PlaybackError != null && (v74LastProbeAt == 0L || now - v74LastProbeAt > 60_000L)) {
-            v74LastProbeAt = now
-            v74TestVm.sources.value.firstOrNull()?.let { source -> v74TestVm.testSource(source) }
-        }
-    }
-    // Some hosts never send a player error: they simply leave the spinner running.
-    // After 15 seconds of genuine buffering, probe the provider once without cancelling playback.
-    val v74Buffering by player.buffering.collectAsStateWithLifecycle()
-    LaunchedEffect(v74Buffering, playerMode) {
-        if (v74Buffering && (playerMode == PlayerMode.FULLSCREEN || playerMode == PlayerMode.MINI)) {
-            kotlinx.coroutines.delay(15_000L)
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (player.buffering.value && (v74LastProbeAt == 0L || now - v74LastProbeAt > 60_000L)) {
-                v74LastProbeAt = now
-                v74TestVm.sources.value.firstOrNull()?.let { source -> v74TestVm.testSource(source) }
-            }
-        }
+        val previous = v76LastCheckBySource[sourceId] ?: 0L
+        if (previous != 0L && now - previous < 90_000L) return@LaunchedEffect
+        val source = v76LatestSources.firstOrNull { it.id == sourceId } ?: return@LaunchedEffect
+        v76LastCheckBySource[sourceId] = now
+        localSubToast.show(v76CheckingLabel)
+        // Existing source tester checks provider connectivity/auth without opening a
+        // second playback stream or risking the currently playing session.
+        v76DiagnosticsVm.testSource(source)
     }
     // Leaving the app while video plays can keep it going in a picture-in-picture window, which shows
     // the video alone. Coming back from the window always lands on full screen.
