@@ -1,0 +1,278 @@
+# MovioTV V7.6 — safe, isolated development build.
+# Upload this ONE file to .github/workflows/ on feature/moviotv-v7-polish.
+# It creates/updates feature/moviotv-v76 only AFTER compilation succeeds.
+# The V7.5 development branch and main stay untouched.
+name: MovioTV V7.6 - Auto Diagnostics and Category Pinch
+'on':
+  push:
+    branches:
+      - feature/moviotv-v7-polish
+    paths:
+      - .github/workflows/moviotv-v76-auto-diagnostics-category-pinch.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v76-isolated-build
+  cancel-in-progress: false
+jobs:
+  moviotv-v76:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-polish'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 65
+    env:
+      VERSION_CODE: '100013'
+      VERSION_NAME: '7.6'
+    steps:
+      - name: Check out verified V7.5 source without modifying it
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v7-polish
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Use isolated V7.6 development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin 'feature/moviotv-v76' >/dev/null; then
+            git fetch origin 'feature/moviotv-v76:refs/remotes/origin/feature/moviotv-v76'
+            git switch -C feature/moviotv-v76 refs/remotes/origin/feature/moviotv-v76
+          else
+            git switch -c feature/moviotv-v76
+          fi
+      - name: Apply V7.6 source fixes and version isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          base = Path('app/src/main/java/tv/own/owntv')
+
+          def replace_exact(path, old, new, count=1, done=None):
+              p = Path(path)
+              source = p.read_text(encoding='utf-8')
+              got = source.count(old)
+              if got == 0 and done and done in source:
+                  print('Already patched:', path)
+                  return
+              if got != count:
+                  raise SystemExit(f'V7.6 mismatch in {path}: expected {count} anchor(s), found {got}')
+              p.write_text(source.replace(old, new, count), encoding='utf-8')
+              print('Patched:', path)
+
+          # [1] Target the ACTUAL currently streaming engine/source, never the first source in a profile.
+          # Both ExoPlayer and mpv use the same PlaybackEngine error/buffering contract.
+          # Only diagnose a continuous failure lasting >=12s, and never repeat an account's probe
+          # more often than every 90s. No stream reset, account mutation, or catalogue refresh.
+          shell = base / 'features/shell/OwnTVShell.kt'
+          source = shell.read_text(encoding='utf-8')
+          if 'V7.6: active-source diagnostics after a sustained interruption' not in source:
+              begin = '    // V7.4: a failed video triggers one lightweight provider diagnostic, not a full catalogue refresh.\n'
+              finish = '    // Leaving the app while video plays can keep it going in a picture-in-picture window, which shows\n'
+              if source.count(begin) != 1 or source.count(finish) != 1:
+                  raise SystemExit('V7.6 diagnostic insertion anchors changed; aborting safely')
+              section = '''    // V7.6: active-source diagnostics after a sustained interruption (not a short buffer).
+              // Query the active player, including ExoPlayer live TV, rather than mpv-only errors.
+              // Subscribe to sources: the underlying StateFlow is lazy, so reading .value
+              // without collecting it used to leave the list empty and skip diagnostics.
+              val v76DiagnosticsVm: tv.own.owntv.features.settings.SettingsViewModel = org.koin.androidx.compose.koinViewModel()
+              val v76Sources by v76DiagnosticsVm.sources.collectAsStateWithLifecycle()
+              val v76LatestSources by rememberUpdatedState(v76Sources)
+              val v76PlaybackError by dockedEngine.error.collectAsStateWithLifecycle()
+              val v76Buffering by dockedEngine.buffering.collectAsStateWithLifecycle()
+              val v76LastCheckBySource = remember { mutableMapOf<Long, Long>() }
+              val v76CheckingLabel = stringResource(R.string.moviotv_diagnostics_title)
+              LaunchedEffect(watchingSourceId, dockedEngine, v76PlaybackError, v76Buffering, playerMode) {
+                  val sourceId = watchingSourceId ?: return@LaunchedEffect
+                  if (playerMode == PlayerMode.NONE || multiview != null) return@LaunchedEffect
+                  if (v76PlaybackError == null && !v76Buffering) return@LaunchedEffect
+                  kotlinx.coroutines.delay(12_000L)
+                  // If the stream recovered during the grace period, do nothing.
+                  if (dockedEngine.error.value == null && !dockedEngine.buffering.value) return@LaunchedEffect
+                  val now = android.os.SystemClock.elapsedRealtime()
+                  val previous = v76LastCheckBySource[sourceId] ?: 0L
+                  if (previous != 0L && now - previous < 90_000L) return@LaunchedEffect
+                  val source = v76LatestSources.firstOrNull { it.id == sourceId } ?: return@LaunchedEffect
+                  v76LastCheckBySource[sourceId] = now
+                  localSubToast.show(v76CheckingLabel)
+                  // Existing source tester checks provider connectivity/auth without opening a
+                  // second playback stream or risking the currently playing session.
+                  v76DiagnosticsVm.testSource(source)
+              }
+          '''
+              # Use dedent only to remove the YAML block's surrounding indentation,
+              # not Kotlin's required four-space line indentation inside the function.
+              import textwrap
+              section = textwrap.dedent(section)
+              if not section.startswith('    // V7.6:'):
+                  section = textwrap.indent(section, '    ')
+              source = source.replace(begin + source.split(begin, 1)[1].split(finish, 1)[0], section, 1)
+              shell.write_text(source, encoding='utf-8')
+              print('Patched: active-source playback diagnostics')
+          else:
+              print('Already patched: active-source playback diagnostics')
+
+          # [2] Give the left-hand category rail its OWN two-finger pinch handler.
+          # Listen in the initial pointer pass so its LazyColumn cannot steal the pinch;
+          # do not consume ordinary single-finger scrolling. Persist per profile.
+          zoom = base / 'features/home/MovioCategoryTextZoom.kt'
+          source = zoom.read_text(encoding='utf-8')
+          if 'V7.6 category pinch' not in source:
+              old = 'import androidx.compose.foundation.gestures.detectTransformGestures'
+              if source.count(old) != 1: raise SystemExit('V7.6 category pinch import anchor missing')
+              source = source.replace(old, '''import androidx.compose.foundation.gestures.awaitEachGesture
+          import androidx.compose.foundation.gestures.calculateZoom''', 1)
+              old = 'import androidx.compose.ui.input.pointer.pointerInput'
+              if source.count(old) != 1: raise SystemExit('V7.6 pointer import anchor missing')
+              source = source.replace(old, '''import androidx.compose.ui.input.pointer.PointerEventPass
+          import androidx.compose.ui.input.pointer.pointerInput''', 1)
+              old = 'coerceIn(1f, 1.85f)'
+              if source.count(old) != 2: raise SystemExit('V7.6 zoom bounds changed unexpectedly')
+              source = source.replace(old, 'coerceIn(0.75f, 2.25f)', 2)
+              start = '    Box(modifier.then(if (enabled) Modifier.pointerInput(key) {\n'
+              end = '        CompositionLocalProvider(LocalDensity provides Density(base.density, base.fontScale * zoom)) {\n'
+              if source.count(start) != 1 or source.count(end) != 1:
+                  raise SystemExit('V7.6 category pinch block changed; aborting safely')
+              new = '''    // V7.6 category pinch: separate from poster grid, works even over a scrolling list.
+              Box(modifier.then(if (enabled) Modifier.pointerInput(key) {
+                  awaitEachGesture {
+                      var changed = false
+                      do {
+                          val event = awaitPointerEvent(PointerEventPass.Initial)
+                          if (event.changes.count { it.pressed } >= 2) {
+                              val amount = event.calculateZoom()
+                              if (amount.isFinite() && amount > 0f) {
+                                  val next = (zoom * amount).coerceIn(0.75f, 2.25f)
+                                  if (kotlin.math.abs(next - zoom) >= 0.004f) {
+                                      zoom = next
+                                      changed = true
+                                  }
+                              }
+                              // Reserve the two-finger gesture for this rail, not list scrolling.
+                              event.changes.forEach { it.consume() }
+                          }
+                      } while (event.changes.any { it.pressed })
+                      if (changed) prefs.edit().putFloat(key, zoom).apply()
+                  }
+              } else Modifier)) {
+          '''
+              new = textwrap.dedent(new)
+              if not new.startswith('    // V7.6'):
+                  new = textwrap.indent(new, '    ')
+              source = source.replace(start + source.split(start,1)[1].split(end,1)[0], new, 1)
+              zoom.write_text(source, encoding='utf-8')
+              print('Patched: category-only pinch, 75–225% per profile')
+
+          # [3] Large-screen Live TV category rail had no pinch wrapper (Movies/Series do).
+          touch = base / 'features/home/MovioTouchBrowse.kt'
+          replace_exact(
+              touch,
+              '            if (tablet) categories(Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp))',
+              '''            if (tablet) MovioCategoryTextZoom(
+                  modifier = Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp),
+              ) { categories(Modifier.fillMaxSize()) }''',
+              done='if (tablet) MovioCategoryTextZoom(',
+          )
+
+          # [4] Folded-phone Live TV categories open as a drawer, not a permanent side rail.
+          # Movies/Series already wrap their drawer in MovioCategoryTextZoom; add it to Live.
+          live = base / 'features/live/LiveScreen.kt'
+          source = live.read_text(encoding='utf-8')
+          live_marker = '            if (categoriesOpen) {\n                tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {\n'
+          if live_marker not in source:
+              old = '            if (categoriesOpen) {\n                LiveCategories(\n'
+              if source.count(old) != 1: raise SystemExit('V7.6 Live phone drawer anchor mismatch')
+              source = source.replace(old, live_marker + '                LiveCategories(\n', 1)
+              old_tail = '''                        .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),
+                  )
+              }
+          } else {'''
+              # Source has no guarantee of identical indentation to this readable block.
+              after = '                        .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),\n                )\n            }\n        } else {'
+              if source.count(after) != 1: raise SystemExit('V7.6 Live drawer closing anchor mismatch')
+              source = source.replace(after,
+                  '                        .width(minOf(screenW * 0.88f, 420.dp)).fillMaxHeight(),\n                )\n                }\n            }\n        } else {', 1)
+              live.write_text(source, encoding='utf-8')
+              print('Patched: Live TV phone category drawer pinch')
+          else:
+              print('Already patched: Live TV phone category drawer')
+
+          # [5] V7.6 is a SIDE-BY-SIDE development package, not an overwrite of V7.5.
+          replace_exact('app/build.gradle.kts',
+              'applicationIdSuffix = ".moviotv75"',
+              'applicationIdSuffix = ".moviotv76"',
+              done='applicationIdSuffix = ".moviotv76"')
+          replace_exact('app/src/main/res/values/strings_moviotv.xml',
+              '<string name="moviotv_version">v7.5</string>',
+              '<string name="moviotv_version">v7.6</string>',
+              done='<string name="moviotv_version">v7.6</string>')
+          print('V7.6 patch completed successfully')
+          PY
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Configure Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Verify strings, run unit tests, lint, and build V7.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify APK identity and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/standard/debug/*.apk)
+          test "${#apks[@]}" -eq 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          "$aapt" dump badging "${apks[0]}" > /tmp/moviotv-v76-badging.txt
+          grep -F "package: name='tv.own.owntv.moviotv76'" /tmp/moviotv-v76-badging.txt
+          grep -F "application-label:'MovioTV'" /tmp/moviotv-v76-badging.txt
+          grep -F "versionName='7.6'" /tmp/moviotv-v76-badging.txt
+          grep -F "versionCode='100013'" /tmp/moviotv-v76-badging.txt
+      - name: Upload verified V7.6 test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.6-Auto-Diagnostics-Category-Pinch-TEST-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save compiled code on isolated V7.6 branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts \
+            app/src/main/java/tv/own/owntv/features/home/MovioCategoryTextZoom.kt \
+            app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt \
+            app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt \
+            app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt \
+            app/src/main/res/values/strings_moviotv.xml
+          if ! git diff --cached --quiet; then
+            git commit -m 'MovioTV V7.6: auto diagnose active stream; category pinch everywhere on touch'
+          fi
+          git push origin HEAD:refs/heads/feature/moviotv-v76
+      - name: Upload build-failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.6-Failure-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
