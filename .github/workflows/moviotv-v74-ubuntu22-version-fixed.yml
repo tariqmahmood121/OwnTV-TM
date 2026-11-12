@@ -1,0 +1,141 @@
+# MovioTV V7.4: independent retry on Ubuntu 22.04, explicit APK version fix.
+# Upload ONLY to .github/workflows/ on feature/moviotv-v7-polish.
+# Reuses the existing V7.4 I18N-fixed source patch; never touches main.
+name: MovioTV V7.4 - Ubuntu 22.04 Version FIXED
+
+"on":
+  push:
+    branches:
+      - feature/moviotv-v7-polish
+    paths:
+      - .github/workflows/moviotv-v74-ubuntu22-version-fixed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Deliberately no concurrency group: old V7.4 workflows cannot block this job
+# through GitHub Actions concurrency. Runner availability is still required.
+jobs:
+  v74-independent-test:
+    if: github.ref == 'refs/heads/feature/moviotv-v7-polish'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      VERSION_CODE: "100011"
+      VERSION_NAME: "7.4"
+    steps:
+      - name: Checkout isolated MovioTV V7.4 test branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v7-polish
+          persist-credentials: true
+
+      - name: Report runner allocation and prepare existing V7.4 recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner allocated: $RUNNER_NAME"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Workflow ref: $GITHUB_REF"
+          cat > "$RUNNER_TEMP/moviotv_run_recipe_step.py" <<'RECIPE_RUNNER'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          recipe = Path('.github/workflows/moviotv-v74-polish-diagnostics-i18n-fixed.yml')
+          if not recipe.is_file():
+              raise SystemExit(f'Missing existing V7.4 recipe: {recipe}')
+          document = recipe.read_text(encoding='utf-8')
+
+          def script_for_step(name):
+              marker = f'    - name: {name}\n'
+              if document.count(marker) != 1:
+                  raise SystemExit(f'Expected exactly one recipe step named: {name}')
+              section = document.split(marker, 1)[1].split('\n    - name: ', 1)[0]
+              lines = section.splitlines()
+              try:
+                  index = lines.index('      run: |')
+              except ValueError:
+                  raise SystemExit(f'No shell script in recipe step: {name}')
+              script_lines = []
+              for line in lines[index + 1:]:
+                  if line.startswith('        '):
+                      script_lines.append(line[8:])
+                  elif not line.strip():
+                      script_lines.append('')
+                  else:
+                      raise SystemExit(f'Unexpected recipe indentation in {name}: {line!r}')
+              script = '\n'.join(script_lines) + '\n'
+              if not script.strip():
+                  raise SystemExit(f'Empty recipe step: {name}')
+              return script
+
+          for step in sys.argv[1:]:
+              print(f'Executing existing verified V7.4 recipe: {step}', flush=True)
+              subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script_for_step(step)], check=True)
+          RECIPE_RUNNER
+
+      - name: Apply V7.4 polish, translations, and isolated APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/moviotv_run_recipe_step.py" \
+            'Apply V7.4 app improvements' \
+            'Verify strings and translations' \
+            'Keep V7.4 test installation separate from working V7.3'
+
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile and test MovioTV V7.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+
+      - name: Verify V7.4 APK package and branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/moviotv_run_recipe_step.py" \
+            'Verify APK identity and branded version'
+
+      - name: Upload standalone V7.4 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.4-Ubuntu22-VersionFixed-TEST-APK
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Save tested V7.4 source on polish branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/moviotv_run_recipe_step.py" \
+            'Save tested V7.4 Kotlin source to the polish branch only'
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.4-Ubuntu22-VersionFixed-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
