@@ -1,0 +1,684 @@
+# SINGLE FILE (KOTLIN COMPILE FIX): replace .github/workflows/moviotv-v79-one-file.yml
+# Branch: feature/moviotv-v78 (NOT main). Push triggers this workflow automatically.
+# After a successful build, code is saved on a new feature/moviotv-v79-oak-tablet-focus branch.
+name: MovioTV V7.9 - One File Oak Studio Tablet Smart Back
+'on':
+  push:
+    branches: [feature/moviotv-v78]
+    paths: [.github/workflows/moviotv-v79-one-file.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v79-unified
+  cancel-in-progress: false
+jobs:
+  moviotv-v79:
+    if: github.ref == 'refs/heads/feature/moviotv-v78'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      VERSION_CODE: '100016'
+      VERSION_NAME: '7.9'
+    steps:
+      - name: Checkout protected V7.8 source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v78
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply ALL V7.9 changes to checked-out source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v79_patch.py <<'PY'
+          from pathlib import Path
+          import re
+
+          ROOT = Path('app/src/main/java/tv/own/owntv')
+
+          def patch(path, old, new, count=1):
+              p = Path(path)
+              data = p.read_text(encoding='utf-8')
+              n = data.count(old)
+              if n != count:
+                  raise SystemExit('SAFE PATCH FAILED %s: expected %d anchor(s), got %d for %r' % (p, count, n, old[:120]))
+              p.write_text(data.replace(old, new, count), encoding='utf-8')
+              print('PATCHED', p)
+
+          def add(path, content):
+              p = Path(path)
+              if p.exists():
+                  raise SystemExit('Refusing to overwrite existing file: ' + str(p))
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(content.strip() + '\n', encoding='utf-8')
+              print('ADDED', p)
+
+          # App ID stability. Normal update candidates must use tv.own.owntv across builds.
+          patch('app/build.gradle.kts', '''            // MovioTV QA only: independent installation and private data sandbox.
+                      applicationIdSuffix = ".moviotv78"
+          ''', '''            // V7.9+: stable application ID for update-in-place. A matching signing key is ALSO required.
+                      // Never rename the package or delete databases during an upgrade.
+          ''')
+          patch('app/src/main/res/values/strings_moviotv.xml', '<string name="moviotv_version">v7.8</string>', '<string name="moviotv_version">v7.9</string>')
+
+          # Tablet-first automatic scaling. Avoid changing TV density or overriding user-set zoom.
+          patch('app/src/main/java/tv/own/owntv/MainActivity.kt', '''                val base = LocalDensity.current
+          ''', '''                val base = LocalDensity.current
+                          // 12-inch and other large touch tablets otherwise render the TV design at tiny sizes.
+                          // This is a constant layout factor, not a per-frame calculation or animation.
+                          val screen = androidx.compose.ui.platform.LocalConfiguration.current
+                          val tvMode = (screen.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+                              android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+                          val tabletScale = if (tvMode) 1f else when {
+                              screen.smallestScreenWidthDp >= 840 -> 1.20f
+                              screen.smallestScreenWidthDp >= 600 -> 1.12f
+                              else -> 1f
+                          }
+          ''')
+          patch('app/src/main/java/tv/own/owntv/MainActivity.kt', '''                        base.density * UiZoom.factor(uiZoomPercent),''', '''                        base.density * UiZoom.factor(uiZoomPercent) * tabletScale,''')
+
+          # Strong, theme-derived D-pad focus. Minimal extra rendering, no animations added.
+          focus = ROOT/'ui/stage/StageComponents.kt'
+          patch(focus, 'drawInnerRing(a.focus, 2 * px, r)', 'drawInnerRing(a.focus, 3 * px, r)')
+          patch(focus, 'drawOuterRing(a.focus, 2 * px, r)', 'drawOuterRing(a.focus, 3 * px, r)')
+          patch(focus, 'drawOuterRing(a.focus, 3 * px, r)', 'drawOuterRing(a.focus, 4 * px, r)', 3) # all visible focus indicators
+
+          # Two-stage remote OK: do not open details early if the user is aiming for options.
+          # On key UP: tap=existing; 0.9-2.999 s=details; >=3s=menu. This prevents double activation.
+          patch(focus, 'import androidx.compose.runtime.getValue\n', 'import androidx.compose.runtime.getValue\nimport androidx.compose.runtime.setValue\n')
+          patch(focus, 'import androidx.compose.ui.focus.FocusRequester\n', '''import androidx.compose.ui.focus.FocusRequester
+          import androidx.compose.ui.input.key.KeyEventType
+          import androidx.compose.ui.input.key.onPreviewKeyEvent
+          import androidx.compose.ui.input.key.type
+          ''')
+          patch(focus, '''    watched: Boolean = false,
+              artwork: @Composable BoxScope.() -> Unit,
+          ''', '''    watched: Boolean = false,
+              /** Optional TV D-pad hold handlers. Normal touch click/long-click remains unchanged. */
+              onDetailsHold: (() -> Unit)? = null,
+              onOptionsHold: (() -> Unit)? = null,
+              artwork: @Composable BoxScope.() -> Unit,
+          ''')
+          patch(focus, '''    val badge = Color(8, 12, 14)
+              Column(
+                  modifier
+                      .width(width)
+                      .stageLift(focused, StageFocus.POSTER)
+                      .stageClickable(interaction, true, onClick, onLongClick),
+          ''', '''    val badge = Color(8, 12, 14)
+              var okDownAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+              val stagedRemoteOk = if (onDetailsHold != null && onOptionsHold != null)
+                  Modifier.onPreviewKeyEvent { event ->
+                      val native = event.nativeKeyEvent
+                      val ok = native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                          native.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                          native.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER
+                      if (!ok) false else when (event.type) {
+                          KeyEventType.KeyDown -> {
+                              if (okDownAt == 0L) okDownAt = native.eventTime.coerceAtLeast(1L)
+                              true // Consume auto-repeat DOWN events; no action during a hold.
+                          }
+                          KeyEventType.KeyUp -> {
+                              val start = okDownAt
+                              okDownAt = 0L
+                              if (start > 0L) {
+                                  val held = (native.eventTime - start).coerceAtLeast(0L)
+                                  when {
+                                      held >= 3000L -> onOptionsHold?.invoke()
+                                      held >= 900L -> onDetailsHold?.invoke()
+                                      else -> onClick()
+                                  }
+                              }
+                              true // A new press is required to activate anything in the newly opened menu.
+                          }
+                          else -> false
+                      }
+                  } else Modifier
+              Column(
+                  modifier
+                      .width(width)
+                      .stageLift(focused, StageFocus.POSTER)
+                      .then(stagedRemoteOk)
+                      .stageClickable(interaction, true, onClick, onLongClick),
+          ''')
+
+          movie = ROOT/'features/movies/MoviesScreen.kt'
+          # Only the 4 movie cards in MoviesScreen, not Series or player controls.
+          patch(movie, '''onLongClick = { openMenu(movie, index) },''', '''onLongClick = { openMenu(movie, index) },
+                                      onDetailsHold = { v77DetailsMovie = movie },
+                                      onOptionsHold = { openMenu(movie, index) },''', 4)
+          # Only StagePoster supports the new staged hold callbacks. The third occurrence
+          # above belongs to VodListRow, which has no onDetailsHold/onOptionsHold arguments.
+          # Restore that row's original signature rather than breaking Kotlin compilation.
+          movie_text = movie.read_text(encoding='utf-8')
+          list_start = movie_text.index('VodListRow(')
+          list_end = movie_text.index('modifier = Modifier', list_start)
+          list_chunk = movie_text[list_start:list_end]
+          extra = '''onDetailsHold = { v77DetailsMovie = movie },
+                                      onOptionsHold = { openMenu(movie, index) },
+                                      '''
+          if list_chunk.count(extra) != 1:
+              raise SystemExit('V7.9 list row callback cleanup anchor not found exactly once')
+          movie.write_text(movie_text[:list_start] + list_chunk.replace(extra, '', 1) + movie_text[list_end:], encoding='utf-8')
+
+          # Asynchronous, cached credits-only search. No provider scans or network calls on keystrokes.
+          add(ROOT/'features/search/MovioCreditIndex.kt', r'''
+          package tv.own.owntv.features.search
+
+          import android.content.Context
+          import java.util.Locale
+          import java.util.concurrent.ConcurrentHashMap
+          import tv.own.owntv.core.database.entity.MovieEntity
+
+          /** Only credit text already downloaded while the user was viewing film details.
+           * Never fetch remote credits in a search callback or index the entire provider catalogue.
+           * Movie name guards against stale IDs after catalogue sync.
+           */
+          internal object MovioCreditIndex {
+              private const val PREF = "moviotv_credit_index_v79"
+              private const val PREFIX = "m_"
+              private const val MAX_STORED = 1200
+              private data class Entry(val title: String, val terms: String)
+              private val cache = ConcurrentHashMap<Long, Entry>()
+              @Volatile private var loaded = false
+
+              private fun load(context: Context) {
+                  if (loaded) return
+                  synchronized(this) {
+                      if (loaded) return
+                      val prefs = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                      prefs.all.forEach { (key, raw) ->
+                          val id = key.removePrefix(PREFIX).toLongOrNull() ?: return@forEach
+                          val value = raw as? String ?: return@forEach
+                          val parts = value.split('\n', limit = 2)
+                          if (parts.size == 2) cache[id] = Entry(parts[0], parts[1])
+                      }
+                      loaded = true
+                  }
+              }
+
+              fun remember(context: Context, movie: MovieEntity, actors: List<String>, genres: List<String>, director: String?) {
+                  val terms = (actors + genres + listOfNotNull(director)).map { it.trim().lowercase(Locale.ROOT) }
+                      .filter { it.length >= 3 }.distinct().joinToString("\n")
+                  if (terms.isBlank()) return
+                  load(context)
+                  cache[movie.id] = Entry(movie.name, terms)
+                  val prefs = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                  if (cache.size > MAX_STORED) {
+                      // Keep the store bounded and responsive on low-memory devices; no bulk cataloguing.
+                      val old = cache.keys.firstOrNull { it != movie.id }
+                      if (old != null) { cache.remove(old); prefs.edit().remove(PREFIX + old).apply() }
+                  }
+                  prefs.edit().putString(PREFIX + movie.id, movie.name + "\n" + terms).apply()
+              }
+
+              fun matchingIds(context: Context, query: String): List<Long> {
+                  val needle = query.trim().lowercase(Locale.ROOT)
+                  if (needle.length < 3) return emptyList()
+                  load(context)
+                  return cache.entries.asSequence().filter { (_, entry) ->
+                      entry.terms.lineSequence().any { it.contains(needle) }
+                  }.map { it.key }.take(80).toList()
+              }
+
+              fun titleStillMatches(context: Context, movie: MovieEntity): Boolean {
+                  load(context)
+                  return cache[movie.id]?.title == movie.name
+              }
+          }
+          ''')
+
+          vm = ROOT/'features/search/SearchViewModel.kt'
+          patch(vm, 'import androidx.lifecycle.ViewModel\n', '''import androidx.lifecycle.ViewModel
+          import android.content.Context
+          import tv.own.owntv.core.customize.CustomizationStore
+          import tv.own.owntv.core.customize.CustomizeKeys
+          import tv.own.owntv.core.content.AdultCategoryClassifier
+          import tv.own.owntv.core.database.dao.MovieDao
+          import tv.own.owntv.core.model.MediaType
+          ''')
+          patch(vm, '''class SearchViewModel(
+              private val profileDao: ProfileDao,''', '''class SearchViewModel(
+              private val appContext: Context,
+              private val movieDao: MovieDao,
+              private val customize: CustomizationStore,
+              private val profileDao: ProfileDao,''')
+          patch(vm, '''    private suspend fun search(q: String): SearchResults {
+                  val pid = currentProfileId() ?: return SearchResults()
+                  return searchReader.search(pid, ctx.value, q)
+              }
+          ''', '''    private suspend fun search(q: String): SearchResults {
+                  val pid = currentProfileId() ?: return SearchResults()
+                  val sources = ctx.value
+                  val normal = searchReader.search(pid, sources, q)
+                  // Existing local FTS title search finishes first. Extend only from previously cached film credits.
+                  // No TMDB/provider calls from typing; apply exactly the same source, adult and hidden filters.
+                  val candidateIds = MovioCreditIndex.matchingIds(appContext, q)
+                  if (candidateIds.isEmpty() || sources.movieSourceIds.isEmpty()) return normal
+                  val hidden = customize.observeVisible(pid, MediaType.MOVIE).first()
+                  val categories = categoryDao.observe(sources.movieSourceIds, MediaType.MOVIE).first()
+                  val kids = profileDao.getById(pid)?.isKids == true
+                  val hiddenCats = AdultCategoryClassifier.hiddenCategoryIds(categories, hidden.hiddenCategories, kids)
+                  val extra = movieDao.getByIds(candidateIds).filter { movie ->
+                      movie.sourceId in sources.movieSourceIds &&
+                          (movie.categoryId == null || movie.categoryId !in hiddenCats) &&
+                          CustomizeKeys.movie(movie) !in hidden.hiddenItems &&
+                          MovioCreditIndex.titleStillMatches(appContext, movie)
+                  }.map { movie ->
+                      hidden.itemNames[CustomizeKeys.movie(movie)]?.let { movie.copy(name = it) } ?: movie
+                  }
+                  return normal.copy(movies = (normal.movies + extra).distinctBy { it.id }.take(100))
+              }
+          ''')
+          # Context menu must focus a safe action; never default to Remove from Favourites.
+          patch(movie, '        val actions = buildList {\n', '''        val actions = buildList {
+                      add(MenuAction("moviotv_safe_play", stringResource(R.string.moviotv_play_movie), OwnTVIcon.PLAY_CIRCLE, group = VodGroupWatch) {
+                          contextMovie = null
+                          actuallyStartMovie(m)
+                      })
+          ''', 1)
+
+          patch(movie, '''        val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
+                  v78Info = V78Info(movie.id, provider, tmdb, complete = true)
+          ''', '''        val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
+                  val names = tv.own.owntv.core.metadata.MetadataCast.names(tmdb?.castJson)
+                  val moreGenres = runCatching {
+                      val array = org.json.JSONArray(tmdb?.genresJson ?: "[]")
+                      (0 until array.length()).mapNotNull { i -> array.optString(i).takeIf { it.isNotBlank() } }
+                  }.getOrDefault(emptyList())
+                  tv.own.owntv.features.search.MovioCreditIndex.remember(
+                      context, movie, provider?.cast.orEmpty() + names,
+                      provider?.genres.orEmpty() + moreGenres, provider?.director,
+                  )
+                  v78Info = V78Info(movie.id, provider, tmdb, complete = true)
+          ''')
+
+          # Keep the mobile colour consistent with the active per-profile accent, including turquoise.
+          touch = ROOT/'features/home/MovioTouchBrowse.kt'
+          patch(touch, '''private val purple = Color(0xFFB465FF)''', '''private val purple: Color
+              @Composable get() = tv.own.owntv.ui.theme.stageAccent.accent''')
+
+          # Smart Back on by default, per profile. Store only preference; history remains in memory.
+          shell = ROOT/'features/shell/OwnTVShell.kt'
+          patch(shell, '''    val noSourceLabel = stringResource(R.string.shell_no_source)''', '''    val smartBackPrefs = remember(movioContext) {
+                  movioContext.getSharedPreferences("moviotv_smart_back_v79", android.content.Context.MODE_PRIVATE)
+              }
+              var smartBackEnabled by remember(activeProfileId) {
+                  mutableStateOf(smartBackPrefs.getBoolean("enabled_" + (activeProfileId ?: -1L), true))
+              }
+              val setSmartBack: (Boolean) -> Unit = { enabled ->
+                  smartBackEnabled = enabled
+                  smartBackPrefs.edit().putBoolean("enabled_" + (activeProfileId ?: -1L), enabled).apply()
+              }
+              val noSourceLabel = stringResource(R.string.shell_no_source)''')
+          patch(shell, '''    // The section a Search result opened ("Go to"), so the first Back there returns to Search.''', '''    // Lightweight journey stack: exact section visited, no database writes or network traffic.
+              val movioBackHistory = remember(activeProfileId) { androidx.compose.runtime.mutableStateListOf<MainSection>() }
+              var movioObservedSection by remember(activeProfileId) { mutableStateOf(selectedSection) }
+              var movioPoppingBack by remember { mutableStateOf(false) }
+              LaunchedEffect(selectedSection, activeProfileId) {
+                  if (selectedSection != movioObservedSection) {
+                      if (movioPoppingBack) movioPoppingBack = false
+                      else if (movioBackHistory.lastOrNull() != movioObservedSection) {
+                          if (movioBackHistory.size >= 24) movioBackHistory.removeAt(0)
+                          movioBackHistory.add(movioObservedSection)
+                      }
+                      movioObservedSection = selectedSection
+                  }
+              }
+              val movioGoBack: () -> Unit = {
+                  val previous = if (smartBackEnabled && movioBackHistory.isNotEmpty())
+                      movioBackHistory.removeAt(movioBackHistory.lastIndex) else null
+                  if (previous != null) {
+                      movioPoppingBack = true
+                      restoreFocus = true
+                      onSelectSection(previous)
+                  } else focusRail()
+              }
+              // The section a Search result opened ("Go to"), so the first Back there returns to Search.''')
+          patch(shell, '''        searchReturn = null
+                  onSelectSection(MainSection.SEARCH)
+          ''', '''        searchReturn = null
+                  if (movioBackHistory.lastOrNull() == MainSection.SEARCH) movioBackHistory.removeAt(movioBackHistory.lastIndex)
+                  movioPoppingBack = true
+                  onSelectSection(MainSection.SEARCH)
+          ''')
+          patch(shell, '''            selectedSection == MainSection.SETTINGS -> { restoreFocus = true; onSelectSection(MainSection.MORE) }
+          ''', '''            selectedSection == MainSection.SETTINGS -> movioGoBack()
+          ''')
+          patch(shell, '''            focusedLayer == ShellLayer.SIDEBAR -> showExit = true
+                      else -> focusRail()
+          ''', '''            smartBackEnabled && movioBackHistory.isNotEmpty() -> movioGoBack()
+                      focusedLayer == ShellLayer.SIDEBAR -> showExit = true
+                      else -> focusRail()
+          ''')
+          patch(shell, '''                            onBack = { restoreFocus = true; onSelectSection(MainSection.MORE) },''', '''                            onBack = movioGoBack,
+                                      smartBackEnabled = smartBackEnabled,
+                                      onSmartBackChange = setSmartBack,''')
+          patch(shell, '''                                onSelectSection(MainSection.SPORTS)
+                                      },
+                                      modifier = Modifier
+                                          .fillMaxSize()
+          ''', '''                                onSelectSection(MainSection.SPORTS)
+                                      },
+                                      modifier = Modifier
+                                          .fillMaxSize()
+                                          .moviotvSettingsPinch(movioTouch) { step ->
+                                              onSetZoom((uiZoomPercent + step).coerceIn(65, 150))
+                                          }
+          ''', 1)
+          patch(shell, 'import androidx.activity.compose.BackHandler\n', '''import androidx.activity.compose.BackHandler
+          import tv.own.owntv.features.home.moviotvSettingsPinch
+          ''')
+
+          add(ROOT/'features/home/MovioSettingsPinch.kt', r'''
+          package tv.own.owntv.features.home
+
+          import androidx.compose.foundation.gestures.awaitEachGesture
+          import androidx.compose.foundation.gestures.calculateZoom
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.input.pointer.PointerEventPass
+          import androidx.compose.ui.input.pointer.pointerInput
+
+          /** Two-finger pinch over Settings adjusts existing UI Zoom by one 5% step on RELEASE.
+           * Single-finger scrolling and taps remain normal. Scaling is not animated or re-saved on each frame.
+           */
+          fun Modifier.moviotvSettingsPinch(enabled: Boolean, onZoomStep: (Int) -> Unit): Modifier =
+              if (!enabled) this else this.pointerInput(enabled, onZoomStep) {
+                  awaitEachGesture {
+                      var ratio = 1f
+                      var hadTwo = false
+                      do {
+                          val event = awaitPointerEvent(PointerEventPass.Initial)
+                          if (event.changes.count { it.pressed } >= 2) {
+                              hadTwo = true
+                              val change = event.calculateZoom()
+                              if (change.isFinite() && change > 0f) ratio = (ratio * change).coerceIn(0.3f, 3f)
+                              event.changes.forEach { it.consume() }
+                          }
+                      } while (event.changes.any { it.pressed })
+                      if (hadTwo) when {
+                          ratio >= 1.12f -> onZoomStep(5)
+                          ratio <= 0.88f -> onZoomStep(-5)
+                      }
+                  }
+              }
+          ''')
+
+          # Sleep timer only on phones/tablets. TV still stops correctly if an existing timer is running.
+          chrome = ROOT/'player/PlayerHudChrome.kt'
+          patch(chrome, '''    hasSources: Boolean = false,
+              onOpenDialog: (HudDialog) -> Unit,''', '''    hasSources: Boolean = false,
+              showSleepTimer: Boolean = true,
+              onOpenDialog: (HudDialog) -> Unit,''')
+          patch(chrome, '''                        PlayerControl.SLEEP_TIMER ->
+                                      CtrlButton(OwnTVIcon.BEDTIME, active = sleepRunning, label = stringResource(R.string.player_sleep_timer)) { onOpenDialog(HudDialog.SLEEP_TIMER) }''', '''                        PlayerControl.SLEEP_TIMER -> if (showSleepTimer)
+                                      CtrlButton(OwnTVIcon.BEDTIME, active = sleepRunning, label = stringResource(R.string.player_sleep_timer)) { onOpenDialog(HudDialog.SLEEP_TIMER) }''')
+          hud = ROOT/'player/PlayerHud.kt'
+          patch(hud, '''                    hasSources = sources != null,
+                              compatMode = compatMode,''', '''                    hasSources = sources != null,
+                              showSleepTimer = movioTouchPlayer,
+                              compatMode = compatMode,''')
+
+          # Native About page, uses current palette and Oak symbol, includes proper upstream attribution.
+          add(ROOT/'features/settings/MovioAboutScreen.kt', r'''
+          package tv.own.owntv.features.settings
+
+          import androidx.activity.compose.BackHandler
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.res.stringResource
+          import androidx.compose.ui.unit.dp
+          import androidx.tv.material3.Text
+          import tv.own.owntv.R
+          import tv.own.owntv.BuildConfig
+          import tv.own.owntv.ui.stage.StageButton
+          import tv.own.owntv.ui.theme.LocalStagePalette
+          import tv.own.owntv.ui.theme.StageColors
+          import tv.own.owntv.ui.theme.stageAccent
+          import tv.own.owntv.ui.theme.stageText
+
+          @Composable
+          fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+              BackHandler(onBack = onBack)
+              val accent = stageAccent.accent
+              Column(
+                  modifier.fillMaxSize().background(LocalStagePalette.current.page)
+                      .verticalScroll(rememberScrollState()).padding(32.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp),
+              ) {
+                  Canvas(Modifier.size(98.dp)) {
+                      val s = size.minDimension / 100f
+                      val w = 5f * s
+                      // Oak crown + ascending branches. Vector-drawn, no bitmap decode at launch.
+                      drawCircle(accent, radius = 30f * s,
+                          center = Offset(50f * s, 39f * s), style = Stroke(width = w))
+                      drawLine(accent, Offset(50f*s, 86f*s), Offset(50f*s, 37f*s), w, cap = StrokeCap.Round)
+                      drawLine(accent, Offset(50f*s, 65f*s), Offset(28f*s, 43f*s), w, cap = StrokeCap.Round)
+                      drawLine(accent, Offset(50f*s, 57f*s), Offset(72f*s, 32f*s), w, cap = StrokeCap.Round)
+                      drawLine(accent, Offset(34f*s, 89f*s), Offset(65f*s, 89f*s), w, cap = StrokeCap.Round)
+                  }
+                  Text(stringResource(R.string.moviotv_oak_studios), style = stageText(38, 800), color = accent)
+                  Text(stringResource(R.string.moviotv_about_studio_subtitle), style = stageText(16, 600), color = StageColors.Muted)
+                  Spacer(Modifier.height(8.dp))
+                  Text(stringResource(R.string.moviotv_app_name), style = stageText(28, 700), color = StageColors.Text)
+                  Text(stringResource(R.string.moviotv_about_version, BuildConfig.VERSION_NAME), style = stageText(17, 500), color = StageColors.Muted)
+                  Text(stringResource(R.string.moviotv_about_developed), style = stageText(18, 600), color = StageColors.Text)
+                  Text(stringResource(R.string.moviotv_about_created), style = stageText(18, 500), color = StageColors.Text)
+                  Spacer(Modifier.height(6.dp))
+                  Text(stringResource(R.string.moviotv_about_licence), style = stageText(15, 400), color = StageColors.Muted)
+                  StageButton(stringResource(R.string.common_back), onClick = onBack)
+              }
+          }
+          ''')
+
+          settings = ROOT/'features/shell/components/SettingsScreen.kt'
+          patch(settings, 'SPORTS }', 'SPORTS, ABOUT }')
+          patch(settings, '''    onOpenSportsTeam: (tv.own.owntv.core.sports.FollowedTeam) -> Unit = {},
+          ) {''', '''    onOpenSportsTeam: (tv.own.owntv.core.sports.FollowedTeam) -> Unit = {},
+              smartBackEnabled: Boolean = true,
+              onSmartBackChange: (Boolean) -> Unit = {},
+          ) {''')
+          patch(settings, '''        SettingsTab.ROOT -> Unit
+          ''', '''        SettingsTab.ABOUT -> tv.own.owntv.features.settings.MovioAboutScreen(
+                      onBack = { tab = SettingsTab.ROOT }, modifier = sub,
+                  )
+                  SettingsTab.ROOT -> Unit
+          ''')
+          # The app's SettingsSearchCoverageTest requires EVERY new row/tab to be searchable.
+          patch(settings, '''        SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.settings_app_icon),''', '''        SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.moviotv_about_title), stringResource(R.string.moviotv_about_developed), OwnTVIcon.INFO, TileTone.PRIMARY) { open(SettingsTab.ABOUT) },
+                  SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.moviotv_smart_back_title), stringResource(R.string.moviotv_smart_back_desc), OwnTVIcon.HISTORY, TileTone.SECONDARY,
+                          chip = stringResource(if (smartBackEnabled) R.string.common_on else R.string.common_off)) { onSmartBackChange(!smartBackEnabled) },
+                  SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.settings_app_icon),''')
+
+          patch(settings, '''        RootGroup("group_app", stringResource(R.string.settings_app_group), OwnTVIcon.INFO, stringResource(R.string.settings_group_summary_app)),''', '''        RootGroup("group_app", stringResource(R.string.settings_app_group), OwnTVIcon.INFO, stringResource(R.string.settings_group_summary_app)),
+                  RootRow(
+                      tabRowKey(SettingsTab.ABOUT), TileTone.PRIMARY, OwnTVIcon.INFO,
+                      title = stringResource(R.string.moviotv_about_title),
+                      desc = stringResource(R.string.moviotv_about_developed),
+                      focus = rowFocus.getValue(SettingsTab.ABOUT),
+                      onClick = { open(SettingsTab.ABOUT) },
+                  ),
+                  RootRow(
+                      "smart_back", TileTone.SECONDARY, OwnTVIcon.HISTORY,
+                      title = stringResource(R.string.moviotv_smart_back_title),
+                      desc = stringResource(R.string.moviotv_smart_back_desc),
+                      chip = stringResource(if (smartBackEnabled) R.string.common_on else R.string.common_off),
+                      onClick = { onSmartBackChange(!smartBackEnabled) },
+                  ),''')
+
+          # 7 English resource strings. No hardcoded UI labels in Kotlin.
+          resources = Path('app/src/main/res/values/strings_moviotv.xml')
+          text = resources.read_text(encoding='utf-8')
+          extra = {
+              'moviotv_oak_studios': 'OAK STUDIOS',
+              'moviotv_about_title': 'About MovioTV',
+              'moviotv_about_studio_subtitle': 'Independent software studio',
+              'moviotv_about_version': 'Version %1$s',
+              'moviotv_about_developed': 'Developed by Oak Studios',
+              'moviotv_about_created': 'Created by ZIGGS',
+              'moviotv_about_licence': 'Built on OwnTV open-source software (GPL-3.0). Original authors and third-party licences remain acknowledged.',
+              'moviotv_smart_back_title': 'Smart Back Navigation',
+              'moviotv_smart_back_desc': 'Back retraces your journey instead of losing your place',
+          }
+          for k,v in extra.items():
+              if ('name="%s"'%k) in text:
+                  raise SystemExit('Duplicate resource name '+k)
+              text=text.replace('</resources>', '    <string name="%s">%s</string>\n</resources>'%(k,v))
+          resources.write_text(text,encoding='utf-8')
+
+          # i18n checker: classify ONLY new non-screen technical keys from the files above.
+          # Any new unexpected user-visible strings still stop the build.
+          import runpy
+          mod = runpy.run_path('tools/i18n/check_hardcoded_strings.py')
+          old_base = mod['_parse'](mod['BASELINE'].read_text(encoding='utf-8'))
+          current = mod['_inventory']()
+          safe, cats, problems = mod['_safe_entries']()
+          if problems: raise SystemExit('Existing safe manifest invalid: %r' % problems[:3])
+          whitelist = (
+              '/features/search/MovioCreditIndex.kt',
+              '/features/home/MovioSettingsPinch.kt',
+              '/features/settings/MovioAboutScreen.kt',
+          )
+          known = {
+              'app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt': {'moviotv_smart_back_v79', 'enabled_'},
+              'app/src/main/java/tv/own/owntv/features/shell/components/SettingsScreen.kt': {'smart_back'},
+              'app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt': {'[]', 'moviotv_safe_play'},
+          }
+          pending=[]
+          for key, count in current.items():
+              diff = count-old_base.get(key,0)-safe.get(key,0)
+              if diff <= 0: continue
+              path, literal = key
+              if path.endswith(whitelist) or literal in known.get(path,set()):
+                  safe[key] = count-old_base.get(key,0)
+                  cats[key] = 'technical'
+              else:
+                  pending.append((path,literal,diff))
+          if pending:
+              for x in pending[:20]: print('UNCLASSIFIED',repr(x))
+              raise SystemExit('Unexpected Kotlin strings must be reviewed before compile')
+          mod['SAFE_MANIFEST'].write_text(mod['_serialize_safe']({k:(v,cats[k]) for k,v in safe.items()}), encoding='utf-8')
+          print('MovioTV V7.9 unified patch completed; working source branch not modified')
+          PY
+          python3 /tmp/moviotv_v79_patch.py
+      - name: Translation baseline and Kotlin UI literal gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Cache Gradle dependencies
+        uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests + Android lint + compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify stable application ID before upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -n "$aapt"
+          test -f app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          "$aapt" dump badging app/build/outputs/apk/standard/debug/app-standard-debug.apk > /tmp/moviotv-badging.txt
+          grep -F "package: name='tv.own.owntv'" /tmp/moviotv-badging.txt
+          grep -F "versionName='7.9'" /tmp/moviotv-badging.txt
+          grep -F "versionCode='100016'" /tmp/moviotv-badging.txt
+      - name: Upload unsigned-for-upgrade debug QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.9-DEBUG-NOT-FOR-DATA-PRESERVING-UPGRADE
+          path: app/build/outputs/apk/standard/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
+      - name: Configure optional EXISTING release signing certificate
+        id: sign
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.MOVIOTV_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEY_B64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/moviotv-existing.jks"
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo 'No existing signing key configured. A fresh debug APK CANNOT upgrade a differently signed installed app.'
+          fi
+      - name: Build true in-place upgrade APK with SAME existing release key
+        if: steps.sign.outputs.configured == 'true'
+        shell: bash
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/moviotv-existing.jks
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardRelease --stacktrace
+          test -f app/build/outputs/apk/standard/release/app-standard-release.apk
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          "$aapt" dump badging app/build/outputs/apk/standard/release/app-standard-release.apk > /tmp/moviotv-release-badging.txt
+          grep -F "package: name='tv.own.owntv'" /tmp/moviotv-release-badging.txt
+          grep -F "versionName='7.9'" /tmp/moviotv-release-badging.txt
+          grep -F "versionCode='100016'" /tmp/moviotv-release-badging.txt
+      - name: Upload signed in-place release upgrade
+        if: steps.sign.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.9-RELEASE-PRESERVE-DATA
+          path: app/build/outputs/apk/standard/release/*.apk
+          retention-days: 14
+          if-no-files-found: error
+      - name: Save VERIFIED V7.9 source on new branch ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c feature/moviotv-v79-oak-tablet-focus
+          git add app/build.gradle.kts app/src/main/java/tv/own/owntv app/src/main/res/values/strings_moviotv.xml tools/i18n/safe_literals.txt
+          git diff --cached --quiet && { echo 'No changed source to commit'; exit 1; }
+          git commit -m 'MovioTV V7.9: Oak Studios, accessible focus, smart back, tablet and credits'
+          git push origin HEAD:refs/heads/feature/moviotv-v79-oak-tablet-focus
+      - name: Keep debugging evidence if checks fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.9-Failure-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          retention-days: 14
+          if-no-files-found: warn
