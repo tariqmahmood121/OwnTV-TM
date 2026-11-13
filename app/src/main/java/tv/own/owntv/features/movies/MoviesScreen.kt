@@ -211,6 +211,15 @@ fun MoviesScreen(
         val provider = runCatching { vm.loadProviderVodDetails(movie) }.getOrNull()
         v78Info = V78Info(movie.id, provider, null, complete = false)
         val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
+        val names = tv.own.owntv.core.metadata.MetadataCast.names(tmdb?.castJson)
+        val moreGenres = runCatching {
+            val array = org.json.JSONArray(tmdb?.genresJson ?: "[]")
+            (0 until array.length()).mapNotNull { i -> array.optString(i).takeIf { it.isNotBlank() } }
+        }.getOrDefault(emptyList())
+        tv.own.owntv.features.search.MovioCreditIndex.remember(
+            context, movie, provider?.cast.orEmpty() + names,
+            provider?.genres.orEmpty() + moreGenres, provider?.director,
+        )
         v78Info = V78Info(movie.id, provider, tmdb, complete = true)
     }
     val toast = rememberInAppToast()
@@ -625,6 +634,8 @@ fun MoviesScreen(
                             watched = prog?.let { vm.isMovieCompleted(it) } == true,
                             onClick = { startMovie(movie) },
                             onLongClick = { openMenu(movie, index) },
+                            onDetailsHold = { v77DetailsMovie = movie },
+                            onOptionsHold = { openMenu(movie, index) },
                             modifier = Modifier.onFocusChanged { if (it.isFocused) onMovieFocus(movie) },
                         ) { VodPosterBadgedArt(posterOf(movie), OwnTVIcon.MOVIES, movie.rating, vodReleaseYear(movie.year, movie.name), large = !touchUi, badgeSize = v77MoviePrefs.ratingSize, showYear = v77MoviePrefs.showYear) }
                     }
@@ -692,6 +703,8 @@ fun MoviesScreen(
                                         watched = done,
                                         onClick = { startMovie(movie) },
                                         onLongClick = { openMenu(movie, index) },
+                            onDetailsHold = { v77DetailsMovie = movie },
+                            onOptionsHold = { openMenu(movie, index) },
                                         modifier = Modifier
                                             .gridFocusTarget(
                                                 itemId = movie.id, index = index,
@@ -862,6 +875,8 @@ fun MoviesScreen(
                                     watched = done,
                                     onClick = { startMovie(movie) },
                                     onLongClick = { openMenu(movie, index) },
+                            onDetailsHold = { v77DetailsMovie = movie },
+                            onOptionsHold = { openMenu(movie, index) },
                                     modifier = Modifier
                                         .gridFocusTarget(
                                             itemId = movie.id, index = index,
@@ -963,6 +978,10 @@ fun MoviesScreen(
         val inHistory by androidx.compose.runtime.produceState(selectedKey == LiveKey.History, m.id) { value = vm.isInHistory(m) }
         val canMove = selectedKey is LiveKey.Folder || selectedKey is LiveKey.Custom || selectedKey == LiveKey.Favorites
         val actions = buildList {
+            add(MenuAction("moviotv_safe_play", stringResource(R.string.moviotv_play_movie), OwnTVIcon.PLAY_CIRCLE, group = VodGroupWatch) {
+                contextMovie = null
+                actuallyStartMovie(m)
+            })
             add(MenuAction("play_trailer", stringResource(R.string.content_play_trailer), OwnTVIcon.PLAY_CIRCLE, group = VodGroupWatch) {
                 trailerKey?.let { contextMovie = null; trailerTitle = m.name; trailerVideoKey = it }
             })

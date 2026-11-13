@@ -106,7 +106,7 @@ import tv.own.owntv.ui.theme.primary
 
 internal enum class TileTone { PRIMARY, SECONDARY, TERTIARY }
 
-private enum class SettingsTab { ROOT, LANGUAGE, SOURCES, EPG, BACKUP, LOCAL_SYNC, CUSTOMIZE, HOME, NETWORK, DNS, METADATA, OPEN_SUBTITLES, WEATHER, CH_NAV, PANEL_WIDTH, GUIDE_WIDTH, GLASS_EFFECT, CONTENT_MENUS, FONTS, BROWSING, SUBTITLE_STYLE, SPORTS }
+private enum class SettingsTab { ROOT, LANGUAGE, SOURCES, EPG, BACKUP, LOCAL_SYNC, CUSTOMIZE, HOME, NETWORK, DNS, METADATA, OPEN_SUBTITLES, WEATHER, CH_NAV, PANEL_WIDTH, GUIDE_WIDTH, GLASS_EFFECT, CONTENT_MENUS, FONTS, BROWSING, SUBTITLE_STYLE, SPORTS, ABOUT }
 
 @Composable
 private fun epgShiftLabel(minutes: Int): String {
@@ -157,6 +157,8 @@ fun SettingsScreen(
     onStartConsumed: () -> Unit = {},
     /** Settings → Sports → My teams: OK on a followed team opens its page in the Sports section. */
     onOpenSportsTeam: (tv.own.owntv.core.sports.FollowedTeam) -> Unit = {},
+    smartBackEnabled: Boolean = true,
+    onSmartBackChange: (Boolean) -> Unit = {},
 ) {
     // A cross-script language change recreates the Activity so Android can apply the new script's
     // shaping and font fallback. Keep the open settings sub-screen across that configuration change
@@ -430,7 +432,10 @@ fun SettingsScreen(
                 current = fontCustomization, onSet = onSetFontCustomization, familyLabel = { fontFamilyLabel(it) },
                 onBack = { tab = SettingsTab.ROOT }, modifier = modifier,
             )
-            SettingsTab.ROOT -> Unit
+            SettingsTab.ABOUT -> tv.own.owntv.features.settings.MovioAboutScreen(
+            onBack = { tab = SettingsTab.ROOT }, modifier = sub,
+        )
+        SettingsTab.ROOT -> Unit
     }
     }
     return
@@ -727,6 +732,20 @@ fun SettingsScreen(
         // and are More rows now; Clear history moved onto the History screen it acts on; the download
         // folder moved to the Downloads screen. With all four gone the group had nothing left in it.
         RootGroup("group_app", stringResource(R.string.settings_app_group), OwnTVIcon.INFO, stringResource(R.string.settings_group_summary_app)),
+        RootRow(
+            tabRowKey(SettingsTab.ABOUT), TileTone.PRIMARY, OwnTVIcon.INFO,
+            title = stringResource(R.string.moviotv_about_title),
+            desc = stringResource(R.string.moviotv_about_developed),
+            focus = rowFocus.getValue(SettingsTab.ABOUT),
+            onClick = { open(SettingsTab.ABOUT) },
+        ),
+        RootRow(
+            "smart_back", TileTone.SECONDARY, OwnTVIcon.HISTORY,
+            title = stringResource(R.string.moviotv_smart_back_title),
+            desc = stringResource(R.string.moviotv_smart_back_desc),
+            chip = stringResource(if (smartBackEnabled) R.string.common_on else R.string.common_off),
+            onClick = { onSmartBackChange(!smartBackEnabled) },
+        ),
         // Sports Hub: one row in App, opening the page with every Sports setting. Not a group of its
         // own: More › Settings opens groups by position (SettingsGroup), and its 12 cards fill the page.
         RootRow(
@@ -1012,6 +1031,9 @@ fun SettingsScreen(
         ) { saveScroll(); dialogReturn = searchFieldFocus; showPopupSize = true },
         SettingsSearchEntry(stringResource(R.string.settings_group_appearance), stringResource(R.string.settings_ui_zoom), stringResource(R.string.settings_search_keywords_zoom), OwnTVIcon.ZOOM, TileTone.SECONDARY,
                 chip = stringResource(R.string.common_percent, uiZoomPercent), chipTone = TileTone.SECONDARY) { saveScroll(); dialogReturn = searchFieldFocus; showZoom = true },
+        SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.moviotv_about_title), stringResource(R.string.moviotv_about_developed), OwnTVIcon.INFO, TileTone.PRIMARY) { open(SettingsTab.ABOUT) },
+        SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.moviotv_smart_back_title), stringResource(R.string.moviotv_smart_back_desc), OwnTVIcon.HISTORY, TileTone.SECONDARY,
+                chip = stringResource(if (smartBackEnabled) R.string.common_on else R.string.common_off)) { onSmartBackChange(!smartBackEnabled) },
         SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.settings_app_icon), stringResource(R.string.settings_app_icon_summary), OwnTVIcon.PALETTE, TileTone.SECONDARY,
                 chip = stringResource(appIcon.label), chipTone = TileTone.SECONDARY) { saveScroll(); dialogReturn = searchFieldFocus; showAppIcon = true },
         SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.settings_brand_accent), stringResource(R.string.settings_line_brand_accent), OwnTVIcon.PALETTE, TileTone.SECONDARY,

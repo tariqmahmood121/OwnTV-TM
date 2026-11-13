@@ -1,6 +1,7 @@
 package tv.own.owntv.features.shell
 
 import androidx.activity.compose.BackHandler
+import tv.own.owntv.features.home.moviotvSettingsPinch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -156,6 +157,16 @@ fun OwnTVShell(
         tv.own.owntv.features.home.MovioLayoutChoice.AUTO ->
             (movioConfiguration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
                 android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
+    val smartBackPrefs = remember(movioContext) {
+        movioContext.getSharedPreferences("moviotv_smart_back_v79", android.content.Context.MODE_PRIVATE)
+    }
+    var smartBackEnabled by remember(activeProfileId) {
+        mutableStateOf(smartBackPrefs.getBoolean("enabled_" + (activeProfileId ?: -1L), true))
+    }
+    val setSmartBack: (Boolean) -> Unit = { enabled ->
+        smartBackEnabled = enabled
+        smartBackPrefs.edit().putBoolean("enabled_" + (activeProfileId ?: -1L), enabled).apply()
     }
     val noSourceLabel = stringResource(R.string.shell_no_source)
     val subtitleLoadFailed = stringResource(R.string.content_subtitle_load_failed)
@@ -995,11 +1006,36 @@ fun OwnTVShell(
         }
     }
 
+    // Lightweight journey stack: exact section visited, no database writes or network traffic.
+    val movioBackHistory = remember(activeProfileId) { androidx.compose.runtime.mutableStateListOf<MainSection>() }
+    var movioObservedSection by remember(activeProfileId) { mutableStateOf(selectedSection) }
+    var movioPoppingBack by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedSection, activeProfileId) {
+        if (selectedSection != movioObservedSection) {
+            if (movioPoppingBack) movioPoppingBack = false
+            else if (movioBackHistory.lastOrNull() != movioObservedSection) {
+                if (movioBackHistory.size >= 24) movioBackHistory.removeAt(0)
+                movioBackHistory.add(movioObservedSection)
+            }
+            movioObservedSection = selectedSection
+        }
+    }
+    val movioGoBack: () -> Unit = {
+        val previous = if (smartBackEnabled && movioBackHistory.isNotEmpty())
+            movioBackHistory.removeAt(movioBackHistory.lastIndex) else null
+        if (previous != null) {
+            movioPoppingBack = true
+            restoreFocus = true
+            onSelectSection(previous)
+        } else focusRail()
+    }
     // The section a Search result opened ("Go to"), so the first Back there returns to Search. Leaving
     // that section any other way forgets it. The series page closes itself on Back (its own handler),
     // so for a series the return follows the show closing.
     fun returnToSearch() {
         searchReturn = null
+        if (movioBackHistory.lastOrNull() == MainSection.SEARCH) movioBackHistory.removeAt(movioBackHistory.lastIndex)
+        movioPoppingBack = true
         onSelectSection(MainSection.SEARCH)
     }
     LaunchedEffect(selectedSection) {
@@ -1022,9 +1058,10 @@ fun OwnTVShell(
             // the first press: the fallback below simply moved focus to the rail and nothing else
             // happened. Handled here as well so the answer is the same whichever handler fires; a
             // sub-screen of Settings still wins, because its handler is composed deeper than this.
-            selectedSection == MainSection.SETTINGS -> { restoreFocus = true; onSelectSection(MainSection.MORE) }
+            selectedSection == MainSection.SETTINGS -> movioGoBack()
             // Reached from a Search result: Back returns to Search once, its query, tab and row kept.
             searchReturn == selectedSection && focusedLayer != ShellLayer.SIDEBAR -> returnToSearch()
+            smartBackEnabled && movioBackHistory.isNotEmpty() -> movioGoBack()
             focusedLayer == ShellLayer.SIDEBAR -> showExit = true
             else -> focusRail()
         }
@@ -1308,7 +1345,9 @@ fun OwnTVShell(
                             onSwitchProfile = onSwitchProfile,
                             // Settings is reached through More now, so Back out of its root goes
                             // back there rather than to the rail — one level out, not two.
-                            onBack = { restoreFocus = true; onSelectSection(MainSection.MORE) },
+                            onBack = movioGoBack,
+                            smartBackEnabled = smartBackEnabled,
+                            onSmartBackChange = setSmartBack,
                             openEpgAdd = openEpgAdd,
                             onEpgAddConsumed = { openEpgAdd = false },
                             start = settingsStart,
@@ -1319,6 +1358,9 @@ fun OwnTVShell(
                             },
                             modifier = Modifier
                                 .fillMaxSize()
+                                .moviotvSettingsPinch(movioTouch) { step ->
+                                    onSetZoom((uiZoomPercent + step).coerceIn(65, 150))
+                                }
                                 .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
                                 .focusGroup(),
                         ) }

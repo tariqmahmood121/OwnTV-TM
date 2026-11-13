@@ -428,6 +428,16 @@ open class MainActivity : ComponentActivity() {
                 popupSizePercent = fontCustomization.popupSizePercent,
             ) {
                 val base = LocalDensity.current
+                // 12-inch and other large touch tablets otherwise render the TV design at tiny sizes.
+                // This is a constant layout factor, not a per-frame calculation or animation.
+                val screen = androidx.compose.ui.platform.LocalConfiguration.current
+                val tvMode = (screen.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+                    android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+                val tabletScale = if (tvMode) 1f else when {
+                    screen.smallestScreenWidthDp >= 840 -> 1.20f
+                    screen.smallestScreenWidthDp >= 600 -> 1.12f
+                    else -> 1f
+                }
                 // Root viewport size in px — the area the background image fills and that the blurred
                 // backdrop stands in for. Captured here (top of the tree) so glass panels can map their
                 // own on-screen rect into the blurred bitmap's coordinate space.
@@ -454,7 +464,7 @@ open class MainActivity : ComponentActivity() {
                 }
                 CompositionLocalProvider(
                     LocalDensity provides Density(
-                        base.density * UiZoom.factor(uiZoomPercent),
+                        base.density * UiZoom.factor(uiZoomPercent) * tabletScale,
                         base.fontScale * UiFontScale.factor(fontCustomization.sizePercent),
                     ),
                     LocalUiFontScaleFactor provides UiFontScale.factor(fontCustomization.sizePercent),

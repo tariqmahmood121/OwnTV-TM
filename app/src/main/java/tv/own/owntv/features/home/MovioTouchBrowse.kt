@@ -58,7 +58,8 @@ import coil3.compose.AsyncImage
 import tv.own.owntv.core.nav.MainSection
 
 private val panel = Color(0xFF171123)
-private val purple = Color(0xFFB465FF)
+private val purple: Color
+    @Composable get() = tv.own.owntv.ui.theme.stageAccent.accent
 private val pale = Color(0xFFD6C5E6)
 
 /** Shell navigation stays outside scrollable content on small touch screens. */

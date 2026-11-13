@@ -3,6 +3,12 @@
 package tv.own.owntv.features.search
 
 import androidx.lifecycle.ViewModel
+import android.content.Context
+import tv.own.owntv.core.customize.CustomizationStore
+import tv.own.owntv.core.customize.CustomizeKeys
+import tv.own.owntv.core.content.AdultCategoryClassifier
+import tv.own.owntv.core.database.dao.MovieDao
+import tv.own.owntv.core.model.MediaType
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -48,6 +54,9 @@ import tv.own.owntv.core.settings.SettingsRepository
  * debouncing and the recents list. A result is never played here: OK goes to it.
  */
 class SearchViewModel(
+    private val appContext: Context,
+    private val movieDao: MovieDao,
+    private val customize: CustomizationStore,
     private val profileDao: ProfileDao,
     private val sourceDao: SourceDao,
     private val categoryDao: CategoryDao,
@@ -114,7 +123,25 @@ class SearchViewModel(
 
     private suspend fun search(q: String): SearchResults {
         val pid = currentProfileId() ?: return SearchResults()
-        return searchReader.search(pid, ctx.value, q)
+        val sources = ctx.value
+        val normal = searchReader.search(pid, sources, q)
+        // Existing local FTS title search finishes first. Extend only from previously cached film credits.
+        // No TMDB/provider calls from typing; apply exactly the same source, adult and hidden filters.
+        val candidateIds = MovioCreditIndex.matchingIds(appContext, q)
+        if (candidateIds.isEmpty() || sources.movieSourceIds.isEmpty()) return normal
+        val hidden = customize.observeVisible(pid, MediaType.MOVIE).first()
+        val categories = categoryDao.observe(sources.movieSourceIds, MediaType.MOVIE).first()
+        val kids = profileDao.getById(pid)?.isKids == true
+        val hiddenCats = AdultCategoryClassifier.hiddenCategoryIds(categories, hidden.hiddenCategories, kids)
+        val extra = movieDao.getByIds(candidateIds).filter { movie ->
+            movie.sourceId in sources.movieSourceIds &&
+                (movie.categoryId == null || movie.categoryId !in hiddenCats) &&
+                CustomizeKeys.movie(movie) !in hidden.hiddenItems &&
+                MovioCreditIndex.titleStillMatches(appContext, movie)
+        }.map { movie ->
+            hidden.itemNames[CustomizeKeys.movie(movie)]?.let { movie.copy(name = it) } ?: movie
+        }
+        return normal.copy(movies = (normal.movies + extra).distinctBy { it.id }.take(100))
     }
 
     // --- Stage page ---

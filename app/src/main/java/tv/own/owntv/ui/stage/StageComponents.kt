@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.focusGroup
@@ -117,22 +121,22 @@ private fun Modifier.stageFocusDecor(style: StageFocus, radius: Dp, a: StageAcce
                 Brush.horizontalGradient(listOf(a.accent.copy(alpha = 0.34f), a.accent.copy(alpha = 0.14f))),
                 cornerRadius = CornerRadius(r),
             )
-            drawInnerRing(a.focus, 2 * px, r)
+            drawInnerRing(a.focus, 3 * px, r)
         }
         StageFocus.FILLED -> {
             drawBoxShadow(a.accent.copy(alpha = 0.35f), 30 * px, r, dy = 10 * px)
             drawRoundRect(a.accent, cornerRadius = CornerRadius(r))
-            drawOuterRing(a.focus, 2 * px, r)
+            drawOuterRing(a.focus, 4 * px, r)
         }
         StageFocus.PRIMARY -> {
             drawBoxShadow(a.accent.copy(alpha = 0.45f), 40 * px, r, dy = 14 * px)
             drawRoundRect(a.accent, cornerRadius = CornerRadius(r))
-            drawOuterRing(a.focus, 3 * px, r)
+            drawOuterRing(a.focus, 4 * px, r)
         }
         StageFocus.POSTER -> {
             drawBoxShadow(a.accent.copy(alpha = 0.35f), 60 * px, r, dy = 24 * px)
             drawOuterRing(a.accent.copy(alpha = 0.35f), 4 * px, r, inset = 3 * px)
-            drawOuterRing(a.focus, 3 * px, r)
+            drawOuterRing(a.focus, 4 * px, r)
         }
     }
 }
@@ -797,6 +801,9 @@ fun StagePoster(
     progress: Float? = null,
     /** A finished title: the `.ep` ✓ badge in the top corner instead of a bar. */
     watched: Boolean = false,
+    /** Optional TV D-pad hold handlers. Normal touch click/long-click remains unchanged. */
+    onDetailsHold: (() -> Unit)? = null,
+    onOptionsHold: (() -> Unit)? = null,
     artwork: @Composable BoxScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -804,10 +811,39 @@ fun StagePoster(
     val accent = stageAccent
     val r = StageRadii.Poster
     val badge = Color(8, 12, 14)
+    var okDownAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val stagedRemoteOk = if (onDetailsHold != null && onOptionsHold != null)
+        Modifier.onPreviewKeyEvent { event ->
+            val native = event.nativeKeyEvent
+            val ok = native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                native.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                native.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER
+            if (!ok) false else when (event.type) {
+                KeyEventType.KeyDown -> {
+                    if (okDownAt == 0L) okDownAt = native.eventTime.coerceAtLeast(1L)
+                    true // Consume auto-repeat DOWN events; no action during a hold.
+                }
+                KeyEventType.KeyUp -> {
+                    val start = okDownAt
+                    okDownAt = 0L
+                    if (start > 0L) {
+                        val held = (native.eventTime - start).coerceAtLeast(0L)
+                        when {
+                            held >= 3000L -> onOptionsHold?.invoke()
+                            held >= 900L -> onDetailsHold?.invoke()
+                            else -> onClick()
+                        }
+                    }
+                    true // A new press is required to activate anything in the newly opened menu.
+                }
+                else -> false
+            }
+        } else Modifier
     Column(
         modifier
             .width(width)
             .stageLift(focused, StageFocus.POSTER)
+            .then(stagedRemoteOk)
             .stageClickable(interaction, true, onClick, onLongClick),
     ) {
         Box(

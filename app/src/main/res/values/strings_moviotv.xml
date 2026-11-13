@@ -38,7 +38,7 @@
     <string name="moviotv_diagnostics_internet_off">Internet: unavailable or limited</string>
     <string name="moviotv_diagnostics_vpn_on">VPN: active</string>
     <string name="moviotv_diagnostics_vpn_off">VPN: not detected (enable it if your provider requires one)</string>
-    <string name="moviotv_version">v7.8</string>
+    <string name="moviotv_version">v7.9</string>
     <string name="moviotv_profile_label">PROFILE</string>
     <string name="moviotv_provider_label">PROVIDER</string>
     <string name="moviotv_manage_provider">Manage connection</string>
@@ -106,4 +106,13 @@
     <string name="moviotv_v78_limit_title">Streaming connection limit reached</string>
     <string name="moviotv_v78_limit_count">Provider connections in use: %1$d / %2$d.</string>
     <string name="moviotv_v78_limit_advice">Your current stream may be counted. If another device is playing, stop it and choose Re-test. Remote sign-out is not available for unrelated IPTV players.</string>
+    <string name="moviotv_oak_studios">OAK STUDIOS</string>
+    <string name="moviotv_about_title">About MovioTV</string>
+    <string name="moviotv_about_studio_subtitle">Independent software studio</string>
+    <string name="moviotv_about_version">Version %1$s</string>
+    <string name="moviotv_about_developed">Developed by Oak Studios</string>
+    <string name="moviotv_about_created">Created by ZIGGS</string>
+    <string name="moviotv_about_licence">Built on OwnTV open-source software (GPL-3.0). Original authors and third-party licences remain acknowledged.</string>
+    <string name="moviotv_smart_back_title">Smart Back Navigation</string>
+    <string name="moviotv_smart_back_desc">Back retraces your journey instead of losing your place</string>
 </resources>
