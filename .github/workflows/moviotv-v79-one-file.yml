@@ -5,7 +5,7 @@ name: MovioTV V7.9 - One File Oak Studio Tablet Smart Back
 'on':
   push:
     branches: [feature/moviotv-v78]
-    paths: [.github/workflows/moviotv-v79-one-file.yml]
+    paths: [.github/workflows/MovioTV-V7.9-Compile-Fix.yml]
   workflow_dispatch:
 permissions:
   contents: write
