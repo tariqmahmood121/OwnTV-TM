@@ -1,0 +1,549 @@
+# MovioTV V7.12 — SMART SEARCH
+# Upload this one file to .github/workflows on feature/moviotv-v79-oak-tablet-focus.
+# Runs proven V7.10/V7.11 source patches and V7.12 only in an isolated CI checkout.
+# Existing V7.9/V7.11 code and installed APK remain untouched.
+name: MovioTV V7.12 - Smart Search
+'on':
+  push:
+    branches: [feature/moviotv-v79-oak-tablet-focus]
+    paths: [.github/workflows/moviotv-v712-smart-search.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v712-smart-search
+  cancel-in-progress: false
+jobs:
+  build-v712:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      VERSION_CODE: '100019'
+      VERSION_NAME: '7.12'
+    steps:
+      - name: Checkout protected source to disposable build runner
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v79-oak-tablet-focus
+          persist-credentials: false
+      - name: Replay verified V7.10 and successful V7.11 patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_REPLAY'
+          from pathlib import Path
+          import re, subprocess, sys, textwrap
+          source = Path('.github/workflows/moviotv-v711-TRIGGER-FIXED.yml').read_text(encoding='utf-8')
+          for marker in ('PYTHON_V710', 'PYTHON_V711'):
+              expr = r"(?ms)^\s*cat > (\S+) <<'" + marker + r"'\n(.*?)^\s*" + marker + r"\s*$"
+              match = re.search(expr, source)
+              assert match is not None, 'Cannot safely find verified V7.11 patch: ' + marker
+              path = Path(match.group(1))
+              code = textwrap.dedent(match.group(2))
+              path.write_text(code, encoding='utf-8')
+              subprocess.run([sys.executable, '-m', 'py_compile', str(path)], check=True)
+              subprocess.run([sys.executable, str(path)], check=True)
+              print('Replayed verified patch:', marker)
+          # Fix from the same successful V7.11 workflow, prior to its compiler step.
+          p = Path('app/src/main/java/tv/own/owntv/features/profiles/ProfileGate.kt')
+          s = p.read_text(encoding='utf-8')
+          anchor = 'import androidx.compose.foundation.layout.fillMaxSize\n'
+          line = 'import androidx.compose.foundation.layout.fillMaxWidth\n'
+          assert s.count(anchor) == 1 and line not in s
+          assert 'Modifier.weight(1f).fillMaxWidth().focusGroup()' in s
+          p.write_text(s.replace(anchor, anchor + line, 1), encoding='utf-8')
+          PY_REPLAY
+      - name: Apply V7.12 local smart-search and profile settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v712_patch.py <<'PYTHON_V712'
+          from pathlib import Path
+
+          ROOT = Path("app/src/main/java/tv/own/owntv")
+          def create(path, body):
+              p = Path(path)
+              if p.exists():
+                  raise RuntimeError("Refusing to replace existing source: " + path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(body.lstrip("\n"), encoding="utf-8")
+
+          def replace_one(path, before, after):
+              p = Path(path)
+              src = p.read_text(encoding="utf-8")
+              if src.count(before) != 1:
+                  raise RuntimeError("Patch guard (" + str(src.count(before)) + " matches): " + path + " / " + before[:70])
+              p.write_text(src.replace(before, after, 1), encoding="utf-8")
+
+          create(str(ROOT / "features/search/MovioSmartSearchPrefs.kt"), r"""
+          package tv.own.owntv.features.search
+
+          import android.content.Context
+          import androidx.compose.runtime.mutableStateMapOf
+
+          data class MovioSmartSearchOptions(
+              val smart: Boolean = true,
+              val actors: Boolean = true,
+              val genres: Boolean = true,
+          )
+
+          /** Three independent settings per profile, with no Room migration or provider API dependency. */
+          object MovioSmartSearchPrefs {
+              private const val NAME = "moviotv_smart_search_v712"
+              private val options = mutableStateMapOf<Long, MovioSmartSearchOptions>()
+
+              fun get(context: Context, profileId: Long?): MovioSmartSearchOptions {
+                  val id = profileId ?: -1L
+                  return options.getOrPut(id) {
+                      val p = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                      MovioSmartSearchOptions(
+                          smart = p.getBoolean("smart_" + id, true),
+                          actors = p.getBoolean("actors_" + id, true),
+                          genres = p.getBoolean("genres_" + id, true),
+                      )
+                  }
+              }
+
+              fun save(context: Context, profileId: Long?, value: MovioSmartSearchOptions) {
+                  val id = profileId ?: -1L
+                  options[id] = value
+                  context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                      .edit()
+                      .putBoolean("smart_" + id, value.smart)
+                      .putBoolean("actors_" + id, value.actors)
+                      .putBoolean("genres_" + id, value.genres)
+                      .apply()
+              }
+          }
+          """)
+
+          create(str(ROOT / "features/search/MovioSmartParser.kt"), r"""
+          package tv.own.owntv.features.search
+
+          import java.util.Calendar
+          import java.util.Locale
+
+          internal data class MovioSearchPlan(
+              val genre: String? = null,
+              val actor: String? = null,
+              val fromYear: Int? = null,
+              val toYear: Int? = null,
+          ) {
+              val structured: Boolean get() = genre != null || actor != null || fromYear != null || toYear != null
+          }
+
+          internal object MovioSmartParser {
+              private val aliases = linkedMapOf(
+                  "science fiction" to listOf("sci-fi", "sci fi", "science fiction", "scifi"),
+                  "horror" to listOf("horror", "horrors"),
+                  "thriller" to listOf("thriller", "thrillers"),
+                  "action" to listOf("action"),
+                  "comedy" to listOf("comedy", "comedies"),
+                  "romance" to listOf("romance", "romantic"),
+                  "animation" to listOf("animation", "animated"),
+                  "adventure" to listOf("adventure"),
+                  "documentary" to listOf("documentary", "documentaries"),
+                  "crime" to listOf("crime"),
+                  "fantasy" to listOf("fantasy"),
+                  "mystery" to listOf("mystery"),
+                  "family" to listOf("family"),
+                  "drama" to listOf("drama"),
+                  "war" to listOf("war"),
+                  "western" to listOf("western"),
+                  "bollywood" to listOf("bollywood"),
+              )
+              private fun containsPhrase(text: String, phrase: String): Boolean =
+                  Regex("(^|[^\\p{L}])" + Regex.escape(phrase) + "([^\\p{L}]|$)", RegexOption.IGNORE_CASE)
+                      .containsMatchIn(text)
+
+              fun categoryMatches(genre: String, name: String): Boolean =
+                  aliases[genre].orEmpty().any { containsPhrase(name, it) }
+
+              fun parse(query: String, options: MovioSmartSearchOptions): MovioSearchPlan {
+                  val text = query.trim().lowercase(Locale.ROOT)
+                  if (text.length < 2) return MovioSearchPlan()
+
+                  // A plain "horror" query works even when conversational Smart Search is off.
+                  val genre = if (options.genres && (options.smart ||
+                          aliases.values.flatten().any { text == it })) {
+                      aliases.entries.firstOrNull { (_, names) -> names.any { containsPhrase(text, it) } }?.key
+                  } else null
+
+                  var fromYear: Int? = null
+                  var toYear: Int? = null
+                  if (options.smart) {
+                      val years = Regex("\\b(?:19|20)\\d{2}\\b").findAll(text)
+                          .mapNotNull { it.value.toIntOrNull() }.toList()
+                      if (years.isNotEmpty()) {
+                          val a = years[0]
+                          val b = years.getOrNull(1)
+                          val now = Calendar.getInstance().get(Calendar.YEAR)
+                          when {
+                              b != null -> { fromYear = minOf(a, b); toYear = maxOf(a, b) }
+                              Regex("\\bafter\\s+\\d{4}").containsMatchIn(text) ->
+                                  fromYear = (a + 1).coerceAtMost(now)
+                              Regex("\\bbefore\\s+\\d{4}").containsMatchIn(text) ->
+                                  toYear = a - 1
+                              text.contains("to now") || text.contains("until now") ||
+                                  text.contains("onwards") || text.contains("since ") ||
+                                  Regex("\\bfrom\\s+\\d{4}").containsMatchIn(text) -> {
+                                  fromYear = a; toYear = now
+                              }
+                              else -> { fromYear = a; toYear = a }
+                          }
+                      }
+                  }
+
+                  val actor = if (options.smart && options.actors) {
+                      Regex("(?:\\bstarring\\b|\\bfeaturing\\b|\\bfilms?\\s+with\\b|\\bmovies?\\s+with\\b|\\bactor\\s+|\\bactress\\s+)([\\p{L}\\p{M}\\p{N} .'-]{3,72})")
+                          .find(text)?.groupValues?.get(1)
+                          ?.replace(Regex("\\s+(?:in|from|between|after|before|for|released)\\s+.*$"), "")
+                          ?.trim(' ', '.', '?', ',')
+                          ?.takeIf { it.length >= 3 }
+                  } else null
+                  return MovioSearchPlan(genre, actor, fromYear, toYear)
+              }
+          }
+          """)
+
+          create(str(ROOT / "features/search/MovioSmartLocalIndex.kt"), r"""
+          package tv.own.owntv.features.search
+
+          import android.content.Context
+          import android.database.sqlite.SQLiteDatabase
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import tv.own.owntv.core.database.OwnTVDatabase
+
+          /**
+           * Bounded read-only SQL lookup over the actual local provider catalogue.
+           * Never downloads TMDB data or loads hundreds of thousands of MovieEntity objects.
+           * Genre coverage follows the provider's category labels; cast coverage is cached credits.
+           */
+          internal object MovioSmartLocalIndex {
+              suspend fun ids(
+                  context: Context,
+                  sourceIds: List<Long>,
+                  categoryIds: List<Long>?,
+                  fromYear: Int?,
+                  toYear: Int?,
+                  limit: Int = 200,
+              ): List<Long> = withContext(Dispatchers.IO) {
+                  if (sourceIds.isEmpty() || categoryIds?.isEmpty() == true) return@withContext emptyList()
+                  val file = context.getDatabasePath(OwnTVDatabase.NAME)
+                  if (!file.isFile) return@withContext emptyList()
+
+                  val where = mutableListOf<String>()
+                  val args = mutableListOf<String>()
+                  where += "sourceId IN (" + sourceIds.joinToString(",") { "?" } + ")"
+                  args += sourceIds.map { it.toString() }
+                  if (categoryIds != null) {
+                      where += "categoryId IN (" + categoryIds.joinToString(",") { "?" } + ")"
+                      args += categoryIds.map { it.toString() }
+                  }
+                  val year = "COALESCE(NULLIF(year, 0), parsedYear)"
+                  if (fromYear != null) { where += year + " >= ?"; args += fromYear.toString() }
+                  if (toYear != null) { where += year + " <= ?"; args += toYear.toString() }
+                  val sql = "SELECT id FROM movies WHERE " + where.joinToString(" AND ") +
+                      " ORDER BY CASE WHEN " + year + " BETWEEN 1880 AND 2100 THEN 0 ELSE 1 END," +
+                      " " + year + " DESC, name COLLATE NOCASE ASC LIMIT ?"
+                  args += limit.coerceIn(1, 250).toString()
+                  val db = SQLiteDatabase.openDatabase(
+                      file.absolutePath, null,
+                      SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
+                  )
+                  try {
+                      db.rawQuery(sql, args.toTypedArray()).use { cursor ->
+                          buildList { while (cursor.moveToNext()) add(cursor.getLong(0)) }
+                      }
+                  } finally {
+                      db.close()
+                  }
+              }
+          }
+          """)
+
+          vm = str(ROOT / "features/search/SearchViewModel.kt")
+          src = Path(vm).read_text(encoding="utf-8")
+          start_key = "    private suspend fun search(q: String): SearchResults {"
+          end_key = "    // --- Stage page ---"
+          if src.count(start_key) != 1 or src.count(end_key) != 1:
+              raise RuntimeError("Could not locate SearchViewModel search method safely")
+          start = src.index(start_key)
+          end = src.index(end_key, start)
+          new_method = r"""    private suspend fun search(q: String): SearchResults {
+                  val pid = currentProfileId() ?: return SearchResults()
+                  val sources = ctx.value
+                  val options = MovioSmartSearchPrefs.get(appContext, pid)
+                  val plan = MovioSmartParser.parse(q, options)
+
+                  // Keep core's title search and all existing live/series behaviour unchanged.
+                  val normal = if (plan.structured) SearchResults() else searchReader.search(pid, sources, q)
+                  if (sources.movieSourceIds.isEmpty()) return normal
+
+                  // Credit searches use locally known credits, never a remote call on keystrokes.
+                  val actorIds = if (options.actors) {
+                      MovioCreditIndex.matchingIds(appContext,
+                          plan.actor ?: if (!plan.structured) q else "")
+                  } else emptyList()
+                  val genreCreditIds = if (options.genres && plan.genre != null) {
+                      MovioCreditIndex.matchingIds(appContext, plan.genre)
+                  } else emptyList()
+
+                  val categories = if (plan.genre != null) {
+                      categoryDao.observe(sources.movieSourceIds, MediaType.MOVIE).first()
+                  } else emptyList()
+                  val genreCats = if (plan.genre != null) categories
+                      .filter { MovioSmartParser.categoryMatches(plan.genre, it.name) }
+                      .map { it.id } else emptyList()
+
+                  val catalogueIds = runCatching {
+                      when {
+                          plan.genre != null && genreCats.isNotEmpty() ->
+                              MovioSmartLocalIndex.ids(appContext, sources.movieSourceIds,
+                                  genreCats, plan.fromYear, plan.toYear)
+                          plan.genre != null -> emptyList()
+                          plan.fromYear != null || plan.toYear != null ->
+                              MovioSmartLocalIndex.ids(appContext, sources.movieSourceIds,
+                                  null, plan.fromYear, plan.toYear)
+                          else -> emptyList()
+                      }
+                  }.getOrDefault(emptyList())
+
+                  val genreMatches = (catalogueIds + genreCreditIds).distinct()
+                  val ids = when {
+                      plan.actor != null && plan.genre != null ->
+                          actorIds.filter { it in genreMatches }
+                      plan.actor != null -> actorIds
+                      plan.genre != null -> genreMatches
+                      plan.fromYear != null || plan.toYear != null -> catalogueIds
+                      else -> actorIds
+                  }.distinct().take(200)
+                  if (ids.isEmpty()) return normal
+
+                  // Exactly the same active-source, hidden item, category and kids policy as core SearchReader.
+                  val visibility = customize.observeVisible(pid, MediaType.MOVIE).first()
+                  val allCategories = if (categories.isNotEmpty()) categories
+                      else categoryDao.observe(sources.movieSourceIds, MediaType.MOVIE).first()
+                  val kids = profileDao.getById(pid)?.isKids == true
+                  val excluded = AdultCategoryClassifier.hiddenCategoryIds(
+                      allCategories, visibility.hiddenCategories, kids)
+                  val indexedIds = (actorIds + genreCreditIds).toHashSet()
+                  val movies = movieDao.getByIds(ids).filter { movie ->
+                      movie.sourceId in sources.movieSourceIds &&
+                      (movie.categoryId == null || movie.categoryId !in excluded) &&
+                      CustomizeKeys.movie(movie) !in visibility.hiddenItems &&
+                      (movie.id !in indexedIds || MovioCreditIndex.titleStillMatches(appContext, movie)) &&
+                      (plan.fromYear == null ||
+                          ((movie.year ?: movie.parsedYear) ?: 0) >= plan.fromYear) &&
+                      (plan.toYear == null ||
+                          ((movie.year ?: movie.parsedYear) ?: Int.MAX_VALUE) <= plan.toYear)
+                  }.map { movie ->
+                      visibility.itemNames[CustomizeKeys.movie(movie)]?.let { movie.copy(name = it) } ?: movie
+                  }
+                  return normal.copy(movies = (normal.movies + movies).distinctBy { it.id }.take(100))
+              }
+
+          """
+          Path(vm).write_text(src[:start] + new_method + src[end:], encoding="utf-8")
+
+          profile = str(ROOT / "features/settings/ProfileSettingsRows.kt")
+          replace_one(profile,
+              "    var showRatingPicker by remember { mutableStateOf(false) }\n",
+              "    var showRatingPicker by remember { mutableStateOf(false) }\n"
+              "    var showSmartSearchSettings by remember { mutableStateOf(false) }\\n")
+          replace_one(profile,
+              '    val movioMovieOptions = tv.own.owntv.features.home.MovioMoviePrefs.get(context, activeProfileId)\n',
+              '    val movioMovieOptions = tv.own.owntv.features.home.MovioMoviePrefs.get(context, activeProfileId)\n'
+              '    val smartSearch = tv.own.owntv.features.search.MovioSmartSearchPrefs.get(context, activeProfileId)\n')
+
+          anchor = "    // A visible account card and a real one-tap normal refresh for the current playlist."
+          rows = r"""    // V7.12: one compact entry under Profile, with three independently switchable options.
+              StageSettingRow(
+                  icon = OwnTVIcon.SEARCH,
+                  title = stringResource(R.string.moviotv_smart_search_settings),
+                  desc = stringResource(R.string.moviotv_smart_search_settings_desc),
+                  value = null,
+                  onClick = { showSmartSearchSettings = !showSmartSearchSettings },
+              )
+              if (showSmartSearchSettings) {
+              StageSettingRow(
+                  icon = OwnTVIcon.SEARCH,
+                  title = stringResource(R.string.moviotv_smart_search),
+                  desc = stringResource(R.string.moviotv_smart_search_desc),
+                  value = SettingValue.Choice(stringResource(if (smartSearch.smart) R.string.common_on else R.string.common_off)),
+                  onClick = { tv.own.owntv.features.search.MovioSmartSearchPrefs.save(
+                      context, activeProfileId, smartSearch.copy(smart = !smartSearch.smart)) },
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.PERSON,
+                  title = stringResource(R.string.moviotv_actor_search),
+                  desc = stringResource(R.string.moviotv_actor_search_desc),
+                  value = SettingValue.Choice(stringResource(if (smartSearch.actors) R.string.common_on else R.string.common_off)),
+                  onClick = { tv.own.owntv.features.search.MovioSmartSearchPrefs.save(
+                      context, activeProfileId, smartSearch.copy(actors = !smartSearch.actors)) },
+              )
+              StageSettingRow(
+                  icon = OwnTVIcon.MOVIES,
+                  title = stringResource(R.string.moviotv_genre_search),
+                  desc = stringResource(R.string.moviotv_genre_search_desc),
+                  value = SettingValue.Choice(stringResource(if (smartSearch.genres) R.string.common_on else R.string.common_off)),
+                  onClick = { tv.own.owntv.features.search.MovioSmartSearchPrefs.save(
+                      context, activeProfileId, smartSearch.copy(genres = !smartSearch.genres)) },
+              )
+              }
+          """
+          # OwnTVIcon.SEARCH: check compatibility with actual icon list in CI preflight.
+          replace_one(profile, anchor, rows + anchor)
+
+          strings = "app/src/main/res/values/strings_moviotv.xml"
+          replace_one(strings, "</resources>", """    <string name="moviotv_smart_search_settings">Smart Search Settings</string>
+              <string name="moviotv_smart_search_settings_desc">Set Smart, Actor and Genre Search independently</string>
+              <string name="moviotv_smart_search">Smart Search</string>
+              <string name="moviotv_smart_search_desc">Understand plain-English genres and release years using your local catalogue</string>
+              <string name="moviotv_actor_search">Actor Search</string>
+              <string name="moviotv_actor_search_desc">Find actors in locally indexed film credits; coverage expands as details are viewed</string>
+              <string name="moviotv_genre_search">Genre Search</string>
+              <string name="moviotv_genre_search_desc">Search film categories and cached genre details on this device</string>
+          </resources>""")
+
+          replace_one("app/build.gradle.kts", 'applicationIdSuffix = ".v711qa"',
+                      'applicationIdSuffix = ".v712qa"')
+          print("V7.12 smart search patch applied to temporary checkout.")
+          PYTHON_V712
+          python3 -m py_compile /tmp/moviotv_v712_patch.py
+          python3 /tmp/moviotv_v712_patch.py
+      - name: Preflight V7.12 Kotlin wiring, unique strings, protected baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_PREFLIGHT'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root = Path('app/src/main/java/tv/own/owntv')
+          vm = (root/'features/search/SearchViewModel.kt').read_text()
+          row = (root/'features/settings/ProfileSettingsRows.kt').read_text()
+          icons = (root/'ui/components/OwnTVIcon.kt').read_text()
+          names = [x.attrib['name'] for x in ET.parse('app/src/main/res/values/strings_moviotv.xml').getroot().findall('string')]
+          for key in ('moviotv_smart_search', 'moviotv_actor_search', 'moviotv_genre_search'):
+              assert key in names and f'R.string.{key}' in row
+          assert len(names) == len(set(names)), 'Duplicate resource name'
+          assert all(x in icons for x in ('SEARCH', 'PERSON', 'MOVIES'))
+          assert 'MovioSmartLocalIndex.ids' in vm and 'MovioCreditIndex.matchingIds' in vm
+          assert 'CustomizeKeys.movie(movie) !in visibility.hiddenItems' in vm
+          assert 'movie.sourceId in sources.movieSourceIds' in vm
+          assert (root/'MovioRollingDebug.kt').exists(), 'V7.11 logger lost'
+          assert (root/'features/settings/MovioIntroOverlay.kt').exists(), 'V7.11 launch screen lost'
+          assert 'applicationIdSuffix = ".v712qa"' in Path('app/build.gradle.kts').read_text()
+          print('V7.12 preflight PASS: smart/actor/genre toggles, local index, visibility, V7.11')
+          PY_PREFLIGHT
+      - name: Preserve full V7.12 corresponding source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -N app/src/main/java/tv/own/owntv/features/settings/MovioIntroOverlay.kt
+          git add -N app/src/main/java/tv/own/owntv/MovioRollingDebug.kt
+          git add -N app/src/main/res/drawable-nodpi/moviotv_v710_intro.jpg
+          git add -N app/src/main/java/tv/own/owntv/features/search/MovioSmartSearchPrefs.kt
+          git add -N app/src/main/java/tv/own/owntv/features/search/MovioSmartParser.kt
+          git add -N app/src/main/java/tv/own/owntv/features/search/MovioSmartLocalIndex.kt
+          git diff --binary > /tmp/MovioTV-V7.12-Corresponding-Source.patch
+          test -s /tmp/MovioTV-V7.12-Corresponding-Source.patch
+      - name: Upload GPL corresponding source patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.12-Corresponding-Source-Patch
+          path: /tmp/MovioTV-V7.12-Corresponding-Source.patch
+          if-no-files-found: error
+          retention-days: 14
+      - name: Configure Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Cache Gradle dependencies
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile Kotlin, unit tests, Android lint, and debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace
+      - name: Verify parallel-install V7.12 debug identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -f "$apk"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -n "$aapt"
+          "$aapt" dump badging "$apk" > /tmp/movio-v712-badging.txt
+          grep -F "package: name='tv.own.owntv.v712qa'" /tmp/movio-v712-badging.txt
+          grep -F "versionName='7.12'" /tmp/movio-v712-badging.txt
+          grep -F "versionCode='100019'" /tmp/movio-v712-badging.txt
+      - name: Upload safe V7.12 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.12-DEBUG-SAFE-PARALLEL-INSTALL
+          path: app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Check existing release signing key
+        id: sign
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.MOVIOTV_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEY_B64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/movio-existing-signing.jks"
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing key unavailable: skip in-place APK."
+          fi
+      - name: Build release using SAME signing key
+        if: steps.sign.outputs.configured == 'true'
+        shell: bash
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/movio-existing-signing.jks
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardRelease --stacktrace
+          test -f app/build/outputs/apk/standard/release/app-standard-release.apk
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          "$aapt" dump badging app/build/outputs/apk/standard/release/app-standard-release.apk > /tmp/movio-v712-release.txt
+          grep -F "package: name='tv.own.owntv'" /tmp/movio-v712-release.txt
+          grep -F "versionName='7.12'" /tmp/movio-v712-release.txt
+          grep -F "versionCode='100019'" /tmp/movio-v712-release.txt
+      - name: Upload signed upgrade (only if matching key exists)
+        if: steps.sign.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.12-RELEASE-SAME-SIGNING-KEY
+          path: app/build/outputs/apk/standard/release/app-standard-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V7.12-Build-Diagnostics
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+          retention-days: 14
