@@ -1,0 +1,482 @@
+name: MovioTV V8.2 - Central Connection QA
+'on':
+  push:
+    branches: [feature/moviotv-v81-stability]
+    paths:
+      - .github/workflows/moviotv-v82-central-connect.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v82-central-qa
+  cancel-in-progress: false
+jobs:
+  build-v82:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: '8.2.0'
+      VERSION_CODE: '100102'
+    steps:
+      - name: Checkout V8.1 stable source (never modify stable branch)
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v81-stability
+          fetch-depth: 0
+      - name: Checkout pinned upstream Core 1.0.71
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Apply retained Core branding patch and V8.2 Central bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s patches/v81-core-changes.patch
+          git -C moviotv-core apply --check "$GITHUB_WORKSPACE/patches/v81-core-changes.patch"
+          git -C moviotv-core apply "$GITHUB_WORKSPACE/patches/v81-core-changes.patch"
+          cat > /tmp/moviotv-v82-bridge.py <<'MOVIO_V82_PY'
+          #!/usr/bin/env python3
+          from pathlib import Path
+          import re
+          import sys
+          import importlib.util
+          import subprocess
+          import xml.etree.ElementTree as ET
+
+          ROOT = Path.cwd()
+          more_file = ROOT / 'app/src/main/java/tv/own/owntv/features/more/MoreScreen.kt'
+          assert more_file.is_file(), 'MovioTV branch does not contain the More page'
+          s = more_file.read_text(encoding='utf-8')
+
+          def replace_exact(old, new, expected=1):
+              global s
+              assert s.count(old) == expected, f'MoreScreen source mismatch, expected {expected} matches for {old[:100]!r}, got {s.count(old)}'
+              s = s.replace(old, new)
+
+          replace_exact('SETTINGS, FAVORITES, HISTORY, BACKUP, LOCAL_SYNC, ERROR_LOG, ABOUT, DEVELOPER',
+                        'SETTINGS, FAVORITES, HISTORY, BACKUP, LOCAL_SYNC, CENTRAL, ERROR_LOG, ABOUT, DEVELOPER')
+          replace_exact('setOf(MoreItem.BACKUP, MoreItem.LOCAL_SYNC, MoreItem.DEVELOPER)',
+                        'setOf(MoreItem.BACKUP, MoreItem.LOCAL_SYNC, MoreItem.CENTRAL, MoreItem.DEVELOPER)')
+          replace_exact('item(MoreItem.LOCAL_SYNC, OwnTVIcon.PHONE, stringResource(R.string.local_sync_title), stringResource(if (sync.listening) R.string.common_on else R.string.common_off), false)',
+                        'item(MoreItem.LOCAL_SYNC, OwnTVIcon.PHONE, stringResource(R.string.local_sync_title), stringResource(if (sync.listening) R.string.common_on else R.string.common_off), false)\\n'
+                        '            item(MoreItem.CENTRAL, OwnTVIcon.PHONE, stringResource(R.string.moviotv_central_title), null, false)'.replace('\\n', '\n'))
+          replace_exact('MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())',
+                        'MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())\\n'
+                        '                MoreItem.CENTRAL -> tv.own.owntv.features.central.MovioCentralScreen(onBack = backToSheet, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())'.replace('\\n','\n'))
+          # The real TV More > About page was still using upstream OwnTV content. The existing
+          # Oak Studios Movio About screen was already wired only to Settings > About.
+          replace_exact('MoreItem.ABOUT -> AboutPage(vm = vm, entry = pageTarget, onOpenLanguage = { onOpenSettings(8, false) })',
+                        'MoreItem.ABOUT -> tv.own.owntv.features.settings.MovioAboutScreen(onBack = backToSheet, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())')
+          more_file.write_text(s, encoding='utf-8')
+
+          src_dir = ROOT / 'app/src/main/java/tv/own/owntv/features/central'
+          src_dir.mkdir(parents=True, exist_ok=True)
+          (src_dir / 'MovioCentralApi.kt').write_text(r'''package tv.own.owntv.features.central
+
+          import android.content.Context
+          import android.security.keystore.KeyGenParameterSpec
+          import android.security.keystore.KeyProperties
+          import android.util.Base64
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.IOException
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.security.KeyStore
+          import javax.crypto.Cipher
+          import javax.crypto.KeyGenerator
+          import javax.crypto.SecretKey
+          import javax.crypto.spec.GCMParameterSpec
+
+          /** Small, opt-in, OFFLINE-SAFE bridge to the user's existing MovioTV Central PHP API.
+           * No catalogue or local favourites are written or cleared by this initial connection test.
+           * Credentials are sent by HTTPS; only the session token is kept, encrypted in Android Keystore.
+           */
+          internal class MovioCentralApi(private val context: Context) {
+              private val preferences = context.getSharedPreferences("moviotv_central_auth_v1", Context.MODE_PRIVATE)
+
+              private fun secretKey(): SecretKey {
+                  val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                  val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+                  if (existing != null) return existing
+                  val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+                  generator.init(
+                      KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                          .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                          .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                          .setRandomizedEncryptionRequired(true)
+                          .build()
+                  )
+                  return generator.generateKey()
+              }
+
+              private fun storeToken(token: String) {
+                  val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                  cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+                  val bytes = cipher.iv + cipher.doFinal(token.toByteArray(Charsets.UTF_8))
+                  preferences.edit().putString("session", Base64.encodeToString(bytes, Base64.NO_WRAP)).apply()
+              }
+
+              private fun token(): String? = runCatching {
+                  val saved = preferences.getString("session", null) ?: return@runCatching null
+                  val bytes = Base64.decode(saved, Base64.DEFAULT)
+                  if (bytes.size < 13) return@runCatching null
+                  val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                  cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+                  String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+              }.getOrNull()
+
+              fun hasSession(): Boolean = !token().isNullOrBlank()
+              fun disconnect() = preferences.edit().remove("session").apply()
+
+              private fun call(route: String, method: String = "GET", body: JSONObject? = null, protected: Boolean = false): JSONObject {
+                  val url = URL(BASE + route)
+                  require(url.protocol == "https")
+                  val connection = (url.openConnection() as HttpURLConnection).apply {
+                      requestMethod = method
+                      connectTimeout = 8000
+                      readTimeout = 12000
+                      setRequestProperty("Accept", "application/json")
+                      if (protected) {
+                          val auth = token() ?: throw IOException("Not connected to MovioTV Central")
+                          setRequestProperty("Authorization", "Bearer $auth")
+                      }
+                      if (body != null) {
+                          doOutput = true
+                          setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                      }
+                  }
+                  try {
+                      if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                      val code = connection.responseCode
+                      if (code !in 200..299) throw IOException("Central returned HTTP $code")
+                      val data = connection.inputStream.bufferedReader().use { it.readText() }
+                      return JSONObject(data)
+                  } finally {
+                      connection.disconnect()
+                  }
+              }
+
+              suspend fun health(): JSONObject = withContext(Dispatchers.IO) { call("health") }
+              suspend fun signIn(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
+                  require(username.isNotBlank() && password.isNotBlank())
+                  val response = call("login", "POST", JSONObject().put("username", username.trim()).put("password", password))
+                  val session = response.optString("token")
+                  if (session.isBlank()) throw IOException("Central did not return a session token")
+                  storeToken(session)
+                  response
+              }
+              suspend fun me(): JSONObject = withContext(Dispatchers.IO) { call("me", protected = true) }
+              suspend fun profiles(): JSONObject = withContext(Dispatchers.IO) { call("profiles", protected = true) }
+              suspend fun provisioning(): JSONObject = withContext(Dispatchers.IO) { call("provisioning", protected = true) }
+              suspend fun assignments(): JSONObject = withContext(Dispatchers.IO) { call("assignments", protected = true) }
+              suspend fun profileRecords(profileId: Long): JSONObject = withContext(Dispatchers.IO) {
+                  require(profileId > 0)
+                  call("sync?profile_id=$profileId", protected = true)
+              }
+
+              companion object {
+                  private const val KEY_ALIAS = "moviotv-central-session-aes-v1"
+                  private const val BASE = "https://moviotv.opticalzoo.com/movio/api/index.php/"
+              }
+          }
+          ''', encoding='utf-8')
+
+          (src_dir / 'MovioCentralScreen.kt').write_text(r'''package tv.own.owntv.features.central
+
+          import androidx.activity.compose.BackHandler
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.rememberCoroutineScope
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.res.stringResource
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.input.PasswordVisualTransformation
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.tv.material3.Text
+          import kotlinx.coroutines.launch
+          import org.json.JSONArray
+          import tv.own.owntv.R
+          import tv.own.owntv.ui.stage.StageButton
+          import tv.own.owntv.ui.theme.StageColors
+          import tv.own.owntv.ui.theme.stageText
+
+          private data class RemoteProfile(val id: Long, val title: String)
+
+          /** Read-only Central pilot. Never blocks playback or clears device state when server is down. */
+          @Composable
+          fun MovioCentralScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+              BackHandler(onBack = onBack)
+              val context = LocalContext.current
+              val api = remember(context) { MovioCentralApi(context.applicationContext) }
+              val scope = rememberCoroutineScope()
+              var signedIn by remember { mutableStateOf(api.hasSession()) }
+              var user by remember { mutableStateOf("") }
+              var password by remember { mutableStateOf("") }
+              var busy by remember { mutableStateOf(false) }
+              var status by remember { mutableStateOf(context.getString(R.string.moviotv_central_idle)) }
+              var remoteProfiles by remember { mutableStateOf<List<RemoteProfile>>(emptyList()) }
+
+              fun launchRequest(operation: suspend () -> String) {
+                  if (busy) return
+                  busy = true
+                  scope.launch {
+                      try {
+                          status = operation()
+                      } catch (e: Exception) {
+                          status = context.getString(R.string.moviotv_central_error, e.message ?: context.getString(R.string.moviotv_central_unavailable))
+                      } finally {
+                          busy = false
+                      }
+                  }
+              }
+
+              Column(
+                  modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                  verticalArrangement = Arrangement.spacedBy(14.dp),
+              ) {
+                  Text(stringResource(R.string.moviotv_central_title), style = stageText(32, 800), color = StageColors.Text)
+                  Text(stringResource(R.string.moviotv_central_offline_note), style = stageText(15, 400), color = StageColors.Muted)
+                  if (!signedIn) {
+                      Text(stringResource(R.string.moviotv_central_username), style = stageText(17, 600), color = StageColors.Text)
+                      BasicTextField(
+                          value = user, onValueChange = { user = it }, singleLine = true,
+                          textStyle = TextStyle(fontSize = 19.sp, color = Color.White),
+                          modifier = Modifier.fillMaxWidth().background(Color(0xFF352844)).padding(14.dp),
+                      )
+                      Text(stringResource(R.string.moviotv_central_password), style = stageText(17, 600), color = StageColors.Text)
+                      BasicTextField(
+                          value = password, onValueChange = { password = it }, singleLine = true,
+                          visualTransformation = PasswordVisualTransformation(),
+                          textStyle = TextStyle(fontSize = 19.sp, color = Color.White),
+                          modifier = Modifier.fillMaxWidth().background(Color(0xFF352844)).padding(14.dp),
+                      )
+                      StageButton(stringResource(R.string.moviotv_central_connect), onClick = {
+                          launchRequest {
+                              api.signIn(user, password)
+                              password = ""
+                              signedIn = true
+                              context.getString(R.string.moviotv_central_connected)
+                          }
+                      })
+                  } else {
+                      StageButton(stringResource(R.string.moviotv_central_check), onClick = {
+                          launchRequest {
+                              api.me()
+                              context.getString(R.string.moviotv_central_connected)
+                          }
+                      })
+                      StageButton(stringResource(R.string.moviotv_central_profiles), onClick = {
+                          launchRequest {
+                              val result = api.profiles()
+                              val array: JSONArray = result.optJSONArray("profiles") ?: result.optJSONArray("data") ?: JSONArray()
+                              val list = mutableListOf<RemoteProfile>()
+                              for (i in 0 until minOf(array.length(), 100)) {
+                                  val p = array.optJSONObject(i) ?: continue
+                                  val id = p.optLong("id", -1)
+                                  if (id <= 0L) continue
+                                  val title = p.optString("name").ifBlank { p.optString("profile_name") }.ifBlank { id.toString() }
+                                  list.add(RemoteProfile(id, title))
+                              }
+                              remoteProfiles = list
+                              context.getString(R.string.moviotv_central_profile_count, list.size)
+                          }
+                      })
+                      remoteProfiles.forEach { p ->
+                          StageButton(p.title, onClick = {
+                              launchRequest {
+                                  val data = api.profileRecords(p.id)
+                                  val records = data.optJSONArray("records") ?: JSONArray()
+                                  context.getString(R.string.moviotv_central_record_count, p.title, records.length())
+                              }
+                          })
+                      }
+                      StageButton(stringResource(R.string.moviotv_central_disconnect), onClick = {
+                          api.disconnect()
+                          signedIn = false
+                          remoteProfiles = emptyList()
+                          status = context.getString(R.string.moviotv_central_disconnected)
+                      })
+                  }
+                  Text(status, style = stageText(16, 500), color = StageColors.Muted)
+                  StageButton(stringResource(R.string.common_back), onClick = onBack)
+              }
+          }
+          ''', encoding='utf-8')
+
+          strings = ROOT / 'app/src/main/res/values/strings_moviotv_central.xml'
+          strings.write_text('''<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="moviotv_central_title" translatable="false">MovioTV Central</string>
+            <string name="moviotv_central_idle" translatable="false">Ready to connect</string>
+            <string name="moviotv_central_username" translatable="false">Username</string>
+            <string name="moviotv_central_password" translatable="false">Password</string>
+            <string name="moviotv_central_connect" translatable="false">Connect securely</string>
+            <string name="moviotv_central_connected" translatable="false">Central account connected</string>
+            <string name="moviotv_central_profiles" translatable="false">View Central profiles</string>
+            <string name="moviotv_central_check" translatable="false">Test Central connection</string>
+            <string name="moviotv_central_profile_count" translatable="false">%1$d Central profiles found</string>
+            <string name="moviotv_central_record_count" translatable="false">%1$s: %2$d cloud records (read-only)</string>
+            <string name="moviotv_central_disconnect" translatable="false">Disconnect Central account</string>
+            <string name="moviotv_central_disconnected" translatable="false">Central disconnected. Local viewing remains available.</string>
+            <string name="moviotv_central_unavailable" translatable="false">Server unavailable</string>
+            <string name="moviotv_central_error" translatable="false">Connection failed: %1$s</string>
+            <string name="moviotv_central_offline_note" translatable="false">Secure connection test. No local favourites, history, playlists or resume points are changed. The player works normally when Central is offline.</string>
+          </resources>
+          ''', encoding='utf-8')
+          ET.parse(strings)
+
+          # Respect the upstream's reviewed i18n and safe-literals verification.
+          # Only the two new source files may introduce protocol/technical string constants;
+          # all their user-facing text comes from Android resources.
+          script = ROOT / 'tools/i18n/check_hardcoded_strings.py'
+          assert script.is_file(), 'i18n precheck tool missing'
+          spec = importlib.util.spec_from_file_location('moviotv_v82_literals', script)
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          current = mod._inventory()
+          safe, categories, errors = mod._safe_entries()
+          if errors: raise RuntimeError(errors)
+          baseline = mod._parse(mod.BASELINE.read_text(encoding='utf-8'))
+          entries = {key: (min(count, current[key]), categories[key]) for key, count in safe.items() if key in current}
+          approved_files = {
+              'app/src/main/java/tv/own/owntv/features/central/MovioCentralApi.kt',
+              'app/src/main/java/tv/own/owntv/features/central/MovioCentralScreen.kt',
+          }
+          for key, count in current.items():
+              if key not in entries and key not in baseline:
+                  if key[0] not in approved_files:
+                      raise RuntimeError(f'Unexpected new Kotlin hardcoded literal in {key[0]}: {key[1][:100]}')
+                  entries[key] = (count, 'technical')
+          mod.SAFE_MANIFEST.write_text(mod._serialize_safe(entries), encoding='utf-8')
+          subprocess.run([sys.executable, str(script), 'verify', '--bootstrap'], cwd=ROOT, check=True)
+          assert 'com.oakstudios.moviotv' in (ROOT / 'app/build.gradle.kts').read_text()
+          print('V8.2 patch prechecks OK. About corrected, Central login and read-only profile checks added; existing playback unchanged.')
+          MOVIO_V82_PY
+          python3 -m py_compile /tmp/moviotv-v82-bridge.py
+          python3 /tmp/moviotv-v82-bridge.py
+          grep -F 'MovioCentralScreen' app/src/main/java/tv/own/owntv/features/more/MoreScreen.kt
+          grep -F 'com.oakstudios.moviotv' app/build.gradle.kts
+      - name: Java 25 for Android toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile tests lint and installable debug QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" \
+            testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace --no-daemon
+      - name: Verify built APK metadata and signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -s "$src"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          "$signer" verify "$src"
+          "$aapt" dump badging "$src" > /tmp/moviotv-v82-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v82-badging.txt
+          grep -F "versionCode='100102'" /tmp/moviotv-v82-badging.txt
+          grep -F "versionName='8.2.0'" /tmp/moviotv-v82-badging.txt
+          mkdir -p dist
+          cp "$src" dist/MovioTV-v8.2.0-CENTRAL-QA-debug.apk
+      - name: Upload installable QA debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.2-CENTRAL-QA-DEBUG
+          path: dist/MovioTV-v8.2.0-CENTRAL-QA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Configure permanent release signing, if secrets are present
+        id: signing
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.MOVIOTV_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEY_B64" && -n "$STORE_PASS" && -n "$ALIAS" && -n "$KEY_PASS" ]]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/moviotv-v82.jks"
+            test -s "$RUNNER_TEMP/moviotv-v82.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/moviotv-v82.jks" >> "$GITHUB_ENV"
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'No release-signing secrets. The QA debug APK is available; an existing release-signed app cannot be upgraded using a debug certificate.'
+          fi
+      - name: Compile production APK with pinned Core and R8
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" assembleStandardRelease --stacktrace --no-daemon
+      - name: Verify signed production APK
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          src="$(find app/build/outputs/apk/standard/release -maxdepth 1 -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          test -s "$src"
+          "$signer" verify --verbose "$src"
+          "$aapt" dump badging "$src" > /tmp/v82-release-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/v82-release-badging.txt
+          grep -F "versionCode='100102'" /tmp/v82-release-badging.txt
+          grep -F "versionName='8.2.0'" /tmp/v82-release-badging.txt
+          cp "$src" dist/MovioTV-v8.2.0-CENTRAL-SIGNED.apk
+      - name: Upload release-signed APK
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.2-CENTRAL-SIGNED-RELEASE
+          path: dist/MovioTV-v8.2.0-CENTRAL-SIGNED.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Preserve diagnostics if build fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.2-FAILURE-LOGS
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+          retention-days: 30
+          if-no-files-found: warn
