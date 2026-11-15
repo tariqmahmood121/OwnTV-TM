@@ -123,25 +123,7 @@ class SearchViewModel(
 
     private suspend fun search(q: String): SearchResults {
         val pid = currentProfileId() ?: return SearchResults()
-        val sources = ctx.value
-        val normal = searchReader.search(pid, sources, q)
-        // Existing local FTS title search finishes first. Extend only from previously cached film credits.
-        // No TMDB/provider calls from typing; apply exactly the same source, adult and hidden filters.
-        val candidateIds = MovioCreditIndex.matchingIds(appContext, q)
-        if (candidateIds.isEmpty() || sources.movieSourceIds.isEmpty()) return normal
-        val hidden = customize.observeVisible(pid, MediaType.MOVIE).first()
-        val categories = categoryDao.observe(sources.movieSourceIds, MediaType.MOVIE).first()
-        val kids = profileDao.getById(pid)?.isKids == true
-        val hiddenCats = AdultCategoryClassifier.hiddenCategoryIds(categories, hidden.hiddenCategories, kids)
-        val extra = movieDao.getByIds(candidateIds).filter { movie ->
-            movie.sourceId in sources.movieSourceIds &&
-                (movie.categoryId == null || movie.categoryId !in hiddenCats) &&
-                CustomizeKeys.movie(movie) !in hidden.hiddenItems &&
-                MovioCreditIndex.titleStillMatches(appContext, movie)
-        }.map { movie ->
-            hidden.itemNames[CustomizeKeys.movie(movie)]?.let { movie.copy(name = it) } ?: movie
-        }
-        return normal.copy(movies = (normal.movies + extra).distinctBy { it.id }.take(100))
+        return searchReader.search(pid, ctx.value, q)
     }
 
     // --- Stage page ---

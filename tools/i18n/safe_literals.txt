@@ -230,7 +230,6 @@
 2	log	app/src/main/java/tv/own/owntv/features/movies/MovieViewModel.kt	stalker resolve failed movieId=${movie.id}
 1	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	%.1f
 2	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	,
-1	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	[]
 2	technical	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	delete_subtitles
 1	preference-key	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	download
 1	preference-key	app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt	favourite

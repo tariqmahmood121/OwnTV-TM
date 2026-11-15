@@ -211,15 +211,6 @@ fun MoviesScreen(
         val provider = runCatching { vm.loadProviderVodDetails(movie) }.getOrNull()
         v78Info = V78Info(movie.id, provider, null, complete = false)
         val tmdb = runCatching { vm.loadMovieDetailsMetadata(movie) }.getOrNull()
-        val names = tv.own.owntv.core.metadata.MetadataCast.names(tmdb?.castJson)
-        val moreGenres = runCatching {
-            val array = org.json.JSONArray(tmdb?.genresJson ?: "[]")
-            (0 until array.length()).mapNotNull { i -> array.optString(i).takeIf { it.isNotBlank() } }
-        }.getOrDefault(emptyList())
-        tv.own.owntv.features.search.MovioCreditIndex.remember(
-            context, movie, provider?.cast.orEmpty() + names,
-            provider?.genres.orEmpty() + moreGenres, provider?.director,
-        )
         v78Info = V78Info(movie.id, provider, tmdb, complete = true)
     }
     val toast = rememberInAppToast()

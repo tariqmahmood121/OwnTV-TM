@@ -97,7 +97,7 @@ fun MovioLandingScreen(
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.moviotv_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
                 Text(stringResource(R.string.moviotv_brand_tv), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
-                Text(stringResource(R.string.moviotv_version), color = if (purple) Color(0xFFC3B2D2) else Color(0xFFB0CACC), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
+                Text(stringResource(R.string.moviotv_version, tv.own.owntv.BuildConfig.VERSION_NAME), color = if (purple) Color(0xFFC3B2D2) else Color(0xFFB0CACC), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
             }
             Text(stringResource(R.string.moviotv_credit), color = muted, fontSize = 12.sp)
             Spacer(Modifier.height(if (short) 7.dp else 12.dp))
