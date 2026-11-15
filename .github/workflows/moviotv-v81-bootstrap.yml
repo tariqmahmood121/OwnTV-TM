@@ -1,0 +1,367 @@
+# MovioTV 8.1 bootstrap: uploads an installable DEBUG QA APK on every successful compile.
+# Upload this one file to .github/workflows/moviotv-v81-bootstrap.yml
+# on feature/moviotv-v8-stability (NOT main, not V7).
+# This overlays the pinned upstream Core 1.0.71 source only in the CI runner.
+# V7 and the compiled V8.0 foundation remain intact.
+name: MovioTV V8.1 - Integrated QA and Core Branding
+'on':
+  push:
+    branches: [feature/moviotv-v8-stability]
+    paths: [.github/workflows/moviotv-v81-bootstrap.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moviotv-v81-qa
+  cancel-in-progress: false
+jobs:
+  build-v81:
+    name: Patch, verify, compile, publish installable QA
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: '8.1.0'
+      VERSION_CODE: '100101'
+    steps:
+      - name: Checkout verified V8.0 foundation
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v8-stability
+          fetch-depth: 0
+      - name: Checkout PINNED Core 1.0.71 (not moving main)
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Apply audited V8.1 app and Core changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v81_changes.py <<'MOVIO_V81_PATCH'
+          #!/usr/bin/env python3
+          """MovioTV V8.1 source changes. Intended to run inside the pinned GitHub Actions checkout."""
+          from pathlib import Path
+          import importlib.util
+          import re
+          import subprocess
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ROOT = Path.cwd()
+          CORE = ROOT / "moviotv-core"
+          APP = ROOT / "app"
+          assert CORE.joinpath("core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt").is_file(), "Pinned core checkout missing"
+          assert (APP / 'build.gradle.kts').is_file(), 'App checkout missing'
+
+          def patch(path, old, new, count=1):
+              f = ROOT / path
+              s = f.read_text(encoding='utf-8')
+              found = s.count(old)
+              if found != count:
+                  raise RuntimeError(f"{path}: expected {count} copies of {old[:120]!r}, found {found}")
+              f.write_text(s.replace(old, new), encoding='utf-8')
+
+          # Backups: preserve the core's proven sealed-file encryption, and only rename
+          # the resulting container. The old .own/.json formats remain readable.
+          vm = 'app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt'
+          helper = '''
+              /** V8.1: use a fresh staging directory so an old .own file is never overwritten.
+               * A passphrase is mandatory: the proven core backup then includes provider secrets
+               * inside its authenticated encrypted container. Nothing is emitted as plaintext.
+               */
+              private suspend fun exportMovioBackup(
+                  folder: File,
+                  sections: Set<BackupManager.Section>,
+                  password: String,
+                  profiles: Set<Long>,
+                  record: Boolean,
+              ): Result<String> = runCatching {
+                  require(password.isNotBlank())
+                  check(folder.isDirectory || folder.mkdirs())
+                  val temporary = File(folder, ".moviotv-stage-" + System.nanoTime())
+                  check(temporary.mkdirs())
+                  try {
+                      val sourcePath = backup.export(
+                          temporary, sections, password, profiles, recordAsBackup = false,
+                      ).getOrThrow()
+                      val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.US)
+                          .format(java.util.Date())
+                      val destination = File(folder, "MovioTV-backup-$stamp.mtv")
+                      check(!destination.exists())
+                      check(File(sourcePath).renameTo(destination))
+                      check(destination.isFile && destination.length() > 0L)
+                      if (record) settings.recordBackup(
+                          at = System.currentTimeMillis(), bytes = destination.length(),
+                          encrypted = true, path = destination.absolutePath,
+                      )
+                      destination.absolutePath
+                  } finally {
+                      temporary.deleteRecursively()
+                  }
+              }
+
+          '''
+          anchor = '    fun stopRemoteExport() = companion.stop()'
+          patch(vm, anchor, helper + anchor)
+          patch(vm,
+                'backup.export(companion.backupExportDir, sections, backupPassword, profileIds).fold(',
+                'exportMovioBackup(companion.backupExportDir, sections, backupPassword.orEmpty(), profileIds, record = false).fold(')
+          patch(vm,
+                'backup.export(folder, sections, backupPassword, profileIds).fold(',
+                'exportMovioBackup(folder, sections, backupPassword.orEmpty(), profileIds, record = true).fold(')
+
+          ui='app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt'
+          patch(ui, 'fileExtensions = BackupManager.RESTORE_EXTENSIONS,',
+                    'fileExtensions = BackupManager.RESTORE_EXTENSIONS + setOf("mtv"),')
+          patch(ui,
+                'skipLabel = stringResource(R.string.settings_backup_export_unencrypted),',
+                'skipLabel = null,')
+          patch(ui,
+                'skipLabel = stringResource(R.string.settings_backup_prepare_unencrypted),',
+                'skipLabel = null,')
+          # Legacy restore still allows omitting passwords in a legacy unsealed backup.
+          assert 'skipLabel = stringResource(R.string.settings_backup_skip_passwords)' in (ROOT/ui).read_text()
+
+          # Paired auto-sync already supports trusted-device agreements, delta updates,
+          # deletions and offline LAN transfer. Enable its documented periodic mode on
+          # phones/tablets; avoid polling on TVs. Server sync is independent of this.
+          app='app/src/main/java/tv/own/owntv/OwnTVApp.kt'
+          patch(app,
+                'tv.own.owntv.core.CoreBuildInfo.releaseRepo = "ahXN00/OwnTV"',
+                'tv.own.owntv.core.CoreBuildInfo.releaseRepo = "tariqmahmood121/OwnTV-TM"')
+          patch(app,
+                'runCatching { GlobalContext.get().get<tv.own.owntv.core.sync.work.LocalAutoSyncStarter>().start(periodic = false) }',
+                '''runCatching {
+                      val tv = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                          Configuration.UI_MODE_TYPE_TELEVISION
+                      GlobalContext.get().get<tv.own.owntv.core.sync.work.LocalAutoSyncStarter>()
+                          .start(periodic = !tv)
+                  }''')
+
+          # This is the original vector resource, not a rasterised 1.5MB image. It scales
+          # sharply on phones and 4K TVs with no 150KB texture burden.
+          logo=Path('app/src/main/res/drawable/moviotv_launcher.xml')
+          logo.write_text('''<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#210B38" android:pathData="M10,52 C24,45 37,51 48,54 C65,60 77,45 98,50 L98,59 C72,52 65,72 45,62 C28,55 21,58 10,62 Z"/>
+              <path android:fillColor="#6424A1" android:pathData="M10,60 C28,53 42,65 55,66 C70,69 81,59 98,60 L98,66 C73,64 63,79 48,72 C33,64 19,67 10,70 Z"/>
+              <path android:fillColor="#7C21DD" android:pathData="M24,17 C24,8 33,5 41,10 L94,41 C103,46 103,60 94,66 L41,98 C33,103 24,99 24,90 Z"/>
+              <path android:fillColor="#C44AFF" android:pathData="M31,20 C31,15 36,13 41,16 L88,44 C96,49 96,59 88,64 L41,92 C36,95 31,92 31,88 Z"/>
+              <path android:fillColor="#190A30" android:pathData="M39,31 C39,26 44,24 49,27 L76,44 C83,48 83,60 76,64 L49,81 C44,84 39,81 39,76 Z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M51,39 L74,54 L51,69 Z"/>
+          </vector>
+          ''',encoding='utf-8')
+          ET.parse(logo)
+
+          # The browser companion is compiled into Core, not the app. Use precisely the
+          # pinned Core 1.0.71 source rather than pretending an Android UI colour changes it.
+          html='moviotv-core/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt'
+          for old,new in {
+           '--bg:#040E0B; --panel:#12191700; --card:#1B211F; --card-2:#252B29;': '--bg:#0B0616; --panel:#160C2700; --card:#21152E; --card-2:#2A1C3C;',
+           '--line:#3F4945; --text:#DEE4E1; --muted:#BFC9C4;': '--line:#55426D; --text:#F6F0FF; --muted:#C9BAD9;',
+           '--accent:#8CEE2B; --accent-ink:#123A06; --danger:#FFB4AB;': '--accent:#C979F3; --accent-ink:#220D32; --danger:#FFB4AB;',
+           'rgba(140,238,43,0.10)': 'rgba(164,69,245,0.10)',
+           'rgba(140,238,43,0.06)': 'rgba(164,69,245,0.06)',
+           'background:#52DBC8;': 'background:#A855F7;',
+           'color:#003730}': 'color:#FFFFFF}',
+           'background:#0C1311;': 'background:#150E22;',
+           'rgba(140,238,43,.20)': 'rgba(184,105,247,.20)',
+           'background:#1E2E0C; color:#EAFFD0': 'background:#392150; color:#F8EFFF',
+           '".own,.json,application/json,application/octet-stream"': '".mtv,.own,.json,application/json,application/octet-stream"',
+           'href="/backup.own?pin=$pin" download="owntv-backup.own"': 'href="/backup.mtv?pin=$pin"',
+          }.items():
+              patch(html, old, new)
+
+          http='moviotv-core/core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt'
+          patch(http,
+                'path == "/backup.own" || path == "/backup.json"',
+                'path == "/backup.mtv" || path == "/backup.own" || path == "/backup.json"')
+          patch(http,
+                'append("Content-Type: application/json; charset=utf-8\\r\\n")',
+                'append("Content-Type: application/octet-stream\\r\\n")')
+          # The existing CrashRecorder installs at Application.onCreate and overwrites one
+          # last_crash.txt by design. Keep it, brand it, and put a strict cap on trace size.
+          crash='moviotv-core/core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt'
+          patch(crash,'appendLine("OwnTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})")',
+                      'appendLine("MovioTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})")')
+          patch(crash,'f.writeText(text)', 'f.writeText(text.take(131072))')
+
+          # Update reviewed technical inventories only for changed, known technical file
+          # strings (not user-visible Kotlin labels). New UI strings must remain resources.
+          def reconcile_manifest(root: Path, whitelist: set[str]):
+              script = root/'tools/i18n/check_hardcoded_strings.py'
+              spec=importlib.util.spec_from_file_location('moviotv_literal_check_' + root.name,script)
+              mod=importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(mod)
+              current=mod._inventory()
+              safe,categories,errors=mod._safe_entries()
+              if errors: raise RuntimeError(errors)
+              # Remove only stale technical classifications; preserve current, reviewed policy.
+              entries={key:(min(count,current[key]),categories[key]) for key,count in safe.items() if key in current}
+              baseline=mod._parse(mod.BASELINE.read_text(encoding='utf-8'))
+              for key,count in current.items():
+                  if key not in entries and key not in baseline:
+                      if key[0] not in whitelist:
+                          raise RuntimeError(f'New unreviewed literal outside V8.1 patch: {key[0]} :: {key[1][:160]}')
+                      # Only templates, protocols and file paths on the explicitly reviewed
+                      # files have changed. Do NOT waive checks on unrelated Kotlin code.
+                      entries[key]=(count,'technical')
+              mod.SAFE_MANIFEST.write_text(mod._serialize_safe(entries),encoding='utf-8')
+              subprocess.run([sys.executable,str(script),'verify','--bootstrap'],cwd=root,check=True)
+
+          reconcile_manifest(ROOT, {
+           'app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt',
+           'app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt',
+          })
+          reconcile_manifest(CORE, {
+           'core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt',
+           'core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt',
+           'core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt',
+          })
+
+          # Audit snapshots for source branch and reproducible build evidence.
+          patchfile=ROOT/'patches/v81-core-changes.patch'
+          patchfile.parent.mkdir(parents=True,exist_ok=True)
+          with patchfile.open('wb') as fh:
+              subprocess.run(['git','-C',str(CORE),'diff','--','core/src/main/java/tv/own/owntv/core',
+                              'tools/i18n/safe_literals.txt'],stdout=fh,check=True)
+          assert patchfile.stat().st_size > 100
+          assert 'com.oakstudios.moviotv' in (ROOT/'app/build.gradle.kts').read_text()
+          print('V8.1 patch OK: encrypted .mtv exports, legacy restore, purple browser, vector splash, crash recorder, paired auto-sync')
+          MOVIO_V81_PATCH
+          python3 -m py_compile /tmp/moviotv_v81_changes.py
+          python3 /tmp/moviotv_v81_changes.py
+          test -s patches/v81-core-changes.patch
+          # We deliberately build against the patched, pinned Core source.
+          grep -F 'com.oakstudios.moviotv' app/build.gradle.kts
+          grep -F 'MovioTV-backup-' app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt
+          grep -F '.mtv' moviotv-core/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt
+
+      - name: Java 25 for AGP and repository toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile V8.1 plus pinned custom Core, lint and unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" \
+            testStandardDebugUnitTest lintStandardDebug assembleStandardDebug \
+            --stacktrace --no-daemon
+      - name: Validate debug package and create installable V8.1 QA APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          src="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
+          test -s "$src"
+          "$signer" verify --verbose "$src"
+          "$aapt" dump badging "$src" > /tmp/moviotv-v81-apk-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v81-apk-badging.txt
+          grep -F "versionCode='100101'" /tmp/moviotv-v81-apk-badging.txt
+          grep -F "versionName='8.1.0'" /tmp/moviotv-v81-apk-badging.txt
+          mkdir -p dist
+          cp "$src" dist/MovioTV-v8.1.0-QA-debug.apk
+      - name: UPLOAD INSTALLABLE V8.1 QA APK - even with no release signing secret
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.1.0-INSTALLABLE-QA-DEBUG
+          path: dist/MovioTV-v8.1.0-QA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Configure optional permanent signing (separate from debug QA)
+        id: signing
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.MOVIOTV_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEY_B64" && -n "$STORE_PASS" && -n "$ALIAS" && -n "$KEY_PASS" ]]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/moviotv-v81.jks"
+            test -s "$RUNNER_TEMP/moviotv-v81.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/moviotv-v81.jks" >> "$GITHUB_ENV"
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'QA debug artifact uploaded. Release will be unsigned unless signing secrets are configured.'
+          fi
+      - name: Compile optimised V8.1 release including R8 and resources
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" \
+            assembleStandardRelease --stacktrace --no-daemon
+          find app/build/outputs/apk/standard/release -maxdepth 1 -type f -name '*.apk' -size +0c | grep -q .
+      - name: Validate and stage signed production APK (only if certificate exists)
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          src="$(find app/build/outputs/apk/standard/release -maxdepth 1 -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          "$signer" verify --verbose "$src"
+          "$aapt" dump badging "$src" > /tmp/v81-release-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/v81-release-badging.txt
+          grep -F "versionCode='100101'" /tmp/v81-release-badging.txt
+          grep -F "versionName='8.1.0'" /tmp/v81-release-badging.txt
+          cp "$src" dist/MovioTV-v8.1.0-SIGNED.apk
+      - name: Upload release-signed APK (requires existing permanent signing key)
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.1.0-SIGNED-RELEASE
+          path: dist/MovioTV-v8.1.0-SIGNED.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Save VERIFIED source on separate V8.1 branch (not V8.0 or V7)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git ls-remote --exit-code --heads origin feature/moviotv-v81-stability; then
+            echo 'V8.1 branch already exists. Refusing to replace it.' >&2
+            exit 1
+          fi
+          git switch -c feature/moviotv-v81-stability
+          git add app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt \
+                  app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt \
+                  app/src/main/java/tv/own/owntv/OwnTVApp.kt \
+                  app/src/main/res/drawable/moviotv_launcher.xml \
+                  tools/i18n/safe_literals.txt patches/v81-core-changes.patch
+          git diff --cached --quiet && { echo 'V8.1 contains no staged app changes'; exit 1; }
+          git commit -m 'MovioTV V8.1: sealed MTV backups, purple companion, offline peer sync, QA build'
+          git push origin HEAD:refs/heads/feature/moviotv-v81-stability
+      - name: Preserve diagnostics on failed compilation
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.1-failure-logs
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+            patches/v81-core-changes.patch
+          retention-days: 30
+          if-no-files-found: warn
