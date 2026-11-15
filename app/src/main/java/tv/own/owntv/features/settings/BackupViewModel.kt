@@ -39,13 +39,49 @@ class BackupViewModel(
     fun exportRemote(sections: Set<BackupManager.Section>, backupPassword: String?, profileIds: Set<Long>) {
         viewModelScope.launch {
             _state.value = State.Working
-            backup.export(companion.backupExportDir, sections, backupPassword, profileIds).fold(
+            exportMovioBackup(companion.backupExportDir, sections, backupPassword.orEmpty(), profileIds, record = false).fold(
                 onSuccess = { path ->
                     companion.startForBackupDownload(tv.own.owntv.core.companion.CompanionLink.DEFAULT_PORT, File(path))
                     _state.value = State.Idle
                 },
                 onFailure = { _state.value = State.Error(BackupError.EXPORT) },
             )
+        }
+    }
+
+
+    /** V8.1: use a fresh staging directory so an old .own file is never overwritten.
+     * A passphrase is mandatory: the proven core backup then includes provider secrets
+     * inside its authenticated encrypted container. Nothing is emitted as plaintext.
+     */
+    private suspend fun exportMovioBackup(
+        folder: File,
+        sections: Set<BackupManager.Section>,
+        password: String,
+        profiles: Set<Long>,
+        record: Boolean,
+    ): Result<String> = runCatching {
+        require(password.isNotBlank())
+        check(folder.isDirectory || folder.mkdirs())
+        val temporary = File(folder, ".moviotv-stage-" + System.nanoTime())
+        check(temporary.mkdirs())
+        try {
+            val sourcePath = backup.export(
+                temporary, sections, password, profiles, recordAsBackup = false,
+            ).getOrThrow()
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val destination = File(folder, "MovioTV-backup-$stamp.mtv")
+            check(!destination.exists())
+            check(File(sourcePath).renameTo(destination))
+            check(destination.isFile && destination.length() > 0L)
+            if (record) settings.recordBackup(
+                at = System.currentTimeMillis(), bytes = destination.length(),
+                encrypted = true, path = destination.absolutePath,
+            )
+            destination.absolutePath
+        } finally {
+            temporary.deleteRecursively()
         }
     }
 
@@ -151,7 +187,7 @@ class BackupViewModel(
     fun export(folder: File, sections: Set<BackupManager.Section>, backupPassword: String?, profileIds: Set<Long>) {
         viewModelScope.launch {
             _state.value = State.Working
-            backup.export(folder, sections, backupPassword, profileIds).fold(
+            exportMovioBackup(folder, sections, backupPassword.orEmpty(), profileIds, record = true).fold(
                 onSuccess = {
                     _state.value = State.Done(DoneKind.EXPORTED, path = it, passwordsOmitted = backupPassword.isNullOrBlank())
                 },

@@ -1,0 +1,173 @@
+diff --git a/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt b/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt
+index 82a3c45..0e8d524 100644
+--- a/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt
++++ b/core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt
+@@ -18,9 +18,9 @@ internal object CompanionHtml {
+     private const val CSS = """
+       :root{
+         color-scheme: dark;
+-        --bg:#040E0B; --panel:#12191700; --card:#1B211F; --card-2:#252B29;
+-        --line:#3F4945; --text:#DEE4E1; --muted:#BFC9C4;
+-        --accent:#8CEE2B; --accent-ink:#123A06; --danger:#FFB4AB;
++        --bg:#0B0616; --panel:#160C2700; --card:#21152E; --card-2:#2A1C3C;
++        --line:#55426D; --text:#F6F0FF; --muted:#C9BAD9;
++        --accent:#C979F3; --accent-ink:#220D32; --danger:#FFB4AB;
+       }
+       @font-face{
+         font-family:'Lora'; font-style:normal; font-weight:400 700;
+@@ -31,16 +31,16 @@ internal object CompanionHtml {
+         margin:0; color:var(--text);
+         font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+         background:
+-          radial-gradient(1200px 520px at 12% -12%, rgba(140,238,43,0.10) 0%, transparent 60%),
+-          radial-gradient(900px 460px at 100% 0%, rgba(140,238,43,0.06) 0%, transparent 62%),
++          radial-gradient(1200px 520px at 12% -12%, rgba(164,69,245,0.10) 0%, transparent 60%),
++          radial-gradient(900px 460px at 100% 0%, rgba(164,69,245,0.06) 0%, transparent 62%),
+           var(--bg);
+         min-height:100vh;
+       }
+       h1,h2,.brand{font-family:'Lora',Georgia,'Noto Sans',system-ui,sans-serif; font-weight:700; letter-spacing:.2px}
+       main{max-width:760px; margin:0 auto; padding:28px 20px 56px}
+       .brandrow{display:flex; align-items:center; gap:12px; margin-bottom:22px}
+-      .dot{width:34px; height:34px; border-radius:10px; background:#52DBC8;
+-        display:grid; place-items:center; color:#003730}
++      .dot{width:34px; height:34px; border-radius:10px; background:#A855F7;
++        display:grid; place-items:center; color:#FFFFFF}
+       .dot svg{width:18px; height:18px}
+       .brand{font-size:20px; color:var(--text)}
+       .card{background:var(--card); border:1px solid var(--line); border-radius:20px;
+@@ -50,9 +50,9 @@ internal object CompanionHtml {
+       form{display:grid; gap:14px}
+       label{display:grid; gap:6px; font-size:14px; color:var(--text)}
+       input,select{border:1px solid var(--line); border-radius:12px; padding:13px 14px;
+-        background:#0C1311; color:var(--text); font-size:16px; width:100%}
++        background:#150E22; color:var(--text); font-size:16px; width:100%}
+       input:focus,select:focus{outline:none; border-color:var(--accent);
+-        box-shadow:0 0 0 3px rgba(140,238,43,.20)}
++        box-shadow:0 0 0 3px rgba(184,105,247,.20)}
+       .grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px}
+       .checks{display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:2px}
+       .check{display:flex; align-items:center; gap:9px; color:var(--muted)}
+@@ -60,7 +60,7 @@ internal object CompanionHtml {
+       .tabs{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:18px}
+       .tab{border:1px solid var(--line); border-radius:12px; padding:12px 10px; background:var(--card-2);
+         color:var(--muted); font-weight:600; font-size:15px; cursor:pointer; font-family:inherit}
+-      .tab.active{border-color:var(--accent); background:#1E2E0C; color:#EAFFD0}
++      .tab.active{border-color:var(--accent); background:#392150; color:#F8EFFF}
+       .panel{display:none}
+       .panel.active{display:grid; gap:14px}
+       button.go{border:0; border-radius:12px; padding:15px 16px; background:var(--accent);
+@@ -466,7 +466,7 @@ internal object CompanionHtml {
+         val choose = if (backup) c.chooseBackup else c.chooseImage
+         val endpoint = if (backup) "/backup" else "/background"
+         val contentType = if (backup) "application/json" else "text/plain"
+-        val accept = if (backup) ".own,.json,application/json,application/octet-stream" else "image/*"
++        val accept = if (backup) ".mtv,.own,.json,application/json,application/octet-stream" else "image/*"
+         return """
+             <div class="card">
+               <h1>${heading.h()}</h1>
+@@ -596,7 +596,7 @@ internal object CompanionHtml {
+         return page(context, c.downloadTitle, """
+             <div class="card"><h1>${c.downloadHeading.h()}</h1>
+               <p>${c.downloadDescription.h()}</p>
+-              <a class="go" href="/backup.own?pin=$pin" download="owntv-backup.own" style="display:block;text-align:center;text-decoration:none">${c.downloadBackup.h()}</a>
++              <a class="go" href="/backup.mtv?pin=$pin" style="display:block;text-align:center;text-decoration:none">${c.downloadBackup.h()}</a>
+             </div>
+         """.trimIndent())
+     }
+diff --git a/core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt b/core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt
+index 5e92094..e69dc7b 100644
+--- a/core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt
++++ b/core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt
+@@ -330,7 +330,7 @@ class CompanionHttpServer(
+             // Backup download (BACKUP_DOWNLOAD mode) — PIN required, streams the exported container.
+             // `/backup.json` stays routed here: the old path costs nothing to keep and a remote browser that
+             // bookmarked it still works. What it serves is whatever export produced — a `.own` file.
+-            if (method == "GET" && (path == "/backup.own" || path == "/backup.json")) {
++            if (method == "GET" && (path == "/backup.mtv" || path == "/backup.own" || path == "/backup.json")) {
+                 val headerPin = headers["x-companion-pin"].orEmpty()
+                 val caller = syncCaller(queryPin.ifBlank { headerPin })
+                     ?: return sendText(socket, 401, localized(R.string.companion_error_unauthorized))
+@@ -532,7 +532,7 @@ class CompanionHttpServer(
+             socket.getOutputStream().use { out ->
+                 val header = buildString {
+                     append("HTTP/1.1 200 OK\r\n")
+-                    append("Content-Type: application/json; charset=utf-8\r\n")
++                    append("Content-Type: application/octet-stream\r\n")
+                     append("Content-Disposition: attachment; filename=\"").append(filename).append("\"\r\n")
+                     append("Content-Length: ").append(bytes.size).append("\r\n")
+                     append("Cache-Control: no-store\r\n")
+diff --git a/core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt b/core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt
+index baf9c70..a66389f 100644
+--- a/core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt
++++ b/core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt
+@@ -53,7 +53,7 @@ object CrashRecorder {
+         val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+             .format(java.util.Date())
+         val text = buildString {
+-            appendLine("OwnTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})")
++            appendLine("MovioTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})")
+             appendLine("${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+             appendLine("Crashed $stamp on thread \"${thread.name}\"")
+             appendLine()
+@@ -66,7 +66,7 @@ object CrashRecorder {
+         }
+         val f = file(context)
+         f.parentFile?.mkdirs()
+-        f.writeText(text)
++        f.writeText(text.take(131072))
+     }
+ 
+     private fun file(context: Context): File =
+diff --git a/tools/i18n/safe_literals.txt b/tools/i18n/safe_literals.txt
+index d0f46c0..e069a32 100644
+--- a/tools/i18n/safe_literals.txt
++++ b/tools/i18n/safe_literals.txt
+@@ -355,10 +355,10 @@
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	&gt;
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	&lt;
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	&quot;
+-1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	.own,.json,application/json,application/octet-stream
++1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	.mtv,.own,.json,application/json,application/octet-stream
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	/background
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	/backup
+-1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	:root{ color-scheme: dark; --bg:#040E0B; --panel:#12191700; --card:#1B211F; --card-2:#252B29; --line:#3F4945; --text:#DEE4E1; --muted:#BFC9C4; --accent:#8CEE2B; --accent-ink:#123A06; --danger:#FFB4AB; } @font-face{ font-family:'Lora'; font-style:normal; font-weight:400 700; src:url('/lora.ttf') format('truetype'); font-display:swap; } *{box-sizing:border-box} body{ margin:0; color:var(--text); font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; background: radial-gradient(1200px 520px at 12% -12%, rgba(140,238,43,0.10) 0%, transparent 60%), radial-gradient(900px 460px at 100% 0%, rgba(140,238,43,0.06) 0%, transparent 62%), var(--bg); min-height:100vh; } h1,h2,.brand{font-family:'Lora',Georgia,'Noto Sans',system-ui,sans-serif; font-weight:700; letter-spacing:.2px} main{max-width:760px; margin:0 auto; padding:28px 20px 56px} .brandrow{display:flex; align-items:center; gap:12px; margin-bottom:22px} .dot{width:34px; height:34px; border-radius:10px; background:#52DBC8; display:grid; place-items:center; color:#003730} .dot svg{width:18px; height:18px} .brand{font-size:20px; color:var(--text)} .card{background:var(--card); border:1px solid var(--line); border-radius:20px; padding:26px 22px; box-shadow:0 24px 60px rgba(0,0,0,.45)} h1{margin:0 0 8px; font-size:24px} p{line-height:1.55; color:var(--muted); margin:0 0 16px} form{display:grid; gap:14px} label{display:grid; gap:6px; font-size:14px; color:var(--text)} input,select{border:1px solid var(--line); border-radius:12px; padding:13px 14px; background:#0C1311; color:var(--text); font-size:16px; width:100%} input:focus,select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(140,238,43,.20)} .grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px} .checks{display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:2px} .check{display:flex; align-items:center; gap:9px; color:var(--muted)} .check input{width:18px; height:18px} .tabs{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:18px} .tab{border:1px solid var(--line); border-radius:12px; padding:12px 10px; background:var(--card-2); color:var(--muted); font-weight:600; font-size:15px; cursor:pointer; font-family:inherit} .tab.active{border-color:var(--accent); background:#1E2E0C; color:#EAFFD0} .panel{display:none} .panel.active{display:grid; gap:14px} button.go{border:0; border-radius:12px; padding:15px 16px; background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:16px; cursor:pointer; margin-top:4px} .pin{font-family:'Lora',Georgia,'Noto Sans',system-ui,sans-serif; font-size:34px; letter-spacing:12px; text-align:center; padding:16px; caret-color:var(--accent)} .err{color:var(--danger); font-size:14px; margin:0 0 12px} .hint{font-size:13px; color:var(--muted); margin-top:6px} a{color:var(--accent)} @media (max-width:640px){.grid,.checks,.tabs{grid-template-columns:1fr}}
++1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	:root{ color-scheme: dark; --bg:#0B0616; --panel:#160C2700; --card:#21152E; --card-2:#2A1C3C; --line:#55426D; --text:#F6F0FF; --muted:#C9BAD9; --accent:#C979F3; --accent-ink:#220D32; --danger:#FFB4AB; } @font-face{ font-family:'Lora'; font-style:normal; font-weight:400 700; src:url('/lora.ttf') format('truetype'); font-display:swap; } *{box-sizing:border-box} body{ margin:0; color:var(--text); font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; background: radial-gradient(1200px 520px at 12% -12%, rgba(164,69,245,0.10) 0%, transparent 60%), radial-gradient(900px 460px at 100% 0%, rgba(164,69,245,0.06) 0%, transparent 62%), var(--bg); min-height:100vh; } h1,h2,.brand{font-family:'Lora',Georgia,'Noto Sans',system-ui,sans-serif; font-weight:700; letter-spacing:.2px} main{max-width:760px; margin:0 auto; padding:28px 20px 56px} .brandrow{display:flex; align-items:center; gap:12px; margin-bottom:22px} .dot{width:34px; height:34px; border-radius:10px; background:#A855F7; display:grid; place-items:center; color:#FFFFFF} .dot svg{width:18px; height:18px} .brand{font-size:20px; color:var(--text)} .card{background:var(--card); border:1px solid var(--line); border-radius:20px; padding:26px 22px; box-shadow:0 24px 60px rgba(0,0,0,.45)} h1{margin:0 0 8px; font-size:24px} p{line-height:1.55; color:var(--muted); margin:0 0 16px} form{display:grid; gap:14px} label{display:grid; gap:6px; font-size:14px; color:var(--text)} input,select{border:1px solid var(--line); border-radius:12px; padding:13px 14px; background:#150E22; color:var(--text); font-size:16px; width:100%} input:focus,select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(184,105,247,.20)} .grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px} .checks{display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:2px} .check{display:flex; align-items:center; gap:9px; color:var(--muted)} .check input{width:18px; height:18px} .tabs{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:18px} .tab{border:1px solid var(--line); border-radius:12px; padding:12px 10px; background:var(--card-2); color:var(--muted); font-weight:600; font-size:15px; cursor:pointer; font-family:inherit} .tab.active{border-color:var(--accent); background:#392150; color:#F8EFFF} .panel{display:none} .panel.active{display:grid; gap:14px} button.go{border:0; border-radius:12px; padding:15px 16px; background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:16px; cursor:pointer; margin-top:4px} .pin{font-family:'Lora',Georgia,'Noto Sans',system-ui,sans-serif; font-size:34px; letter-spacing:12px; text-align:center; padding:16px; caret-color:var(--accent)} .err{color:var(--danger); font-size:14px; margin:0 0 12px} .hint{font-size:13px; color:var(--muted); margin-top:6px} a{color:var(--accent)} @media (max-width:640px){.grid,.checks,.tabs{grid-template-columns:1fr}}
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<!doctype html><html lang="${lang.h()}" dir="$dir"><head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>${title.h()}</title><style>$CSS</style> </head><body><main> <div class="brandrow"><span class="dot">$LOGO_SVG</span><span class="brand">${c.app.h()}</span></div> $inner </main></body></html>
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"> <h1>${c.addHeading.h()}</h1> <p>${c.addDescription.h()}</p> <div class="tabs"> <button type="button" class="tab active" data-k="xtream">${c.xtream.h()}</button> <button type="button" class="tab" data-k="m3u">${c.m3u.h()}</button> <button type="button" class="tab" data-k="stalker">${c.stalker.h()}</button> </div> <form class="panel active" data-k="xtream" method="post" action="/xtream?pin=$pin"> <input type="hidden" name="type" value="xtream"> <div class="grid"> <label>${c.name.h()} <input name="name" placeholder="${c.defaultIptv.h()}"></label> ${autoRefreshSelect(c)} </div> <label>${c.serverUrl.h()} <input name="server" placeholder="${c.serverExample.h()}" required></label> <div class="grid"> <label>${c.username.h()} <input name="user" autocomplete="username" required></label> <label>${c.password.h()} <input name="pass" type="password" autocomplete="current-password" required></label> </div> <label>${c.userAgent.h()} <input name="userAgent" placeholder="${c.optional.h()}"></label> <label>${c.epgUrl.h()} <input name="epgUrl" placeholder="${c.optional.h()}"></label> <p class="hint">${c.syncXtreamHint.h()}</p> <div class="grid"> ${scopeSelect(c, "syncLive", c.live)} ${scopeSelect(c, "syncMovies", c.movies)} ${scopeSelect(c, "syncSeries", c.series)} </div> <input type="hidden" name="isDefault" value="false"> <label class="check"><input type="checkbox" name="isDefault" value="true"> ${c.defaultPlaylistLabel.h()}</label> <button class="go" type="submit">${c.sendToTv.h()}</button> </form> <form class="panel" id="m3uForm" data-k="m3u" method="post" action="/m3u?pin=$pin"> <input type="hidden" name="type" value="m3u"> <div class="grid"> <label>${c.name.h()} <input name="name" placeholder="${c.defaultPlaylist.h()}"></label> ${autoRefreshSelect(c)} </div> <label>${c.playlistUrl.h()} <input id="m3uUrl" name="server" placeholder="${c.playlistExample.h()}"></label> <label>${c.playlistFile.h()} <input id="m3uFile" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl,text/plain"></label> <label>${c.userAgent.h()} <input name="userAgent" placeholder="${c.optional.h()}"></label> <label>${c.epgUrl.h()} <input name="epgUrl" placeholder="${c.optional.h()}"></label> <input type="hidden" name="isDefault" value="false"> <label class="check"><input type="checkbox" name="isDefault" value="true"> ${c.defaultPlaylistLabel.h()}</label> <button class="go" id="m3uSend" type="submit">${c.sendToTv.h()}</button> <p id="m3uStatus" class="hint"></p> </form> <form class="panel" data-k="stalker" method="post" action="/stalker?pin=$pin"> <input type="hidden" name="type" value="stalker"> <div class="grid"> <label>${c.name.h()} <input name="name" placeholder="${c.defaultPortal.h()}"></label> ${autoRefreshSelect(c)} </div> <label>${c.portalUrl.h()} <input name="portalUrl" placeholder="${c.portalExample.h()}" required></label> <label>${context.getString(R.string.setup_mac_address).h()} <input name="mac" placeholder="${context.getString(R.string.setup_mac_example).h()}" required></label> <div class="grid"> <label>${context.getString(R.string.settings_username_optional).h()} <input name="user" autocomplete="username"></label> <label>${context.getString(R.string.settings_password_optional).h()} <input name="pass" type="password" autocomplete="current-password"></label> </div> <h3>${context.getString(R.string.setup_stalker_advanced_identity).h()}</h3> <div class="grid"> <label>${context.getString(R.string.setup_stalker_serial_number_optional).h()} <input name="serialNumber"></label> <label>${context.getString(R.string.setup_stalker_device_id_optional).h()} <input name="deviceId"></label> <label>${context.getString(R.string.setup_stalker_device_id2_optional).h()} <input name="deviceId2"></label> <label>${context.getString(R.string.setup_stalker_signature_optional).h()} <input name="signature"></label> </div> <label>${c.userAgent.h()} <input name="userAgent" placeholder="${c.optional.h()}"></label> <p class="hint">${c.syncStalkerHint.h()}</p> <div class="grid"> ${scopeSelect(c, "syncLive", c.live, "now")} ${scopeSelect(c, "syncMovies", c.movies, "later")} ${scopeSelect(c, "syncSeries", c.series, "later")} </div> <input type="hidden" name="isDefault" value="false"> <label class="check"><input type="checkbox" name="isDefault" value="true"> ${c.defaultPlaylistLabel.h()}</label> <button class="go" type="submit">${c.sendToTv.h()}</button> </form> </div> <script> var tabs=document.querySelectorAll('.tab'), panels=document.querySelectorAll('.panel'); tabs.forEach(function(t){t.addEventListener('click',function(){ var k=t.getAttribute('data-k'); tabs.forEach(function(x){x.classList.toggle('active',x===t)}); panels.forEach(function(p){p.classList.toggle('active',p.getAttribute('data-k')===k)}); });}); ${m3uUploadScript(c, pin, urlRequired = true)} </script>
+@@ -367,7 +367,7 @@
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"> <h1>${c.savedHeading.h()}</h1> <p>${body.h()}</p> <p><a href="/?pin=$pin">${c.savedSendAnother.h()}</a></p> </div>
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"> <h1>${context.getString(R.string.companion_edit_heading, prefill.name).h()}</h1> <p>${c.editDescription.h()}</p> <form class="panel active"$formId method="post" action="/$path?pin=$pin"> <input type="hidden" name="type" value="$path"> $fields <button class="go"$sendId type="submit">${c.sendToTv.h()}</button> $status </form> </div> $script
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"> <h1>${heading.h()}</h1> <p>${description.h()}</p> <form id="f" onsubmit="return false"> <label>${fileLabel.h()} <input id="file" type="file" accept="$accept" required></label> <button class="go" id="send" type="submit">${c.sendToTv.h()}</button> </form> <p id="status" class="hint"></p> </div> <script> var f=document.getElementById('file'), b=document.getElementById('send'), s=document.getElementById('status'); document.getElementById('f').addEventListener('submit',function(){ var file=f.files&&f.files[0]; if(!file){s.textContent=${choose.js()};return false;} ${if (!backup) "if(file.size>25*1024*1024){s.textContent=${c.imageTooLarge.js()};return false;}" else ""} b.disabled=true; s.textContent=${c.sending.js()}; var r=new FileReader(); r.onload=function(){ fetch('$endpoint?pin=$pin',{method:'POST',headers:{'Content-Type':'$contentType'},body:r.result}) .then(function(res){ if(res.ok){document.open();res.text().then(function(t){document.write(t);document.close();});} else{b.disabled=false;s.textContent=${c.uploadFailed.js()}.replace('__STATUS__',String(res.status));} }) .catch(function(){b.disabled=false;s.textContent=${c.couldNotReach.js()};}); }; r.onerror=function(){b.disabled=false;s.textContent=${c.couldNotRead.js()};}; r.readAsDataURL(file); return false; }); </script>
+-1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"><h1>${c.downloadHeading.h()}</h1> <p>${c.downloadDescription.h()}</p> <a class="go" href="/backup.own?pin=$pin" download="owntv-backup.own" style="display:block;text-align:center;text-decoration:none">${c.downloadBackup.h()}</a> </div>
++1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"><h1>${c.downloadHeading.h()}</h1> <p>${c.downloadDescription.h()}</p> <a class="go" href="/backup.mtv?pin=$pin" style="display:block;text-align:center;text-decoration:none">${c.downloadBackup.h()}</a> </div>
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"><h1>${c.savedHeading.h()}</h1> <p>${c.savedBackupBody.h()}</p><p><a href="/?pin=$pin">${c.savedBackupLink.h()}</a></p> </div>
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"><h1>${c.savedHeading.h()}</h1> <p>${c.savedImageBody.h()}</p><p><a href="/?pin=$pin">${c.savedImageLink.h()}</a></p> </div>
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHtml.kt	<div class="card"><h1>${context.getString(R.string.local_sync_browser_title).h()}</h1> <p>${context.getString(R.string.local_sync_browser_body).h()}</p> </div>
+@@ -476,6 +476,7 @@
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/background
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/backup
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/backup.json
++1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/backup.mtv
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/backup.own
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/index.html
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	/lora.ttf
+@@ -496,7 +497,7 @@
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Content-Disposition: attachment; filename="
+ 2	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Content-Length:
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Content-Type:
+-1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Content-Type: application/json; charset=utf-8
++1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Content-Type: application/octet-stream
+ 1	technical	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	Forbidden
+ 4	uri	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	GET
+ 1	protocol	core/src/main/java/tv/own/owntv/core/companion/CompanionHttpServer.kt	HTTP/1.1
+@@ -5716,7 +5717,7 @@
+ 1	log	core/src/main/java/tv/own/owntv/core/update/UpdateManager.kt	wrong package ${info.packageName}
+ 2	technical	core/src/main/java/tv/own/owntv/core/update/UpdateManager.kt	x86_64
+ 1	technical	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	Crashed $stamp on thread "${thread.name}"
+-1	technical	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	OwnTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})
++1	technical	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	MovioTV ${CoreBuildInfo.versionName} (${CoreBuildInfo.versionCode})
+ 1	file-path	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	diagnostics
+ 1	file-path	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	last_crash.txt
+ 1	technical	core/src/main/java/tv/own/owntv/core/util/CrashRecorder.kt	yyyy-MM-dd HH:mm:ss

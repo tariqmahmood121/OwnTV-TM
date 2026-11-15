@@ -113,7 +113,7 @@ class OwnTVApp : Application(), SingletonImageLoader.Factory, androidx.work.Conf
         // this value, so the line changes nothing today — it is here so the television names its own
         // repository instead of relying on core to guess it, the same as the phone app does. A
         // default that happens to be right for one app is a trap for every other one.
-        tv.own.owntv.core.CoreBuildInfo.releaseRepo = "ahXN00/OwnTV"
+        tv.own.owntv.core.CoreBuildInfo.releaseRepo = "tariqmahmood121/OwnTV-TM"
         // Fixed for this process before any player exists: the setting applies only after a restart.
         tv.own.owntv.core.player.FfmpegAudioSetting.load(this)
         // First thing after the context exists: a crash from here on leaves a trace on disk that the
@@ -160,7 +160,12 @@ class OwnTVApp : Application(), SingletonImageLoader.Factory, androidx.work.Conf
         }
         // Local auto-sync: the paired-only listener and the moments a pass is tried (OwnTV to the
         // front or the back, the network back). Core owns what that means; no hourly check on a TV.
-        runCatching { GlobalContext.get().get<tv.own.owntv.core.sync.work.LocalAutoSyncStarter>().start(periodic = false) }
+        runCatching {
+            val tv = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                Configuration.UI_MODE_TYPE_TELEVISION
+            GlobalContext.get().get<tv.own.owntv.core.sync.work.LocalAutoSyncStarter>()
+                .start(periodic = !tv)
+        }
         // NOTE: cold start does ZERO heavy DB work. Index + ANALYZE maintenance is piggy-backed onto the
         // operation that actually changes the data — ImportFinalizer.finalize() for normal re-syncs, the
         // deferred content-index worker after a fresh import, the EpgRepository refresh after every EPG

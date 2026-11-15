@@ -375,7 +375,7 @@ fun BackupScreen(
             title = stringResource(if (browser == BrowseMode.FOLDER) R.string.settings_backup_choose_folder else R.string.settings_backup_pick_file),
             mode = browser,
             // `.own` is what we write now; `.json` stays so pre-4.2 backups keep restoring.
-            fileExtensions = BackupManager.RESTORE_EXTENSIONS,
+            fileExtensions = BackupManager.RESTORE_EXTENSIONS + setOf("mtv"),
             onPick = { file -> showBrowser = false; if (browser == BrowseMode.FOLDER) exportFolder = file else vm.inspect(file) },
             onDismiss = { showBrowser = false },
         )
@@ -387,7 +387,7 @@ fun BackupScreen(
             title = stringResource(R.string.settings_backup_encrypt_title),
             message = stringResource(R.string.settings_backup_encrypt_message),
             confirmLabel = stringResource(R.string.settings_backup_encrypt_export),
-            skipLabel = stringResource(R.string.settings_backup_export_unencrypted),
+            skipLabel = null,
             onConfirm = { pass -> exportFolder = null; vm.export(folder, exportSections, pass, exportProfiles) },
             onSkip = { exportFolder = null; vm.export(folder, exportSections, null, exportProfiles) },
             onDismiss = { exportFolder = null },
@@ -434,7 +434,7 @@ fun BackupScreen(
             title = stringResource(R.string.settings_backup_encrypt_title),
             message = stringResource(R.string.settings_backup_encrypt_message),
             confirmLabel = stringResource(R.string.settings_backup_encrypt_prepare),
-            skipLabel = stringResource(R.string.settings_backup_prepare_unencrypted),
+            skipLabel = null,
             onConfirm = { pass -> showRemoteExportPassword = false; showRemoteExport = true; vm.exportRemote(exportSections, pass, exportProfiles) },
             onSkip = { showRemoteExportPassword = false; showRemoteExport = true; vm.exportRemote(exportSections, null, exportProfiles) },
             onDismiss = { showRemoteExportPassword = false },
