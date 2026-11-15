@@ -137,7 +137,7 @@ jobs:
               fun hasSession(): Boolean = !token().isNullOrBlank()
               fun disconnect() = preferences.edit().remove("session").apply()
 
-              private fun call(route: String, method: String = "GET", body: JSONObject? = null, protected: Boolean = false): JSONObject {
+              private fun call(route: String, method: String = "GET", body: JSONObject? = null, requiresAuth: Boolean = false): JSONObject {
                   val url = URL(BASE + route)
                   require(url.protocol == "https")
                   val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -145,7 +145,7 @@ jobs:
                       connectTimeout = 8000
                       readTimeout = 12000
                       setRequestProperty("Accept", "application/json")
-                      if (protected) {
+                      if (requiresAuth) {
                           val auth = token() ?: throw IOException("Not connected to MovioTV Central")
                           setRequestProperty("Authorization", "Bearer $auth")
                       }
@@ -174,13 +174,13 @@ jobs:
                   storeToken(session)
                   response
               }
-              suspend fun me(): JSONObject = withContext(Dispatchers.IO) { call("me", protected = true) }
-              suspend fun profiles(): JSONObject = withContext(Dispatchers.IO) { call("profiles", protected = true) }
-              suspend fun provisioning(): JSONObject = withContext(Dispatchers.IO) { call("provisioning", protected = true) }
-              suspend fun assignments(): JSONObject = withContext(Dispatchers.IO) { call("assignments", protected = true) }
+              suspend fun me(): JSONObject = withContext(Dispatchers.IO) { call("me", requiresAuth = true) }
+              suspend fun profiles(): JSONObject = withContext(Dispatchers.IO) { call("profiles", requiresAuth = true) }
+              suspend fun provisioning(): JSONObject = withContext(Dispatchers.IO) { call("provisioning", requiresAuth = true) }
+              suspend fun assignments(): JSONObject = withContext(Dispatchers.IO) { call("assignments", requiresAuth = true) }
               suspend fun profileRecords(profileId: Long): JSONObject = withContext(Dispatchers.IO) {
                   require(profileId > 0)
-                  call("sync?profile_id=$profileId", protected = true)
+                  call("sync?profile_id=$profileId", requiresAuth = true)
               }
 
               companion object {
@@ -378,6 +378,8 @@ jobs:
           MOVIO_V82_PY
           python3 -m py_compile /tmp/moviotv-v82-bridge.py
           python3 /tmp/moviotv-v82-bridge.py
+          # Fail clearly before Gradle if a Kotlin keyword slipped into the generated API.
+          ! grep -Eq '\b(protected|private|public):[[:space:]]*Boolean' \n            app/src/main/java/tv/own/owntv/features/central/MovioCentralApi.kt
           grep -F 'MovioCentralScreen' app/src/main/java/tv/own/owntv/features/more/MoreScreen.kt
           grep -F 'com.oakstudios.moviotv' app/build.gradle.kts
       - name: Java 25 for Android toolchain
