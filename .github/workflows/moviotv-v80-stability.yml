@@ -1,0 +1,249 @@
+# MovioTV V8.0 foundation — a clean, auditable build from the last known-good V7.9 source.
+# Upload THIS file to .github/workflows/moviotv-v80-stability.yml on
+# feature/moviotv-v79-oak-tablet-focus. It does NOT touch main or the V7.9 branch.
+# A successful run creates feature/moviotv-v8-stability with the actual source edits.
+name: MovioTV V8.0 - Clean Stable Foundation
+
+'on':
+  push:
+    branches:
+      - feature/moviotv-v79-oak-tablet-focus
+    paths:
+      - .github/workflows/moviotv-v80-stability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write # only needed to publish verified source to a NEW V8 branch
+
+concurrency:
+  group: moviotv-v80-stability-foundation
+  cancel-in-progress: false
+
+jobs:
+  build-v80:
+    name: Preflight, compile, lint, test, sign, and preserve V8 source
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      VERSION_NAME: '8.0.0'
+      VERSION_CODE: '100100' # greater than legacy dev 99999 and V7.12 100019
+    steps:
+      - name: Checkout protected V7.9 source (no writes to that branch)
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v79-oak-tablet-focus
+          fetch-depth: 0
+
+      - name: V8 preflight - patch exact known source once
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          def update(path, old, new, expected=1):
+              f = Path(path)
+              s = f.read_text(encoding='utf-8')
+              count = s.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} exact matches for {old!r}, found {count}; refusing a blind patch')
+              f.write_text(s.replace(old, new), encoding='utf-8')
+
+          # A NEW Android app, with a permanent ID. Retain the old Java/Kotlin namespace
+          # so generated R/BuildConfig and the existing Core dependency still compile.
+          update('app/build.gradle.kts',
+                 'applicationId = "tv.own.owntv"',
+                 'applicationId = "com.oakstudios.moviotv"')
+          gradle = Path('app/build.gradle.kts').read_text(encoding='utf-8')
+          assert 'namespace = "tv.own.owntv"' in gradle
+          assert 'versionName = System.getenv("VERSION_NAME")' in gradle
+          assert 'versionCode = (System.getenv("VERSION_CODE")' in gradle
+
+          # Android must find Activity, Application and receiver classes under the old
+          # code namespace even though the install/package ID has changed.
+          p = Path('app/src/main/AndroidManifest.xml')
+          manifest = p.read_text(encoding='utf-8')
+          manifest, n = re.subn(r'android:name="\.(?=[A-Za-z])',
+                                'android:name="tv.own.owntv.', manifest)
+          if n < 10:
+              raise SystemExit(f'Manifest qualification: expected at least 10 local components, got {n}')
+          if 'android:authorities="${applicationId}.fileprovider"' not in manifest:
+              raise SystemExit('FileProvider authority must use dynamic applicationId')
+          p.write_text(manifest, encoding='utf-8')
+          ET.fromstring(manifest)
+
+          # The Home screen previously displayed a hardcoded "v7.9" string. It now
+          # displays the SAME BuildConfig.VERSION_NAME embedded in APK metadata.
+          home = 'app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt'
+          update(home, 'Text(stringResource(R.string.moviotv_version),',
+                 'Text(stringResource(R.string.moviotv_version, tv.own.owntv.BuildConfig.VERSION_NAME),')
+          strings = 'app/src/main/res/values/strings_moviotv.xml'
+          update(strings, '<string name="moviotv_version">v7.9</string>',
+                 '<string name="moviotv_version">v%1$s</string>')
+          ET.parse(strings)
+
+          # Disable experimental actor/credit search and its local indexing while
+          # preserving standard title search, category filtering and movie details.
+          search_file = Path('app/src/main/java/tv/own/owntv/features/search/SearchViewModel.kt')
+          search_text = search_file.read_text(encoding='utf-8')
+          start = '    private suspend fun search(q: String): SearchResults {'
+          end = '\n    // --- Stage page ---'
+          if search_text.count(start) != 1 or search_text.count(end) != 1:
+              raise SystemExit('Cannot locate single experimental search method')
+          i, j = search_text.index(start), search_text.index(end)
+          search_text = search_text[:i] + (
+              '    private suspend fun search(q: String): SearchResults {\n'
+              '        val pid = currentProfileId() ?: return SearchResults()\n'
+              '        return searchReader.search(pid, ctx.value, q)\n'
+              '    }\n'
+          ) + search_text[j:]
+          search_file.write_text(search_text, encoding='utf-8')
+
+          movies_file = Path('app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt')
+          movie_text = movies_file.read_text(encoding='utf-8')
+          begin = '        val names = tv.own.owntv.core.metadata.MetadataCast.names(tmdb?.castJson)'
+          final = '        v78Info = V78Info(movie.id, provider, tmdb, complete = true)'
+          if movie_text.count(begin) != 1 or movie_text.count(final) != 1 or movie_text.count('MovioCreditIndex.remember(') != 1:
+              raise SystemExit('Cannot locate the single experimental credit-index writer')
+          i, j = movie_text.index(begin), movie_text.index(final)
+          movie_text = movie_text[:i] + movie_text[j:]
+          movies_file.write_text(movie_text, encoding='utf-8')
+
+          # Existing splash logo is a small resolution-independent vector, never a
+          # full-screen 1.5MB bitmap. Keep it for stability before adding the V8 art.
+          logo = Path('app/src/main/res/drawable/moviotv_launcher.xml')
+          assert logo.is_file() and '<vector' in logo.read_text(encoding='utf-8')
+          ET.parse(logo)
+
+          # Don't accidentally reintroduce isolated developer application IDs.
+          assert 'applicationIdSuffix' not in gradle
+          print(f'V8 preflight OK: new app ID, {n} qualified components, APK-derived Home version, standard search, vector splash')
+          PY
+
+      - name: Setup Java 25 (repository toolchain requirement)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configure Gradle dependency cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile and run unit tests + lint before APK assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace --no-daemon
+
+      - name: Verify actual debug APK package and version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$aapt"
+          apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -s "$apk"
+          "$aapt" dump badging "$apk" > /tmp/moviotv-v80-debug-badging-full.txt
+          grep '^package:' /tmp/moviotv-v80-debug-badging-full.txt > /tmp/moviotv-v80-debug-badging.txt
+          cat /tmp/moviotv-v80-debug-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v80-debug-badging.txt
+          grep -F "versionCode='100100'" /tmp/moviotv-v80-debug-badging.txt
+          grep -F "versionName='8.0.0'" /tmp/moviotv-v80-debug-badging.txt
+
+      - name: Configure optional permanent signing certificate
+        id: signing
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.MOVIOTV_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEY_B64" && -n "$STORE_PASS" && -n "$ALIAS" && -n "$KEY_PASS" ]]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/moviotv-v8.jks"
+            test -s "$RUNNER_TEMP/moviotv-v8.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/moviotv-v8.jks" >> "$GITHUB_ENV"
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+            echo 'Release signing certificate available.'
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'No complete signing credentials. Release compilation still runs, but NO distributable APK will be published.'
+          fi
+
+      - name: Compile release with R8/resource shrinker (and sign when configured)
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.MOVIOTV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOVIOTV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOVIOTV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardRelease --stacktrace --no-daemon
+          find app/build/outputs/apk/standard/release -maxdepth 1 -name '*.apk' -size +0c | grep -q .
+
+      - name: Verify signed V8 release APK and create exact release filename
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          apk="$(find app/build/outputs/apk/standard/release -maxdepth 1 -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          test -s "$apk"
+          "$apksigner" verify --verbose "$apk"
+          "$aapt" dump badging "$apk" > /tmp/moviotv-v80-release-badging-full.txt
+          grep '^package:' /tmp/moviotv-v80-release-badging-full.txt > /tmp/moviotv-v80-release-badging.txt
+          cat /tmp/moviotv-v80-release-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v80-release-badging.txt
+          grep -F "versionCode='100100'" /tmp/moviotv-v80-release-badging.txt
+          grep -F "versionName='8.0.0'" /tmp/moviotv-v80-release-badging.txt
+          mkdir -p dist
+          cp "$apk" dist/MovioTV-v8.0.0.apk
+
+      - name: Upload signed V8 APK only (never publish debug-signed as release)
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.0.0-SIGNED-foundation
+          path: dist/MovioTV-v8.0.0.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve verified V8 source on NEW branch, leaving V7.9 untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git ls-remote --exit-code --heads origin feature/moviotv-v8-stability; then
+            echo 'V8 branch already exists. Refusing to overwrite it.' >&2
+            exit 1
+          fi
+          git switch -c feature/moviotv-v8-stability
+          git add app/build.gradle.kts app/src/main/AndroidManifest.xml \
+                  app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt \
+                  app/src/main/java/tv/own/owntv/features/search/SearchViewModel.kt \
+                  app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt \
+                  app/src/main/res/values/strings_moviotv.xml
+          git diff --cached --quiet && { echo 'No V8 source changes staged'; exit 1; }
+          git commit -m 'MovioTV V8 foundation: new application ID and one APK-derived version'
+          git push origin HEAD:refs/heads/feature/moviotv-v8-stability
+
+      - name: Retain failure evidence (tests, lint and Gradle errors)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8-compile-failure-evidence
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            app/build/reports/problems/**
+          retention-days: 14
+          if-no-files-found: warn
