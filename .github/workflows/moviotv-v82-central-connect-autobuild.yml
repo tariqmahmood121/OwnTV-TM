@@ -64,10 +64,10 @@ jobs:
           replace_exact('setOf(MoreItem.BACKUP, MoreItem.LOCAL_SYNC, MoreItem.DEVELOPER)',
                         'setOf(MoreItem.BACKUP, MoreItem.LOCAL_SYNC, MoreItem.CENTRAL, MoreItem.DEVELOPER)')
           replace_exact('item(MoreItem.LOCAL_SYNC, OwnTVIcon.PHONE, stringResource(R.string.local_sync_title), stringResource(if (sync.listening) R.string.common_on else R.string.common_off), false)',
-                        'item(MoreItem.LOCAL_SYNC, OwnTVIcon.PHONE, stringResource(R.string.local_sync_title), stringResource(if (sync.listening) R.string.common_on else R.string.common_off), false)\\n'
+                        'item(MoreItem.LOCAL_SYNC, OwnTVIcon.PHONE, stringResource(R.string.local_sync_title), stringResource(if (sync.listening) R.string.common_on else R.string.common_off), false)\n'
                         '            item(MoreItem.CENTRAL, OwnTVIcon.PHONE, stringResource(R.string.moviotv_central_title), null, false)'.replace('\\n', '\n'))
           replace_exact('MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())',
-                        'MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())\\n'
+                        'MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())\n'
                         '                MoreItem.CENTRAL -> tv.own.owntv.features.central.MovioCentralScreen(onBack = backToSheet, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())'.replace('\\n','\n'))
           # The real TV More > About page was still using upstream OwnTV content. The existing
           # Oak Studios Movio About screen was already wired only to Settings > About.
@@ -211,6 +211,7 @@ jobs:
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalResources
           import androidx.compose.ui.res.stringResource
           import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -231,13 +232,14 @@ jobs:
           fun MovioCentralScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
               BackHandler(onBack = onBack)
               val context = LocalContext.current
+              val resources = LocalResources.current
               val api = remember(context) { MovioCentralApi(context.applicationContext) }
               val scope = rememberCoroutineScope()
               var signedIn by remember { mutableStateOf(api.hasSession()) }
               var user by remember { mutableStateOf("") }
               var password by remember { mutableStateOf("") }
               var busy by remember { mutableStateOf(false) }
-              var status by remember { mutableStateOf(context.getString(R.string.moviotv_central_idle)) }
+              var status by remember { mutableStateOf(resources.getString(R.string.moviotv_central_idle)) }
               var remoteProfiles by remember { mutableStateOf<List<RemoteProfile>>(emptyList()) }
 
               fun launchRequest(operation: suspend () -> String) {
@@ -247,7 +249,7 @@ jobs:
                       try {
                           status = operation()
                       } catch (e: Exception) {
-                          status = context.getString(R.string.moviotv_central_error, e.message ?: context.getString(R.string.moviotv_central_unavailable))
+                          status = resources.getString(R.string.moviotv_central_error, e.message ?: resources.getString(R.string.moviotv_central_unavailable))
                       } finally {
                           busy = false
                       }
@@ -279,14 +281,14 @@ jobs:
                               api.signIn(user, password)
                               password = ""
                               signedIn = true
-                              context.getString(R.string.moviotv_central_connected)
+                              resources.getString(R.string.moviotv_central_connected)
                           }
                       })
                   } else {
                       StageButton(stringResource(R.string.moviotv_central_check), onClick = {
                           launchRequest {
                               api.me()
-                              context.getString(R.string.moviotv_central_connected)
+                              resources.getString(R.string.moviotv_central_connected)
                           }
                       })
                       StageButton(stringResource(R.string.moviotv_central_profiles), onClick = {
@@ -302,7 +304,7 @@ jobs:
                                   list.add(RemoteProfile(id, title))
                               }
                               remoteProfiles = list
-                              context.getString(R.string.moviotv_central_profile_count, list.size)
+                              resources.getString(R.string.moviotv_central_profile_count, list.size)
                           }
                       })
                       remoteProfiles.forEach { p ->
@@ -310,7 +312,7 @@ jobs:
                               launchRequest {
                                   val data = api.profileRecords(p.id)
                                   val records = data.optJSONArray("records") ?: JSONArray()
-                                  context.getString(R.string.moviotv_central_record_count, p.title, records.length())
+                                  resources.getString(R.string.moviotv_central_record_count, p.title, records.length())
                               }
                           })
                       }
@@ -318,7 +320,7 @@ jobs:
                           api.disconnect()
                           signedIn = false
                           remoteProfiles = emptyList()
-                          status = context.getString(R.string.moviotv_central_disconnected)
+                          status = resources.getString(R.string.moviotv_central_disconnected)
                       })
                   }
                   Text(status, style = stageText(16, 500), color = StageColors.Muted)
@@ -338,8 +340,8 @@ jobs:
             <string name="moviotv_central_connected" translatable="false">Central account connected</string>
             <string name="moviotv_central_profiles" translatable="false">View Central profiles</string>
             <string name="moviotv_central_check" translatable="false">Test Central connection</string>
-            <string name="moviotv_central_profile_count" translatable="false">%1$d Central profiles found</string>
-            <string name="moviotv_central_record_count" translatable="false">%1$s: %2$d cloud records (read-only)</string>
+            <string name="moviotv_central_profile_count" translatable="false">Central profile count: %1$d</string>
+            <string name="moviotv_central_record_count" translatable="false">%1$s — cloud record count (read-only): %2$d</string>
             <string name="moviotv_central_disconnect" translatable="false">Disconnect Central account</string>
             <string name="moviotv_central_disconnected" translatable="false">Central disconnected. Local viewing remains available.</string>
             <string name="moviotv_central_unavailable" translatable="false">Server unavailable</string>
@@ -379,7 +381,22 @@ jobs:
           python3 -m py_compile /tmp/moviotv-v82-bridge.py
           python3 /tmp/moviotv-v82-bridge.py
           # Fail clearly before Gradle if a Kotlin keyword slipped into the generated API.
-          ! grep -Eq '\b(protected|private|public):[[:space:]]*Boolean' \n            app/src/main/java/tv/own/owntv/features/central/MovioCentralApi.kt
+          ! grep -Eq '(protected|private|public):[[:space:]]*Boolean' app/src/main/java/tv/own/owntv/features/central/MovioCentralApi.kt
+          # Prevent escaped-newline source generation regressions before any Gradle work.
+          python3 - <<'MOVIO_V82_SRC_CHECK'
+          from pathlib import Path
+          s = Path('app/src/main/java/tv/own/owntv/features/more/MoreScreen.kt').read_text()
+          assert 'false)\\n' not in s, 'Literal escaped newline in Central menu'
+          assert 'LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())\\n' not in s, 'Literal escaped newline before Central page'
+          assert 'MoreItem.CENTRAL ->' in s and 'MoreItem.ABOUT -> tv.own.owntv.features.settings.MovioAboutScreen' in s
+          screen = Path('app/src/main/java/tv/own/owntv/features/central/MovioCentralScreen.kt').read_text()
+          assert 'context.getString(' not in screen, 'Compose lint: use LocalResources, not LocalContext for strings'
+          assert 'LocalResources.current' in screen, 'Compose LocalResources setup missing'
+          xml = Path('app/src/main/res/values/strings_moviotv_central.xml').read_text()
+          import re
+          assert not re.search(r'%\d+\$d\s+[A-Za-z]', xml), 'Android lint plural candidate in Central strings'
+          print('V8.2 source gate passed: Kotlin newlines, Central/About wiring and known lint regressions checked')
+          MOVIO_V82_SRC_CHECK
           grep -F 'MovioCentralScreen' app/src/main/java/tv/own/owntv/features/more/MoreScreen.kt
           grep -F 'com.oakstudios.moviotv' app/build.gradle.kts
       - name: Java 25 for Android toolchain
@@ -395,7 +412,7 @@ jobs:
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" \
-            testStandardDebugUnitTest lintStandardDebug assembleStandardDebug --stacktrace --no-daemon
+            lintStandardDebug testStandardDebugUnitTest assembleStandardDebug --stacktrace --no-daemon
       - name: Verify built APK metadata and signing
         shell: bash
         run: |
