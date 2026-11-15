@@ -490,7 +490,7 @@ jobs:
               val sourceDao: SourceDao = koinInject()
               val userData: UserDataResolver = koinInject()
               val localSettings: SettingsRepository = koinInject()
-              val localProfileId by localSettings.activeProfileId.collectAsStateWithLifecycle()
+              val localProfileId by localSettings.activeProfileId.collectAsStateWithLifecycle(initialValue = -1L)
               val restorer = remember(sources, sourceDao, userData, localSettings) {
                   MovioCentralRestore(context.applicationContext, sources, sourceDao, userData, localSettings)
               }
@@ -722,6 +722,7 @@ jobs:
           assert 'api.profileSources(p.id)' in ui
           assert 'result.toString()' not in ui, 'Do not show source secrets or raw JSON'
           assert 'context.getString(' not in ui, 'Compose lint: use LocalResources for strings'
+          assert 'activeProfileId.collectAsStateWithLifecycle()' not in ui, 'Flow needs initialValue for Compose state collection'
           root=ET.parse('app/src/main/res/values/strings_moviotv_central.xml').getroot()
           names={x.attrib.get('name') for x in root}
           for name in ('moviotv_central_sources_button','moviotv_central_sources_result','moviotv_central_sources_empty'):
