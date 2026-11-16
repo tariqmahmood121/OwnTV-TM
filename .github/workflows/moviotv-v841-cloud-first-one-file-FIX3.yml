@@ -1,0 +1,236 @@
+name: MovioTV V8.4.1 - Cloud First Run and Stability QA (One File)
+run-name: MovioTV V8.4.1 Cloud Wizard - ${{ github.ref_name }} - ${{ github.run_number }}
+'on':
+  push:
+    paths:
+      - '.github/workflows/moviotv-v841-cloud-first-one-file-FIX3.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v841-cloud-qa
+  cancel-in-progress: false
+jobs:
+  build-v841:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: '8.4.1'
+      VERSION_CODE: '100105'
+    steps:
+      - name: Checkout V8.4 stable development branch (never modify V8.4)
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v8-stability
+          fetch-depth: 0
+      - name: Checkout pinned upstream Core 1.0.71
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Checkout verified V8.1 Core patch source
+        uses: actions/checkout@v4
+        with:
+          repository: tariqmahmood121/OwnTV-TM
+          ref: feature/moviotv-v81-stability
+          path: moviotv-v81-verified
+          persist-credentials: false
+      - name: Stage verified V8.1 patch missing from the V8 development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p patches
+          cp moviotv-v81-verified/patches/v81-core-changes.patch patches/v81-core-changes.patch
+          test -s patches/v81-core-changes.patch
+          sha256sum patches/v81-core-changes.patch
+      - name: Reapply verified V8.4 Central restore patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'BASE_SCRIPT'
+          from pathlib import Path
+          import textwrap
+          f=Path('.github/workflows/moviotv-v84-central-restore-autobuild-1.yml')
+          assert f.is_file(), 'Required V8.4 known-good workflow missing; do not substitute older branch'
+          y=f.read_text(encoding='utf8')
+          marker='      - name: Apply retained Core branding patch and V8.4 Central provisioning and merge'
+          assert y.count(marker)==1, 'Unknown V8.4 recipe'
+          start=y.index('        run: |\n',y.index(marker))+len('        run: |\n')
+          end=y.index('      - name: Java 25 for Android toolchain',start)
+          script=textwrap.dedent(y[start:end])
+          assert 'python3 /tmp/moviotv-v84-bridge.py' in script
+          Path('/tmp/moviotv-v84-known-good.sh').write_text('#!/bin/bash\nset -euo pipefail\n'+script)
+          BASE_SCRIPT
+          echo 'Replaying V8.4 known-good Central recipe with verified V8.1 Core patch'
+          bash -x /tmp/moviotv-v84-known-good.sh
+      - name: Apply V8.4.1 Cloud-first wizard, profile restore and diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv-v841-patch.py <<'MOVIO_V841_PATCH'
+          #!/usr/bin/env python3
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          import importlib.util, subprocess, sys
+          
+          ROOT=Path.cwd()
+          base=ROOT / "app/src/main/java/tv/own/owntv"
+          setup=base / "features/setup/SetupWizard.kt"
+          s=setup.read_text(encoding="utf8")
+          old="private enum class Step { WELCOME, DISPLAY_SIZE"
+          new="private enum class Step { CLOUD_DECISION, CLOUD_LOGIN, WELCOME, DISPLAY_SIZE"
+          assert s.count(old)==1, "Onboarding Step layout changed"
+          s=s.replace(old,new)
+          old="mutableStateOf(if (firstRun) Step.WELCOME else Step.CREATE_PROFILE)"
+          new="mutableStateOf(if (firstRun) Step.CLOUD_DECISION else Step.CREATE_PROFILE)"
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="            Step.WELCOME -> WelcomeStep(onNext = { step = Step.DISPLAY_SIZE })"
+          new=('            Step.CLOUD_DECISION -> MovioCloudChoice(onCloud = { step = Step.CLOUD_LOGIN }, onLocal = { step = Step.WELCOME })\n'
+               '            Step.CLOUD_LOGIN -> MovioCloudFirstRun(onDone = onDone, onBack = { step = Step.CLOUD_DECISION }, onLocal = { step = Step.WELCOME })\n')+old
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          setup.write_text(s,encoding="utf8")
+          
+          cloud=base / "features/setup/MovioCloudFirstRun.kt"
+          cloud.write_text('package tv.own.owntv.features.setup\n\nimport android.content.Context\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.layout.Arrangement\nimport androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.fillMaxWidth\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.foundation.text.BasicTextField\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.mutableStateOf\nimport androidx.compose.runtime.remember\nimport androidx.compose.runtime.rememberCoroutineScope\nimport androidx.compose.runtime.setValue\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalResources\nimport androidx.compose.ui.res.stringResource\nimport androidx.compose.ui.text.TextStyle\nimport androidx.compose.ui.text.input.PasswordVisualTransformation\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport androidx.tv.material3.Text\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.launch\nimport kotlinx.coroutines.withContext\nimport org.json.JSONArray\nimport org.koin.compose.koinInject\nimport tv.own.owntv.R\nimport tv.own.owntv.core.backup.UserDataResolver\nimport tv.own.owntv.core.database.dao.ProfileDao\nimport tv.own.owntv.core.database.dao.SourceDao\nimport tv.own.owntv.core.database.entity.ProfileEntity\nimport tv.own.owntv.core.repository.SourceRepository\nimport tv.own.owntv.core.settings.SettingsRepository\nimport tv.own.owntv.features.central.MovioCentralApi\nimport tv.own.owntv.features.central.MovioCentralRestore\nimport tv.own.owntv.ui.components.OwnTVIcon\nimport tv.own.owntv.ui.stage.StageButton\nimport tv.own.owntv.ui.theme.StageColors\nimport tv.own.owntv.ui.theme.stageText\n\n/** Only the very first installation sees this fork; existing users are left unchanged. */\n@Composable\ninternal fun MovioCloudChoice(onCloud: () -> Unit, onLocal: () -> Unit) {\n    WizardFrame(\n        step = WizardStep.PROFILE,\n        title = stringResource(R.string.moviotv_first_cloud_question),\n        sub = stringResource(R.string.moviotv_first_cloud_explain),\n        back = null,\n        next = null,\n    ) {\n        WizardCards(listOf(\n            WizardCard(OwnTVIcon.PERSON, stringResource(R.string.moviotv_cloud_yes), stringResource(R.string.moviotv_cloud_yes_detail), onCloud),\n            WizardCard(OwnTVIcon.PHONE, stringResource(R.string.moviotv_cloud_no), stringResource(R.string.moviotv_cloud_no_detail), onLocal),\n        ))\n    }\n}\n\n/** Cloud bootstrap stays on IO. A failed attempt never removes local profiles or sources. */\n@Composable\ninternal fun MovioCloudFirstRun(onDone: (Long?) -> Unit, onBack: () -> Unit, onLocal: () -> Unit) {\n    val context = LocalContext.current.applicationContext\n    val res = LocalResources.current\n    val api = remember(context) { MovioCentralApi(context) }\n    val profileDao: ProfileDao = koinInject()\n    val sources: SourceRepository = koinInject()\n    val sourceDao: SourceDao = koinInject()\n    val userData: UserDataResolver = koinInject()\n    val settings: SettingsRepository = koinInject()\n    val restorer = remember(context, sources, sourceDao, userData, settings) {\n        MovioCentralRestore(context, sources, sourceDao, userData, settings)\n    }\n    val scope = rememberCoroutineScope()\n    var username by remember { mutableStateOf("") }\n    var password by remember { mutableStateOf("") }\n    var busy by remember { mutableStateOf(false) }\n    var progress by remember { mutableStateOf(res.getString(R.string.moviotv_cloud_login_help)) }\n    var attempted by remember { mutableStateOf(false) }\n    var progressCount by remember { mutableStateOf(0) }\n    var total by remember { mutableStateOf(0) }\n\n    WizardFrame(\n        step = WizardStep.PROFILE,\n        title = stringResource(R.string.moviotv_cloud_login_title),\n        sub = stringResource(R.string.moviotv_cloud_login_help),\n        back = if (busy) null else WizardAction(stringResource(R.string.common_back), onBack),\n        next = null,\n        onBack = if (busy) null else onBack,\n    ) {\n        Text(stringResource(R.string.moviotv_central_username), style = stageText(18, 600), color = StageColors.Text)\n        BasicTextField(\n            value = username, onValueChange = { username = it }, singleLine = true,\n            textStyle = TextStyle(fontSize = 19.sp, color = Color.White),\n            modifier = Modifier.fillMaxWidth().background(Color(0xFF352844)).padding(13.dp),\n        )\n        Text(stringResource(R.string.moviotv_central_password), style = stageText(18, 600), color = StageColors.Text)\n        BasicTextField(\n            value = password, onValueChange = { password = it }, singleLine = true,\n            visualTransformation = PasswordVisualTransformation(),\n            textStyle = TextStyle(fontSize = 19.sp, color = Color.White),\n            modifier = Modifier.fillMaxWidth().background(Color(0xFF352844)).padding(13.dp),\n        )\n        StageButton(stringResource(R.string.moviotv_cloud_restore_button), onClick = {\n            if (busy || username.isBlank() || password.isBlank()) return@StageButton\n            busy = true\n            attempted = true\n            scope.launch {\n                try {\n                    val localIds = withContext(Dispatchers.IO) {\n                        // Explicit sign-in and profile lookup; no passwords are logged or retained.\n                        api.signIn(username, password)\n                        password = ""\n                        val response = api.profiles()\n                        val profiles = response.optJSONArray("profiles") ?: response.optJSONArray("data") ?: JSONArray()\n                        require(profiles.length() in 1..32) { res.getString(R.string.moviotv_cloud_no_profiles) }\n                        total = profiles.length()\n                        val checkpoint = context.getSharedPreferences("moviotv_cloud_wizard_v1", Context.MODE_PRIVATE)\n                        val accountKey = username.trim().lowercase().replace(Regex("[^a-z0-9_.@-]"), "_")\n                        val done = mutableListOf<Long>()\n                        for (i in 0 until profiles.length()) {\n                            val remote = profiles.optJSONObject(i) ?: continue\n                            val remoteId = remote.optLong("id", -1L)\n                            if (remoteId <= 0) continue\n                            val name = remote.optString("name").ifBlank { remote.optString("profile_name") }\n                                .ifBlank { res.getString(R.string.setup_default_profile) }\n                            progressCount = i + 1\n                            progress = res.getString(R.string.moviotv_cloud_restoring_profile, i + 1, profiles.length(), name)\n                            // Fetch and validate the account-scoped bootstrap BEFORE creating a local profile.\n                            val bootstrap = api.profileBootstrap(remoteId)\n                            val marker = "profile_${accountKey}_$remoteId"\n                            val oldId = checkpoint.getLong(marker, -1L)\n                            val localId = if (oldId > 0L && profileDao.getById(oldId) != null) oldId else {\n                                val child = remote.optBoolean("is_child", remote.optBoolean("is_kids", false))\n                                profileDao.insert(ProfileEntity(name = name, avatarColor = 0, avatarId = 0, isKids = child))\n                                    .also { checkpoint.edit().putLong(marker, it).apply() }\n                            }\n                            // Already existing local records survive; cloud IDs never cross between profiles.\n                            restorer.restore(localId, remoteId, bootstrap)\n                            done.add(localId)\n                        }\n                        done\n                    }\n                    if (localIds.isEmpty()) throw IllegalStateException(res.getString(R.string.moviotv_cloud_no_profiles))\n                    withContext(Dispatchers.IO) { settings.setActiveProfile(localIds.first()) }\n                    progress = res.getString(R.string.moviotv_cloud_ready)\n                    onDone(localIds.first())\n                } catch (e: Exception) {\n                    progress = res.getString(R.string.moviotv_cloud_failed, e.message ?: e.javaClass.simpleName)\n                } finally {\n                    busy = false\n                }\n            }\n        })\n        if (total > 0) {\n            Text(stringResource(R.string.moviotv_cloud_progress, progressCount, total), style = stageText(15, 500), color = StageColors.Muted)\n        }\n        Text(progress, style = stageText(17, 500), color = StageColors.Muted)\n        if (attempted && !busy) Text(stringResource(R.string.moviotv_cloud_retry_hint), style = stageText(14, 400), color = StageColors.Muted)\n        if (!busy) StageButton(stringResource(R.string.moviotv_cloud_manual_fallback), onClick = onLocal)\n    }\n}\n',encoding="utf8")
+          crash=base / "features/central/MovioCrashEvidence.kt"
+          crash.write_text('package tv.own.owntv.features.central\n\nimport android.app.ActivityManager\nimport android.content.Context\nimport android.os.Build\nimport java.io.File\nimport java.text.SimpleDateFormat\nimport java.util.Date\nimport java.util.Locale\nimport java.util.concurrent.atomic.AtomicBoolean\n\n/** Local, bounded evidence. Does not upload private errors or URLs. No auto deletion of data. */\ninternal object MovioCrashEvidence {\n    private val installed = AtomicBoolean(false)\n    private const val MAX_BYTES = 128 * 1024\n    private const val NAME = "moviotv_crash_evidence.txt"\n\n    fun install(context: Context) {\n        if (!installed.compareAndSet(false, true)) return\n        runCatching { recordPreviousExits(context) }\n        val prior = Thread.getDefaultUncaughtExceptionHandler()\n        Thread.setDefaultUncaughtExceptionHandler { thread, failure ->\n            runCatching {\n                val trimmed = failure.stackTrace.take(60).joinToString("\\n") { it.toString() }\n                append(context, "FATAL ${thread.name}: ${failure.javaClass.name}\\n$trimmed")\n            }\n            if (prior != null) prior.uncaughtException(thread, failure)\n            else android.os.Process.killProcess(android.os.Process.myPid())\n        }\n    }\n\n    private fun recordPreviousExits(context: Context) {\n        if (Build.VERSION.SDK_INT < 30) return\n        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return\n        val previous = manager.getHistoricalProcessExitReasons(context.packageName, 0, 3)\n        val prefs = context.getSharedPreferences("moviotv_crash_history_v1", Context.MODE_PRIVATE)\n        val last = prefs.getLong("last", -1)\n        for (exit in previous.reversed()) {\n            if (exit.timestamp <= last || exit.reason == android.app.ApplicationExitInfo.REASON_EXIT_SELF) continue\n            append(context, "EXIT reason=${exit.reason} importance=${exit.importance} time=${exit.timestamp}")\n        }\n        val latest = previous.maxOfOrNull { it.timestamp } ?: last\n        if (latest > last) prefs.edit().putLong("last", latest).apply()\n    }\n\n    @Synchronized\n    private fun append(context: Context, message: String) {\n        val file = File(context.filesDir, NAME)\n        val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())\n        val old = if (file.exists()) file.readText().takeLast(MAX_BYTES / 2) else ""\n        val data = (old + "\\n" + stamp + " " + message + "\\n").takeLast(MAX_BYTES)\n        file.writeText(data)\n    }\n\n    fun latest(context: Context): String = runCatching {\n        val f = File(context.filesDir, NAME)\n        if (f.exists()) f.readText().takeLast(4500) else ""\n    }.getOrDefault("")\n}\n',encoding="utf8")
+          resources=ROOT/"app/src/main/res/values/strings_moviotv_cloud_first.xml"
+          resources.write_text('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <string name="moviotv_first_cloud_question" translatable="false">Do you have a MovioTV Cloud Account?</string>\n  <string name="moviotv_first_cloud_explain" translatable="false">Cloud restores your saved profiles, authorised streaming sources, favourites, history and continue-watching. Or continue with normal setup.</string>\n  <string name="moviotv_cloud_yes" translatable="false">Yes, sign in</string>\n  <string name="moviotv_cloud_yes_detail" translatable="false">Restore my Cloud configuration automatically</string>\n  <string name="moviotv_cloud_no" translatable="false">No, set up manually</string>\n  <string name="moviotv_cloud_no_detail" translatable="false">Use the regular setup wizard, backup or another device</string>\n  <string name="moviotv_cloud_login_title" translatable="false">Sign in to MovioTV Cloud</string>\n  <string name="moviotv_cloud_login_help" translatable="false">Enter your MovioTV Cloud username and password. Your assigned sources will be restored securely.</string>\n  <string name="moviotv_cloud_restore_button" translatable="false">Sign in and restore</string>\n  <string name="moviotv_cloud_no_profiles" translatable="false">No Cloud profiles are assigned to this account.</string>\n  <string name="moviotv_cloud_restoring_profile" translatable="false">Configuring profile %1$d of %2$d: %3$s</string>\n  <string name="moviotv_cloud_ready" translatable="false">Cloud setup completed. Opening Home.</string>\n  <string name="moviotv_cloud_failed" translatable="false">Cloud setup could not finish: %1$s</string>\n  <string name="moviotv_cloud_progress" translatable="false">Restoring profile %1$d / %2$d</string>\n  <string name="moviotv_cloud_retry_hint" translatable="false">You can retry without deleting locally restored data.</string>\n  <string name="moviotv_cloud_manual_fallback" translatable="false">Continue with normal setup</string>\n  <string name="moviotv_cloud_dashboard" translatable="false">Cloud Data — all profiles</string>\n  <string name="moviotv_cloud_dashboard_empty" translatable="false">No Cloud profiles found</string>\n  <string name="moviotv_cloud_dashboard_profile" translatable="false">%1$s: %2$d saved records</string>\n  <string name="moviotv_crash_show" translatable="false">View local crash evidence</string>\n  <string name="moviotv_crash_empty" translatable="false">No crash evidence has been recorded on this device.</string>\n</resources>',encoding="utf8")
+          ET.parse(resources)
+          
+          main=base / "MainActivity.kt"
+          s=main.read_text(encoding="utf8")
+          old="        super.onCreate(savedInstanceState)"
+          new=old+'\n        tv.own.owntv.features.central.MovioCrashEvidence.install(applicationContext)'
+          assert s.count(old)==1
+          main.write_text(s.replace(old,new),encoding="utf8")
+          
+          # Insert the read-only dashboard and crash evidence before the original Central note.
+          # Match the rendered Kotlin line, not YAML heredoc indentation; V8.4's base script
+          # removes 10 spaces during its textwrap.dedent step.
+          central=base / "features/central/MovioCentralScreen.kt"
+          s=central.read_text(encoding="utf8")
+          needle='Text(stringResource(R.string.moviotv_central_restore_notice), style = stageText(14, 500), color = StageColors.Muted)'
+          hits=list(re.finditer(r'(?m)^([ \t]*)'+re.escape(needle)+r'$',s))
+          assert len(hits)==1, f"Expected one Central restore notice, found {len(hits)}"
+          indent=hits[0].group(1)
+          additions="""StageButton(stringResource(R.string.moviotv_cloud_dashboard), onClick = {
+              launchRequest {
+                  val data = api.profiles()
+                  val profiles = data.optJSONArray("profiles") ?: data.optJSONArray("data") ?: JSONArray()
+                  if (profiles.length() == 0) resources.getString(R.string.moviotv_cloud_dashboard_empty)
+                  else (0 until minOf(profiles.length(), 32)).mapNotNull { idx ->
+                      val p = profiles.optJSONObject(idx) ?: return@mapNotNull null
+                      val id = p.optLong("id", -1L)
+                      if (id <= 0L) return@mapNotNull null
+                      val name = p.optString("name").ifBlank { p.optString("profile_name") }.ifBlank { id.toString() }
+                      val r = api.profileRecords(id)
+                      val records = r.optJSONArray("records") ?: JSONArray()
+                      resources.getString(R.string.moviotv_cloud_dashboard_profile, name, records.length())
+                  }.joinToString("\\n")
+              }
+          })
+          StageButton(stringResource(R.string.moviotv_crash_show), onClick = {
+              val logs = MovioCrashEvidence.latest(context)
+              status = logs.ifBlank { resources.getString(R.string.moviotv_crash_empty) }
+          })"""
+          replacement='\n'.join(indent+line for line in additions.splitlines())+'\n'
+          s=s[:hits[0].start()]+replacement+s[hits[0].start():]
+          central.write_text(s,encoding="utf8")
+          print('Central insertion validated: indentation-independent exact unique Kotlin target')
+          
+          # Extend the known-safe technical literal inventory only for files added in this build.
+          script=ROOT / 'tools/i18n/check_hardcoded_strings.py'
+          spec=importlib.util.spec_from_file_location('moviotv_v841_literals',script)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          current=mod._inventory();safe,categories,errors=mod._safe_entries()
+          if errors: raise RuntimeError(errors)
+          baseline=mod._parse(mod.BASELINE.read_text(encoding='utf8'))
+          entries={key:(min(count,current[key]),categories[key]) for key,count in safe.items() if key in current}
+          allow={
+          'app/src/main/java/tv/own/owntv/features/setup/MovioCloudFirstRun.kt',
+          'app/src/main/java/tv/own/owntv/features/central/MovioCrashEvidence.kt',
+          'app/src/main/java/tv/own/owntv/features/central/MovioCentralScreen.kt',
+          'app/src/main/java/tv/own/owntv/features/setup/SetupWizard.kt',
+          'app/src/main/java/tv/own/owntv/MainActivity.kt',
+          }
+          for key,count in current.items():
+              if key not in entries and key not in baseline:
+                  if key[0] not in allow: raise RuntimeError('unexpected hardcoded Kotlin literal: '+str(key))
+                  entries[key]=(count,'technical')
+          mod.SAFE_MANIFEST.write_text(mod._serialize_safe(entries),encoding='utf8')
+          subprocess.run([sys.executable,str(script),'verify','--bootstrap'],check=True,cwd=ROOT)
+          assert 'Step.CLOUD_DECISION' in setup.read_text()
+          assert 'MovioCrashEvidence.install' in main.read_text()
+          assert 'api.profileBootstrap(remoteId)' in cloud.read_text()
+          assert 'settings.setActiveProfile(localIds.first())' in cloud.read_text()
+          assert 'MovioCrashEvidence.latest' in central.read_text()
+          print('V8.4.1 source gates: first-run cloud, all-profile restore, local fallback, read-only dashboard, crash evidence OK')
+          MOVIO_V841_PATCH
+          python3 -m py_compile /tmp/moviotv-v841-patch.py
+          python3 /tmp/moviotv-v841-patch.py
+          python3 - <<'GATES'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          p=Path('app/src/main/java/tv/own/owntv/features/setup/MovioCloudFirstRun.kt').read_text()
+          assert p.count('restorer.restore(localId, remoteId, bootstrap)')==1
+          assert 'api.signIn(username, password)' in p
+          assert 'onDone(localIds.first())' in p
+          assert 'password = ""' in p
+          ET.parse('app/src/main/res/values/strings_moviotv_cloud_first.xml')
+          print('V8.4.1 cloud wizard and restore prechecks passed')
+          GATES
+      - name: Java 25 for Android toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile tests lint and installable QA debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" lintStandardDebug testStandardDebugUnitTest assembleStandardDebug --stacktrace --no-daemon
+      - name: Verify version and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -s "$src"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          "$signer" verify "$src"
+          "$aapt" dump badging "$src" > /tmp/moviotv-v841-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v841-badging.txt
+          grep -F "versionCode='100105'" /tmp/moviotv-v841-badging.txt
+          grep -F "versionName='8.4.1'" /tmp/moviotv-v841-badging.txt
+          mkdir -p dist
+          cp "$src" dist/MovioTV-v8.4.1-CLOUD-QA-debug.apk
+      - name: Upload QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.4.1-CLOUD-QA-DEBUG
+          path: dist/MovioTV-v8.4.1-CLOUD-QA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Preserve build diagnostics if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.4.1-FAILURE-LOGS
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+          retention-days: 30
+          if-no-files-found: warn
