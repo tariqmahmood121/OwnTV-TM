@@ -1,0 +1,368 @@
+name: MovioTV V9.0.0 - verified baseline and mobile/wizard QA
+run-name: "MovioTV V9.0.0 ${{ github.ref_name }} - ${{ github.run_number }}"
+on:
+  push:
+    branches: [moviotv-v9]
+    paths: [.github/workflows/moviotv-v9-qa.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v9-qa-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v9-qa:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: '9.0.0'
+      VERSION_CODE: '100200'
+    steps:
+      - name: Checkout ONLY the V9 branch
+        uses: actions/checkout@v4
+        with:
+          ref: moviotv-v9
+          fetch-depth: 0
+      - name: Checkout the exact proven upstream Core
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Checkout verified V8.1 core patch
+        uses: actions/checkout@v4
+        with:
+          repository: tariqmahmood121/OwnTV-TM
+          ref: feature/moviotv-v81-stability
+          path: moviotv-v81-verified
+          persist-credentials: false
+      - name: Replay successful V8.4.3 code generation with exact source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check 'PyYAML==6.0.2'
+          python3 - <<'PY_BASE'
+          from pathlib import Path
+          import subprocess
+          import yaml
+          recipe = Path('.github/workflows/moviotv-v843-lint-repair.yml')
+          assert recipe.is_file(), 'V8.4.3 verified recipe missing from V9 branch'
+          steps = yaml.safe_load(recipe.read_text(encoding='utf8'))['jobs']['v843-build']['steps']
+          required = [
+            'Replay exact successful V8.4.1 source and checks',
+            'Apply Central two-way sync and preflight source validation',
+            'Early Kotlin gate: verify Android Context resolution and all sync entrypoints',
+            'Apply complete V8.4.3 feature patch and mandatory source preflight',
+            'V8.4.3 acceptance gates: generated code, profile isolation and resources',
+          ]
+          for name in required:
+              matches = [step for step in steps if step.get('name') == name]
+              assert len(matches) == 1 and 'run' in matches[0], f'Missing unique known-good V8.4.3 step: {name}'
+              print('REPLAY:', name, flush=True)
+              subprocess.run(['bash','-e','-u','-o','pipefail','-c',matches[0]['run']], check=True)
+          print('Verified V8.4.3 full source recipe replayed successfully', flush=True)
+          PY_BASE
+      - name: V9 feature patch with fail-fast source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v9_patch.py <<'PY_V9'
+          #!/usr/bin/env python3
+          """V9 Android UI and provisioning additions, layered onto the verified V8.4.3 recipe.
+          This script is deliberately strict: refuse ambiguous source trees instead of silently skipping changes.
+          """
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          BASE = Path('app/src/main/java/tv/own/owntv')
+          VALUES = Path('app/src/main/res/values')
+
+
+          def replace_once(path: Path, old: str, new: str):
+              source = path.read_text(encoding='utf-8')
+              matches = source.count(old)
+              if matches != 1:
+                  raise RuntimeError(f'V9 source preflight rejected {path}: expected one anchor {old[:85]!r}; got {matches}')
+              path.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+
+          def add_import(path: Path, directive: str):
+              source = path.read_text(encoding='utf-8')
+              if directive in source:
+                  return
+              anchor = 'import androidx.activity.compose.BackHandler\n'
+              if anchor not in source:
+                  raise RuntimeError(f'Missing import anchor in {path}')
+              replace_once(path, anchor, anchor + directive + '\n')
+
+          # 1. Phone/foldable: search is full-width, Categories and Filter below. No clipped label.
+          touch = BASE/'features/home/MovioTouchBrowse.kt'
+          old = '''                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                              if (!tablet && categoryEnabled) {
+                                  Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF50326D)).clickable(onClick = onCategories)
+                                      .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                      Text(stringResource(R.string.moviotv_categories), color = Color.White, fontSize = 13.sp)
+                                  }
+                                  Spacer(Modifier.width(8.dp))
+                              }
+                              MovioTouchSearch(query, onSearch, Modifier.weight(1f))
+                              Spacer(Modifier.width(8.dp))
+                              Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                  .background(Color(0xFF50326D)).clickable(onClick = onSort)
+                                  .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                  Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp)
+                              }
+                          }
+          '''
+          new = '''                // V9: never squeeze the search field into the same row as two long labels.
+                          if (!tablet) {
+                              MovioTouchSearch(query, onSearch, Modifier.fillMaxWidth())
+                              Row(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                  horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                  verticalAlignment = Alignment.CenterVertically) {
+                                  if (categoryEnabled) {
+                                      Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                          .background(Color(0xFF50326D)).clickable(onClick = onCategories)
+                                          .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                          Text(stringResource(R.string.moviotv_categories), color = Color.White, fontSize = 13.sp, maxLines = 1)
+                                      }
+                                  }
+                                  Spacer(Modifier.weight(1f))
+                                  Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF50326D)).clickable(onClick = onSort)
+                                      .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                      Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp, maxLines = 1)
+                                  }
+                              }
+                          } else {
+                              Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                  MovioTouchSearch(query, onSearch, Modifier.weight(1f))
+                                  Spacer(Modifier.width(8.dp))
+                                  Box(Modifier.clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF50326D)).clickable(onClick = onSort)
+                                      .padding(horizontal = 12.dp, vertical = 12.dp)) {
+                                      Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp, maxLines = 1)
+                                  }
+                              }
+                          }
+          '''
+          replace_once(touch,old,new)
+
+          # 2. Category sheets: Back already supported in V8; add a real tappable outside backdrop.
+          for section in ('movies/MoviesScreen.kt', 'series/SeriesScreen.kt'):
+              path = BASE/'features'/section
+              for stmt in ('import androidx.compose.foundation.background', 'import androidx.compose.foundation.clickable', 'import androidx.compose.ui.graphics.Color'):
+                  if stmt not in path.read_text(encoding='utf8'):
+                      add_import(path, stmt)
+              replace_once(path,
+                  '''        if (categoriesOpen) {
+                      tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {''',
+                  '''        if (categoriesOpen) {
+                      // Only the area outside the category sheet dismisses; no category is selected.
+                      Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.48f))
+                          .clickable { categoriesOpen = false })
+                      tv.own.owntv.features.home.MovioCategoryTextZoom(enabled = touchUi) {''')
+
+          # Live TV in-player category sheet also dismisses when the background is touched.
+          live_sheet = BASE/'features/shell/components/CategoryBrowserOverlay.kt'
+          add_import(live_sheet, 'import androidx.compose.foundation.clickable')
+          replace_once(live_sheet,
+              '            .gradientWash(false, 0f to shade.copy(alpha = 0.72f), 0.38f to shade.copy(alpha = 0.45f), 0.62f to Color.Transparent),',
+              '            .gradientWash(false, 0f to shade.copy(alpha = 0.72f), 0.38f to shade.copy(alpha = 0.45f), 0.62f to Color.Transparent)\n            .clickable { onDismiss() },')
+
+          # 3. About is a topmost, scrollable, full-screen page on small touch devices, not the
+          #    legacy 520.mpx right-hand pane hidden behind the More panel.
+          more = BASE/'features/more/MoreScreen.kt'
+          add_import(more,'import androidx.compose.ui.graphics.Color')
+          add_import(more,'import androidx.compose.ui.unit.dp')
+          replace_once(more,
+              '    var chosen by rememberSaveable { mutableStateOf(MoreItem.SETTINGS) }',
+              '''    var chosen by rememberSaveable { mutableStateOf(MoreItem.SETTINGS) }
+              val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
+              var touchAboutOpen by remember { mutableStateOf(false) }''')
+          replace_once(more,
+              '''            !pinShut(item) -> if (item != selected) { chosen = item; pageEntry = null }''',
+              '''            !pinShut(item) -> {
+                          if (item != selected) { chosen = item; pageEntry = null }
+                          if (touchUi && item == MoreItem.ABOUT) touchAboutOpen = true
+                      }''')
+          replace_once(more,
+              '''            StageKeyHints(
+                          listOf(''',
+              '''            if (!touchUi) StageKeyHints(
+                          listOf(''')
+          replace_once(more,
+              '''    val pinItem = askPinFor''',
+              '''    if (touchUi && touchAboutOpen) {
+                  // Draw above the More sheet; Back and the visible button both close this page.
+                  BackHandler { touchAboutOpen = false }
+                  Box(Modifier.fillMaxSize().background(Color(0xFF130D20))) {
+                      tv.own.owntv.features.settings.MovioAboutScreen(onBack = { touchAboutOpen = false })
+                  }
+              }
+              val pinItem = askPinFor''')
+
+          # 4. The provisioning widget reads REAL Room counts (never invented percentages).
+          #    Flow-backed counts only collect while the setup screen displays them. The source list
+          #    and catalogue counts are already observed by the core; no 5-second network polling.
+          widget = BASE/'features/setup/MovioV9CatalogueActivity.kt'
+          widget.parent.mkdir(parents=True, exist_ok=True)
+          widget.write_text('''package tv.own.owntv.features.setup
+
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.produceState
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.res.stringResource
+          import androidx.compose.ui.unit.dp
+          import androidx.tv.material3.Text
+          import kotlinx.coroutines.ExperimentalCoroutinesApi
+          import kotlinx.coroutines.flow.combine
+          import kotlinx.coroutines.flow.collect
+          import kotlinx.coroutines.flow.flatMapLatest
+          import kotlinx.coroutines.flow.flowOf
+          import org.koin.core.context.GlobalContext
+          import tv.own.owntv.R
+          import tv.own.owntv.core.database.OwnTVDatabase
+          import tv.own.owntv.ui.theme.StageColors
+          import tv.own.owntv.ui.theme.stageText
+
+          /** Counts of actual catalogue rows imported into Room; updates on database changes. */
+          @OptIn(ExperimentalCoroutinesApi::class)
+          @Composable
+          internal fun MovioV9CatalogueActivity() {
+              val counts by produceState(Triple(0, 0, 0)) {
+                  val db: OwnTVDatabase = GlobalContext.get().get()
+                  db.sourceDao().observeAll().flatMapLatest { sources ->
+                      val ids = sources.map { it.id }
+                      if (ids.isEmpty()) flowOf(Triple(0, 0, 0))
+                      else combine(db.movieDao().countAll(ids), db.seriesDao().countAll(ids),
+                          db.channelDao().countAll(ids)) { movies, series, live ->
+                          Triple(movies, series, live)
+                      }
+                  }.collect { value = it }
+              }
+              Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Text(stringResource(R.string.moviotv_v9_catalogue_count, stringResource(R.string.common_nav_movies), counts.first),
+                      style = stageText(15, 600), color = StageColors.Text)
+                  Text(stringResource(R.string.moviotv_v9_catalogue_count, stringResource(R.string.common_nav_series), counts.second),
+                      style = stageText(15, 600), color = StageColors.Text)
+                  Text(stringResource(R.string.moviotv_v9_catalogue_count, stringResource(R.string.common_nav_live_tv), counts.third),
+                      style = stageText(15, 600), color = StageColors.Text)
+              }
+          }
+          ''',encoding='utf-8')
+
+          cloud = BASE/'features/setup/MovioCloudFirstRun.kt'
+          replace_once(cloud,
+              '            Box(Modifier.fillMaxWidth().height(9.dp)',
+              '''            // Real imported counts, displayed above the progress bar during the lengthy catalogue stage.
+                      if (stage >= 5) MovioV9CatalogueActivity()
+                      Box(Modifier.fillMaxWidth().height(9.dp)''')
+          # Completed tasks are green, current work remains white/purple, waiting tasks muted.
+          replace_once(cloud,
+              'color = if (index <= stage) StageColors.Text else StageColors.Muted',
+              'color = if (index < stage) Color(0xFF69DA90) else if (index == stage) StageColors.Text else StageColors.Muted')
+          replace_once(cloud,
+              'StageButton(stringResource(R.string.moviotv_cloud_restore_button), onClick = {',
+              '''StageButton(stringResource(if (failed) R.string.moviotv_v9_retry else R.string.moviotv_cloud_restore_button), onClick = {''')
+          # Keep password only in transient Compose state until the end of provisioning, so the user
+          # can retry the same action without typing it again if a later catalogue step fails.
+          replace_once(cloud,
+              '                        password = ""',
+              '                        // Keep credentials in this transient wizard until a completed or abandoned setup')
+
+          # No new hardcoded English strings; use existing localized names for Movies/Series/Live.
+          resources=VALUES/'strings_moviotv_v9.xml'
+          resources.write_text('''<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="moviotv_v9_catalogue_count">%1$s: %2$d</string>
+              <string name="moviotv_v9_retry">Retry</string>
+          </resources>
+          ''',encoding='utf8')
+          ET.parse(resources)
+
+          # Fail before Gradle if any source patch was missing, or flow no longer has all three sources.
+          assert 'MovioV9CatalogueActivity()' in cloud.read_text()
+          assert 'if (failed) R.string.moviotv_v9_retry' in cloud.read_text()
+          assert 'if (touchUi && touchAboutOpen)' in more.read_text()
+          assert touch.read_text().count('MovioTouchSearch(query, onSearch, Modifier.fillMaxWidth())') == 1
+          for section in ('movies/MoviesScreen.kt','series/SeriesScreen.kt'):
+              src=(BASE/'features'/section).read_text()
+              assert src.count('.clickable { categoriesOpen = false }') == 1
+              assert 'BackHandler(enabled = categoriesOpen)' in src
+          print('V9 source patch preflight OK: compact mobile search; backdrops; About; real catalogue counters; Retry')
+          PY_V9
+          python3 -m py_compile /tmp/moviotv_v9_patch.py
+          python3 /tmp/moviotv_v9_patch.py
+          python3 - <<'PY_CHECK'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          base=Path('app/src/main/java/tv/own/owntv')
+          assert (base/'features/setup/MovioV9CatalogueActivity.kt').is_file()
+          assert 'MovioV9CatalogueActivity()' in (base/'features/setup/MovioCloudFirstRun.kt').read_text()
+          assert '.clickable { categoriesOpen = false }' in (base/'features/movies/MoviesScreen.kt').read_text()
+          assert 'touchAboutOpen' in (base/'features/more/MoreScreen.kt').read_text()
+          ET.parse('app/src/main/res/values/strings_moviotv_v9.xml')
+          print('V9 static preflight passed: patched files, locale resources, overlay and progress bindings')
+          PY_CHECK
+      - name: JDK 25 (proven V8.4.3 toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Mandatory Kotlin compiler gate - fail before APK creation
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" :app:compileStandardDebugKotlin --no-daemon --stacktrace
+      - name: Lint unit tests and QA APK only after Kotlin is green
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" lintStandardDebug testStandardDebugUnitTest assembleStandardDebug --no-daemon --stacktrace
+      - name: Validate APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -s "$src"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          "$signer" verify "$src"
+          "$aapt" dump badging "$src" > /tmp/moviotv-v9-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v9-badging.txt
+          grep -F "versionCode='100200'" /tmp/moviotv-v9-badging.txt
+          grep -F "versionName='9.0.0'" /tmp/moviotv-v9-badging.txt
+          mkdir -p dist
+          cp "$src" dist/MovioTV-v9.0.0-MOBILE-WIZARD-QA-debug.apk
+      - name: Upload installable V9 QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V9.0.0-MOBILE-WIZARD-QA-DEBUG
+          path: dist/MovioTV-v9.0.0-MOBILE-WIZARD-QA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V9-FAILURE-REPORTS
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+          retention-days: 30
+          if-no-files-found: warn
