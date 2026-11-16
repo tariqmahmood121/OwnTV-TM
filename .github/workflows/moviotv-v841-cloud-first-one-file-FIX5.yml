@@ -1,0 +1,136 @@
+name: MovioTV V8.4.1 - Cloud First Run Lint Fix (One File)
+run-name: MovioTV V8.4.1 Cloud Wizard FIX5 - ${{ github.ref_name }} - ${{ github.run_number }}
+'on':
+  push:
+    branches:
+      - feature/moviotv-v8-stability
+    paths:
+      - '.github/workflows/moviotv-v841-cloud-first-one-file-FIX5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v841-cloud-qa-fix5
+  cancel-in-progress: false
+jobs:
+  build-v841:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: '8.4.1'
+      VERSION_CODE: '100105'
+    steps:
+      - name: Checkout V8.4 stable development branch without modifying it
+        uses: actions/checkout@v4
+        with:
+          ref: feature/moviotv-v8-stability
+          fetch-depth: 0
+      - name: Checkout pinned upstream Core 1.0.71
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Checkout verified V8.1 Core patch source
+        uses: actions/checkout@v4
+        with:
+          repository: tariqmahmood121/OwnTV-TM
+          ref: feature/moviotv-v81-stability
+          path: moviotv-v81-verified
+          persist-credentials: false
+      - name: Replay verified V8.4.1 recipe with targeted lint correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import textwrap
+
+          recipe = Path('.github/workflows/moviotv-v841-cloud-first-one-file-FIX4.yml')
+          assert recipe.is_file(), 'FIX4 recipe must be present on the V8 stability branch'
+          lines = recipe.read_text(encoding='utf-8').splitlines(keepends=True)
+          steps = [
+              'Stage verified V8.1 patch missing from the V8 development branch',
+              'Reapply verified V8.4 Central restore patch',
+              'Apply V8.4.1 Cloud-first wizard, profile restore and diagnostics',
+          ]
+
+          def script_for(step_name):
+              marker = '      - name: ' + step_name + '\n'
+              assert lines.count(marker) == 1, f'Known-good step missing or duplicated: {step_name}'
+              begin = lines.index(marker) + 1
+              end = next((i for i in range(begin, len(lines))
+                          if lines[i].startswith('      - name: ')), len(lines))
+              run = next((i for i in range(begin, end)
+                          if lines[i] == '        run: |\n'), None)
+              assert run is not None, f'No shell recipe for {step_name}'
+              script = textwrap.dedent(''.join(lines[run + 1:end]))
+              assert script.strip(), f'Empty script for {step_name}'
+              return script
+
+          for step in steps:
+              script = script_for(step)
+              if step == steps[-1]:
+                  before = '%1$s: %2$d saved records'
+                  after = '%1$s — saved items: %2$d'
+                  assert script.count(before) == 1, 'Unexpected V8.4.1 string template; refuse unsafe patch'
+                  script = script.replace(before, after)
+              print(f'Applying verified step: {step}', flush=True)
+              subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', script], check=True)
+
+          generated = Path('app/src/main/res/values/strings_moviotv_cloud_first.xml').read_text(encoding='utf-8')
+          assert '%1$s — saved items: %2$d' in generated
+          assert '%1$s: %2$d saved records' not in generated
+          print('FIX5 preflight passed: Android lint plural warning removed', flush=True)
+          PY
+      - name: Java 25 for Android toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Compile, run unit tests, lint and build QA APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" lintStandardDebug testStandardDebugUnitTest assembleStandardDebug --stacktrace --no-daemon
+      - name: Verify version and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -s "$src"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          "$signer" verify "$src"
+          "$aapt" dump badging "$src" > /tmp/moviotv-v841-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v841-badging.txt
+          grep -F "versionCode='100105'" /tmp/moviotv-v841-badging.txt
+          grep -F "versionName='8.4.1'" /tmp/moviotv-v841-badging.txt
+          mkdir -p dist
+          cp "$src" dist/MovioTV-v8.4.1-CLOUD-QA-debug.apk
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.4.1-CLOUD-QA-DEBUG
+          path: dist/MovioTV-v8.4.1-CLOUD-QA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+      - name: Preserve build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V8.4.1-FIX5-FAILURE-LOGS
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+          retention-days: 30
+          if-no-files-found: warn
