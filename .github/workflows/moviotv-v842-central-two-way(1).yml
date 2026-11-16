@@ -1,0 +1,317 @@
+name: MovioTV V8.4.2 - Permanent Fast Check or Full APK
+run-name: MovioTV V8.4.2 ${{ inputs.build_mode || 'full' }} - ${{ github.ref_name }} - ${{ github.run_number }}
+'on':
+  push:
+    branches:
+    - feature/moviotv-v8-stability
+    paths:
+    - .github/workflows/moviotv-v842-central-two-way.yml
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: Fast Kotlin compile check or full tested APK
+        required: true
+        type: choice
+        default: full
+        options:
+        - fast
+        - full
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v842-sync-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v842-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: 8.4.2
+      VERSION_CODE: '100106'
+    steps:
+    - name: Checkout MovioTV stable development branch (read only)
+      uses: actions/checkout@v4
+      with:
+        ref: feature/moviotv-v8-stability
+        fetch-depth: 0
+    - name: Checkout pinned upstream Core 1.0.71
+      uses: actions/checkout@v4
+      with:
+        repository: ahXN00/OwnTV_Core
+        ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+        path: moviotv-core
+        persist-credentials: false
+    - name: Checkout verified V8.1 Core patch
+      uses: actions/checkout@v4
+      with:
+        repository: tariqmahmood121/OwnTV-TM
+        ref: feature/moviotv-v81-stability
+        path: moviotv-v81-verified
+        persist-credentials: false
+    - name: Replay exact successful V8.4.1 source and checks
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''V841_BASE''
+
+        from pathlib import Path
+
+        import textwrap
+
+        import subprocess
+
+        workflow=Path(''.github/workflows/moviotv-v841-cloud-first-one-file-FIX5.yml'')
+
+        assert workflow.is_file(), ''V8.4.1 successful source workflow missing''
+
+        lines=workflow.read_text(encoding=''utf8'').splitlines(keepends=True)
+
+        marker=''      - name: Replay verified V8.4.1 recipe with targeted lint correction\n''
+
+        assert lines.count(marker)==1, ''V8.4.1 source recipe changed''
+
+        start=lines.index(marker)+1
+
+        stop=next(i for i in range(start,len(lines)) if lines[i].startswith(''      - name: ''))
+
+        run=next(i for i in range(start,stop) if lines[i]==''        run: |\n'')
+
+        script=textwrap.dedent(''''.join(lines[run+1:stop]))
+
+        assert ''Fix'' not in script[:60] or len(script)>100, ''Invalid recipe''
+
+        subprocess.run([''bash'',''-e'',''-u'',''-o'',''pipefail'',''-c'',script],check=True)
+
+        V841_BASE'
+    - name: Apply Central two-way sync and preflight source validation
+      shell: bash
+      run: "set -euo pipefail\ncat > /tmp/moviotv-v842-sync-patch.py <<'V842_PATCH'\n#!/usr/bin/env python3\n\"\"\"Apply targeted V8.4.2 Central\
+        \ two-way sync on a freshly replayed V8.4.1 build tree.\"\"\"\nfrom pathlib import Path\nimport re\nimport xml.etree.ElementTree as ET\n\
+        ROOT=Path.cwd()\nBASE=ROOT/'app/src/main/java/tv/own/owntv'\napi=BASE/'features/central/MovioCentralApi.kt'\nmain=BASE/'MainActivity.kt'\n\
+        cloud=BASE/'features/setup/MovioCloudFirstRun.kt'\nscreen=BASE/'features/central/MovioCentralScreen.kt'\nassert all(p.is_file() for p\
+        \ in (api,main,cloud,screen)), 'Base V8.4.1 not present'\n\ndef once(path,old,new):\n    s=path.read_text(encoding='utf8')\n    assert\
+        \ s.count(old)==1, f'Unexpected source change at {path}: {old[:100]!r}: count={s.count(old)}'\n    path.write_text(s.replace(old,new),encoding='utf8')\n\
+        \nonce(api, '              suspend fun profileSources(profileId: Long): JSONObject = withContext(Dispatchers.IO) {', '''             \
+        \ /** The Central service has ownership checks and optimistic versioning. */\n              fun hasCloudSession(): Boolean = token() !=\
+        \ null\n              suspend fun putSyncRecord(profileId: Long, recordType: String, key: String,\n                                  \
+        \      payload: JSONObject, expectedVersion: Int?): JSONObject = withContext(Dispatchers.IO) {\n                  require(profileId >\
+        \ 0 && recordType in setOf(\"favorite\", \"history\", \"resume\"))\n                  require(key.length in 5..190)\n                \
+        \  val body = JSONObject().put(\"profile_id\", profileId)\n                      .put(\"record_type\", recordType).put(\"record_key\"\
+        , key).put(\"payload\", payload)\n                  if (expectedVersion != null && expectedVersion > 0) body.put(\"expected_version\"\
+        , expectedVersion)\n                  call(\"sync\", \"PUT\", body, requiresAuth = true)\n              }\n              suspend fun profileSources(profileId:\
+        \ Long): JSONObject = withContext(Dispatchers.IO) {''')\n\nsync_kt=r'''package tv.own.owntv.features.central\n\nimport android.content.Context\n\
+        import androidx.work.CoroutineWorker\nimport androidx.work.ExistingPeriodicWorkPolicy\nimport androidx.work.ExistingWorkPolicy\nimport\
+        \ androidx.work.OneTimeWorkRequestBuilder\nimport androidx.work.PeriodicWorkRequestBuilder\nimport androidx.work.WorkManager\nimport androidx.work.WorkerParameters\n\
+        import kotlinx.coroutines.sync.Mutex\nimport org.json.JSONArray\nimport org.json.JSONObject\nimport org.koin.core.context.GlobalContext\n\
+        import tv.own.owntv.core.backup.UserDataResolver\nimport tv.own.owntv.core.database.dao.ProfileDao\nimport tv.own.owntv.core.database.dao.SourceDao\n\
+        import tv.own.owntv.core.database.entity.SourceEntity\nimport java.io.IOException\nimport java.security.MessageDigest\nimport java.util.concurrent.TimeUnit\n\
+        \n/** Profile-scoped, fail-closed sync of local favourites/history/resume with Central's versioned API.\n * Local Room data is the durable\
+        \ retry queue: a failed HTTP call NEVER clears a local row.\n * All remote data is merged by the core's existing stable content-id resolver.\n\
+        \ */\ninternal data class MovioSyncResult(val profiles: Int, val uploaded: Int, val received: Int, val skipped: Int)\n\ninternal object\
+        \ MovioCentralTwoWaySync {\n    private val mutex = Mutex()\n    private const val PERIODIC = \"moviotv-central-sync-15m-v1\"\n    private\
+        \ const val ONE_SHOT = \"moviotv-central-sync-now-v1\"\n    fun schedule(context: Context) {\n        val request = PeriodicWorkRequestBuilder<MovioCentralSyncWorker>(15,\
+        \ TimeUnit.MINUTES).build()\n        WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(\n            PERIODIC,\
+        \ ExistingPeriodicWorkPolicy.KEEP, request)\n    }\n    fun kick(context: Context) {\n        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(\n\
+        \            ONE_SHOT, ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<MovioCentralSyncWorker>().build())\n    }\n\n    private fun\
+        \ str(o: JSONObject, vararg keys: String): String {\n        for (key in keys) {\n            val v = o.optString(key).trim()\n      \
+        \      if (v.isNotBlank() && v != \"null\") return v\n        }\n        return \"\"\n    }\n    private fun remoteProfileMatch(remote:\
+        \ JSONArray, id: Long, localName: String): Boolean =\n        (0 until remote.length()).mapNotNull { remote.optJSONObject(it) }.any {\
+        \ row ->\n            row.optLong(\"id\", -1) == id &&\n                str(row, \"name\", \"profile_name\").equals(localName.trim(),\
+        \ ignoreCase = true)\n        }\n\n    private fun authorizedSourceMapping(sources: JSONArray, locals: List<SourceEntity>): Map<Long,\
+        \ String> {\n        val out = mutableMapOf<Long, String>()\n        for (i in 0 until sources.length()) {\n            val remote = sources.optJSONObject(i)\
+        \ ?: continue\n            val providerId = str(remote, \"provider_id\", \"id\")\n            val url = str(remote, \"url\", \"server_url\"\
+        , \"xtream_url\", \"playlist_url\").trimEnd('/')\n            val user = str(remote, \"username\", \"provider_username\")\n          \
+        \  if (providerId.isBlank() || url.isBlank()) continue\n            val matches = locals.filter { local ->\n                local.url.trim().trimEnd('/')\
+        \ == url && local.username.orEmpty() == user\n            }\n            // Ambiguity is unsafe; don't guess which provider owns somebody's\
+        \ viewing records.\n            if (matches.size == 1) out[matches.first().id] = providerId\n        }\n        return out\n    }\n\n\
+        \    private fun stableKey(record: JSONObject, providerId: String, kind: String): String {\n        val type = record.optString(\"t\"\
+        ).uppercase()\n        val rid = str(record, \"rid\", \"remote_id\")\n        val identity = listOf(providerId, type, rid, str(record,\
+        \ \"srid\"),\n            record.optString(\"season\"), record.optString(\"ep\")).joinToString(\"|\")\n        val hash = MessageDigest.getInstance(\"\
+        SHA-256\").digest(identity.toByteArray(Charsets.UTF_8))\n            .joinToString(\"\") { \"%02x\".format(it.toInt() and 255) }.take(40)\n\
+        \        val prefix = if (kind == \"fav\") \"favorite\" else if (kind == \"his\") \"history\" else \"resume\"\n        return \"$prefix:$hash\"\
+        \n    }\n\n    private fun typeFor(kind: String) = when(kind) {\n        \"fav\" -> \"favorite\"\n        \"his\" -> \"history\"\n   \
+        \     \"prog\" -> \"resume\"\n        else -> \"\"\n    }\n    private fun kindFor(type: String) = when(type.lowercase()) {\n        \"\
+        favorite\", \"favourite\", \"fav\" -> \"fav\"\n        \"history\", \"his\" -> \"his\"\n        \"resume\", \"progress\", \"prog\" ->\
+        \ \"prog\"\n        else -> \"\"\n    }\n\n    private fun localPayload(e: JSONObject, providerId: String, deleted: Boolean): JSONObject\
+        \ {\n        val kind = e.optString(\"kind\")\n        val t = e.optString(\"t\").uppercase()\n        val data = JSONObject().put(\"\
+        provider_id\", providerId).put(\"t\", t)\n            .put(\"media_type\", t.lowercase()).put(\"rid\", str(e,\"rid\"))\n            .put(\"\
+        title\", str(e,\"name\", \"sname\")).put(\"at\", e.optLong(\"at\", 0))\n            .put(\"deleted\", deleted)\n        if (t == \"EPISODE\"\
+        ) {\n            data.put(\"srid\", str(e,\"srid\")).put(\"season\", e.optInt(\"season\", 0))\n                .put(\"ep\", e.optInt(\"\
+        ep\", 0))\n        }\n        if (kind == \"fav\") data.put(\"favorite\", !deleted)\n        if (kind == \"prog\") {\n            val\
+        \ pos = e.optLong(\"pos\", 0).coerceAtLeast(0)\n            val dur = e.optLong(\"dur\", 0).coerceAtLeast(0)\n            data.put(\"\
+        pos\", pos).put(\"dur\", dur)\n                .put(\"position_seconds\", pos / 1000).put(\"duration_seconds\", dur / 1000)\n        }\n\
+        \        return data\n    }\n\n    private data class LocalRecord(val type: String, val key: String, val payload: JSONObject,\n      \
+        \                             val timestamp: Long)\n\n    private fun convertLocal(rows: JSONArray, profileId: Long, sourceToProvider:\
+        \ Map<Long, String>,\n                             deleted: Boolean, output: MutableMap<String, LocalRecord>) {\n        for (i in 0 until\
+        \ rows.length()) {\n            val e = rows.optJSONObject(i) ?: continue\n            if (e.optLong(\"p\", -1) != profileId) continue\n\
+        \            val kind = e.optString(\"kind\")\n            val t = e.optString(\"t\").uppercase()\n            if (kind !in setOf(\"fav\"\
+        , \"his\", \"prog\") || t !in setOf(\"MOVIE\", \"SERIES\", \"EPISODE\", \"LIVE\")) continue\n            val pid = sourceToProvider[e.optLong(\"\
+        src\", -1)] ?: continue\n            if (t == \"EPISODE\") {\n                if (str(e,\"srid\").isBlank()) continue\n            } else\
+        \ if (str(e,\"rid\").isBlank()) continue\n            val timestamp = e.optLong(\"at\", 0)\n            if (timestamp <= 0L) continue\n\
+        \            val key = stableKey(e, pid, kind)\n            val row = LocalRecord(typeFor(kind), key, localPayload(e, pid, deleted), timestamp)\n\
+        \            val previous = output[\"${row.type}|${row.key}\"]\n            if (previous == null || timestamp > previous.timestamp) output[\"\
+        ${row.type}|${row.key}\"] = row\n        }\n    }\n\n    private data class RemoteRecord(val version: Int, val timestamp: Long)\n\n  \
+        \  /** Parse Cloud rows strictly against THIS profile's provider map. Unsupported records are skipped. */\n    private suspend fun mergeRemote(records:\
+        \ JSONArray, localId: Long, sources: Map<Long, String>, resolver: UserDataResolver): Map<String, RemoteRecord> {\n        val reverse\
+        \ = sources.entries.associate { it.value to it.key }\n        val incoming = JSONArray()\n        val tombstones = JSONArray()\n     \
+        \   val remoteIndex = mutableMapOf<String, RemoteRecord>()\n        for (i in 0 until records.length()) {\n            val r = records.optJSONObject(i)\
+        \ ?: continue\n            val kind = kindFor(str(r,\"record_type\"))\n            if (kind.isBlank()) continue\n            val payload\
+        \ = r.optJSONObject(\"payload\")\n                ?: runCatching { JSONObject(r.optString(\"payload\")) }.getOrNull() ?: continue\n  \
+        \          val providerId = str(payload,\"provider_id\",\"source_id\")\n            val src = reverse[providerId] ?: if (reverse.size\
+        \ == 1 && providerId.isBlank()) reverse.values.first() else continue\n            val type = str(payload,\"t\",\"media_type\",\"type\"\
+        ).uppercase()\n            val t = when(type) {\n                \"MOVIE\", \"FILM\" -> \"MOVIE\"\n                \"SERIES\", \"SHOW\"\
+        \ -> \"SERIES\"\n                \"EPISODE\" -> \"EPISODE\"\n                \"LIVE\", \"CHANNEL\" -> \"LIVE\"\n                else ->\
+        \ continue\n            }\n            val rid = str(payload, \"rid\", \"remote_id\", \"stream_id\", \"content_id\")\n               \
+        \ .ifBlank { str(r,\"record_key\").substringAfter(':', \"\") }\n            if (t != \"EPISODE\" && rid.isBlank()) continue\n        \
+        \    val at = payload.optLong(\"at\", payload.optLong(\"updated_at_ms\", 0L)).let {\n                if (it in 1..9999999999L) it * 1000L\
+        \ else it\n            }\n            val item = JSONObject().put(\"p\",localId).put(\"src\",src).put(\"t\",t)\n                .put(\"\
+        rid\",rid).put(\"kind\",kind).put(\"at\",at)\n            if (t == \"EPISODE\") {\n                val series = str(payload,\"srid\",\"\
+        series_remote_id\")\n                if (series.isBlank() || !payload.has(\"season\") || !(payload.has(\"ep\") || payload.has(\"episode\"\
+        ))) continue\n                item.put(\"srid\",series).put(\"season\",payload.optInt(\"season\"))\n                    .put(\"ep\",payload.optInt(\"\
+        ep\",payload.optInt(\"episode\")))\n            }\n            if (kind == \"prog\") {\n                val position = payload.optLong(\"\
+        pos\", payload.optLong(\"position_ms\", -1L))\n                    .let { if(it >= 0) it else payload.optLong(\"position_seconds\",0L)\
+        \ * 1000L }\n                val duration = payload.optLong(\"dur\",payload.optLong(\"duration_ms\", -1L))\n                    .let {\
+        \ if(it >= 0) it else payload.optLong(\"duration_seconds\",0L) * 1000L }\n                item.put(\"pos\",position).put(\"dur\",duration)\n\
+        \            }\n            val key = str(r,\"record_key\")\n            if (key.isNotBlank()) remoteIndex[\"${typeFor(kind)}|$key\"]\
+        \ = RemoteRecord(r.optInt(\"version\",0),at)\n            if (payload.optBoolean(\"deleted\",false) || (kind == \"fav\" && payload.has(\"\
+        favorite\") && !payload.optBoolean(\"favorite\"))) {\n                if (at > 0L) tombstones.put(item)\n            } else incoming.put(item)\n\
+        \        }\n        // Core merges by timestamps and retains unresolved catalogue items without deleting local history.\n        if (tombstones.length()\
+        \ > 0) resolver.applyTombstones(tombstones)\n        if (incoming.length() > 0) resolver.importAll(incoming)\n        return remoteIndex\n\
+        \    }\n\n    /** Runs under one process-wide lock so foreground, periodic and manual sync don't race. */\n    suspend fun run(context:\
+        \ Context): MovioSyncResult {\n        mutex.lock()\n        try {\n            val app = context.applicationContext\n            val\
+        \ api = MovioCentralApi(app)\n            if (!api.hasCloudSession()) return MovioSyncResult(0,0,0,0)\n            val koin = GlobalContext.get()\n\
+        \            val profileDao: ProfileDao = koin.get()\n            val sourceDao: SourceDao = koin.get()\n            val resolver: UserDataResolver\
+        \ = koin.get()\n            val links = app.getSharedPreferences(\"moviotv_central_profile_links_v1\", Context.MODE_PRIVATE)\n       \
+        \     val cloudProfileResponse = api.profiles()\n            val cloudProfiles = cloudProfileResponse.optJSONArray(\"profiles\")\n   \
+        \             ?: cloudProfileResponse.optJSONArray(\"data\") ?: JSONArray()\n            val allSources = sourceDao.getAllOnce()\n   \
+        \         var profiles = 0\n            var sent = 0\n            var received = 0\n            var skipped = 0\n            for (profile\
+        \ in profileDao.getAllOnce()) {\n                val remoteId = links.getLong(\"local_${profile.id}\", -1L)\n                if (remoteId\
+        \ <= 0) continue\n                // Account changes must not silently send one account's local viewing to another.\n                if\
+        \ (!remoteProfileMatch(cloudProfiles,remoteId,profile.name)) { skipped++; continue }\n                val assigned = api.profileBootstrap(remoteId).optJSONArray(\"\
+        sources\") ?: JSONArray()\n                val allowedIds = sourceDao.sourceIdsForProfile(profile.id).toSet()\n                val sourceMap\
+        \ = authorizedSourceMapping(assigned,allSources.filter { it.id in allowedIds })\n                if (sourceMap.isEmpty()) { skipped++;\
+        \ continue }\n                profiles++\n                val cloudRows = api.profileRecords(remoteId).optJSONArray(\"records\") ?: JSONArray()\n\
+        \                require(cloudRows.length() <= 10000) { \"Cloud records exceed safe sync page size\" }\n                val remote = mergeRemote(cloudRows,profile.id,sourceMap,resolver)\n\
+        \                received += cloudRows.length()\n                val snapshot = mutableMapOf<String, LocalRecord>()\n                convertLocal(resolver.exportAll(setOf(\"\
+        fav\",\"his\",\"prog\")), profile.id, sourceMap, false, snapshot)\n                convertLocal(resolver.exportTombstones(setOf(\"fav\"\
+        ,\"his\",\"prog\"), setOf(profile.id)),\n                    profile.id,sourceMap,true,snapshot)\n                require(snapshot.size\
+        \ <= 10000) { \"Local records exceed safe sync page size\" }\n                for ((id,local) in snapshot) {\n                    val\
+        \ previous = remote[id]\n                    if (previous != null && (local.timestamp <= previous.timestamp || previous.version <= 0))\
+        \ continue\n                    // PUT with optimistic concurrency; a 409 is retried after a fresh GET next run.\n                   \
+        \ api.putSyncRecord(remoteId,local.type,local.key,local.payload,previous?.version)\n                    sent++\n                }\n  \
+        \          }\n            val prefs = app.getSharedPreferences(\"moviotv_central_sync_state_v1\", Context.MODE_PRIVATE)\n            if\
+        \ (profiles > 0 && skipped == 0) {\n                prefs.edit().putLong(\"last_success_ms\", System.currentTimeMillis())\n          \
+        \          .putInt(\"last_uploaded\",sent).putInt(\"last_received\",received)\n                    .putInt(\"last_skipped\",skipped).apply()\n\
+        \            }\n            return MovioSyncResult(profiles,sent,received,skipped)\n        } finally {\n            mutex.unlock()\n\
+        \        }\n    }\n}\n\ninternal class MovioCentralSyncWorker(context: Context, params: WorkerParameters): CoroutineWorker(context,params)\
+        \ {\n    override suspend fun doWork(): Result = try {\n        MovioCentralTwoWaySync.run(applicationContext)\n        Result.success()\n\
+        \    } catch (_: Exception) {\n        // Room data and tombstones are retained and retried; never clear caches on network failure.\n\
+        \        Result.retry()\n    }\n}\n'''\n(BASE/'features/central/MovioCentralTwoWaySync.kt').write_text(sync_kt,encoding='utf8')\n\nonce(main,\
+        \ '        val dbError = probeDatabase()', '''        val dbError = probeDatabase()\n        if (dbError == null) tv.own.owntv.features.central.MovioCentralTwoWaySync.schedule(applicationContext)''')\n\
+        once(main, '        shellViewModel.checkAutoRefresh(includeStartup = false)', '''        shellViewModel.checkAutoRefresh(includeStartup\
+        \ = false)\n        tv.own.owntv.features.central.MovioCentralTwoWaySync.kick(applicationContext)\n        movioCloudPulse?.cancel()\n\
+        \        movioCloudPulse = lifecycleScope.launch {\n            while (isActive) {\n                delay(90_000L)\n                tv.own.owntv.features.central.MovioCentralTwoWaySync.kick(applicationContext)\n\
+        \            }\n        }''')\n# inject additional Kotlin MainActivity properties\nonce(main,'    private var pendingDeepLink by mutableStateOf<LauncherDeepLink?>(null)',\
+        \ '''    private var pendingDeepLink by mutableStateOf<LauncherDeepLink?>(null)\n    private var movioCloudPulse: kotlinx.coroutines.Job?\
+        \ = null''')\nonce(main, 'import org.koin.android.ext.android.get', '''import androidx.lifecycle.lifecycleScope\nimport kotlinx.coroutines.launch\n\
+        import kotlinx.coroutines.delay\nimport kotlinx.coroutines.isActive\nimport org.koin.android.ext.android.get''')\nonce(main, '       \
+        \ handOff.onActivityStopped()\\n        window.clearFlags', '''        handOff.onActivityStopped()\n        movioCloudPulse?.cancel()\n\
+        \        movioCloudPulse = null\n        tv.own.owntv.features.central.MovioCentralTwoWaySync.kick(applicationContext)\n        window.clearFlags''')\n\
+        once(cloud,'                    onDone(localIds.first())', '''                    MovioCentralTwoWaySync.kick(context)\n             \
+        \       onDone(localIds.first())''')\nonce(cloud,'import tv.own.owntv.features.central.MovioCentralRestore', '''import tv.own.owntv.features.central.MovioCentralRestore\n\
+        import tv.own.owntv.features.central.MovioCentralTwoWaySync''')\n\n# A visible manual Sync Now button, error status, and the last successful\
+        \ timestamp in the Central page.\nonce(screen,'import tv.own.owntv.core.database.dao.SourceDao', '''import tv.own.owntv.core.database.dao.SourceDao\n\
+        import tv.own.owntv.features.central.MovioCentralTwoWaySync''')\nneedle='StageButton(stringResource(R.string.moviotv_cloud_dashboard),\
+        \ onClick = {'\ns=screen.read_text(encoding='utf8')\nassert s.count(needle)==1\nsync_button='''StageButton(stringResource(R.string.moviotv_central_sync_now),\
+        \ onClick = {\n               launchRequest {\n                   val result = MovioCentralTwoWaySync.run(context)\n                 \
+        \  resources.getString(R.string.moviotv_central_sync_result,\n                       result.profiles, result.uploaded, result.received,\
+        \ result.skipped)\n               }\n           })\n           val lastCloudSync = context.getSharedPreferences(\"moviotv_central_sync_state_v1\"\
+        , Context.MODE_PRIVATE)\n               .getLong(\"last_success_ms\", 0L)\n           if (lastCloudSync > 0L) {\n               Text(stringResource(R.string.moviotv_central_last_sync,\n\
+        \                   java.text.DateFormat.getDateTimeInstance().format(java.util.Date(lastCloudSync))),\n                   style = stageText(14,\
+        \ 400), color = StageColors.Muted)\n           }\n           '''\nscreen.write_text(s.replace(needle,sync_button+needle),encoding='utf8')\n\
+        strings=ROOT/'app/src/main/res/values/strings_moviotv_cloud_sync.xml'\nstrings.write_text('''<?xml version=\"1.0\" encoding=\"utf-8\"\
+        ?>\n<resources>\n  <string name=\"moviotv_central_sync_now\" translatable=\"false\">Sync Now — all linked profiles</string>\n  <string\
+        \ name=\"moviotv_central_sync_result\" translatable=\"false\">Cloud sync: profiles %1$d, uploaded %2$d, read %3$d, skipped %4$d</string>\n\
+        \  <string name=\"moviotv_central_last_sync\" translatable=\"false\">Last Cloud sync: %1$s</string>\n</resources>\n''',encoding='utf8')\n\
+        ET.parse(strings)\n# Extend V8.4.1's generated technical-literal inventory for only the new reviewed source files.\nimport importlib.util,\
+        \ subprocess, sys\nscanner=ROOT/'tools/i18n/check_hardcoded_strings.py'\nspec=importlib.util.spec_from_file_location('moviotv_v842_literals',scanner)\n\
+        mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)\ncurrent=mod._inventory(); safe,categories,errors=mod._safe_entries()\n\
+        if errors: raise RuntimeError(errors)\nbaseline=mod._parse(mod.BASELINE.read_text(encoding='utf8'))\nentries={key:(min(count,current[key]),categories[key])\
+        \ for key,count in safe.items() if key in current}\nallow={\n 'app/src/main/java/tv/own/owntv/features/central/MovioCentralTwoWaySync.kt',\n\
+        \ 'app/src/main/java/tv/own/owntv/features/central/MovioCentralApi.kt',\n 'app/src/main/java/tv/own/owntv/features/central/MovioCentralScreen.kt',\n\
+        \ 'app/src/main/java/tv/own/owntv/features/setup/MovioCloudFirstRun.kt',\n 'app/src/main/java/tv/own/owntv/MainActivity.kt',\n}\nfor key,count\
+        \ in current.items():\n    baseline_count=baseline.get(key,0)\n    safe_count=entries.get(key,(0,'technical'))[0]\n    excess=count-baseline_count-safe_count\n\
+        \    if excess>0:\n        if key[0] not in allow: raise RuntimeError('Unclassified new literal: '+str(key))\n        entries[key]=(safe_count+excess,categories.get(key,'technical'))\n\
+        assert all(n<=current.get(k,0) for k,(n,_) in entries.items())\nmod.SAFE_MANIFEST.write_text(mod._serialize_safe(entries),encoding='utf8')\n\
+        subprocess.run([sys.executable,str(scanner),'verify','--bootstrap'],check=True,cwd=ROOT)\nassert 'MovioCentralTwoWaySync.kick'  in cloud.read_text()\n\
+        assert 'moviotv_central_sync_now' in screen.read_text()\nassert 'expected_version' in api.read_text()\nassert 'exportTombstones' in sync_kt\
+        \ and 'applyTombstones' in sync_kt\nprint('V8.4.2 preflight: API PUT, source mapping, merge, tombstones, offline retention, sync UI and\
+        \ worker installed')\nV842_PATCH\npython3 -m py_compile /tmp/moviotv-v842-sync-patch.py\npython3 /tmp/moviotv-v842-sync-patch.py\n"
+    - name: Java 25 for the Android toolchain
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '25'
+    - name: Reuse Gradle dependencies and task outputs
+      uses: gradle/actions/setup-gradle@v4
+    - name: Compile quickly or fully validate and assemble debug APK
+      shell: bash
+      env:
+        BUILD_MODE: ${{ inputs.build_mode || 'full' }}
+      run: "set -euo pipefail\nchmod +x ./gradlew\nif [[ \"$BUILD_MODE\" == fast ]]; then\n  ./gradlew -Powntv.corePath=\"$GITHUB_WORKSPACE/moviotv-core\"\
+        \ :app:compileStandardDebugKotlin --no-daemon --stacktrace\nelse\n  ./gradlew -Powntv.corePath=\"$GITHUB_WORKSPACE/moviotv-core\" lintStandardDebug\
+        \ testStandardDebugUnitTest assembleStandardDebug --no-daemon --stacktrace\nfi\n"
+    - name: Verify APK package, version and signature
+      if: ${{ github.event_name == 'push' || inputs.build_mode == 'full' }}
+      shell: bash
+      run: 'set -euo pipefail
+
+        src=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+
+        test -s "$src"
+
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+        aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+
+        signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+
+        test -x "$aapt" && test -x "$signer"
+
+        "$signer" verify "$src"
+
+        "$aapt" dump badging "$src" > /tmp/moviotv-v842-badging.txt
+
+        grep -F "name=''com.oakstudios.moviotv''" /tmp/moviotv-v842-badging.txt
+
+        grep -F "versionCode=''100106''" /tmp/moviotv-v842-badging.txt
+
+        grep -F "versionName=''8.4.2''" /tmp/moviotv-v842-badging.txt
+
+        mkdir -p dist
+
+        cp "$src" dist/MovioTV-v8.4.2-TWO-WAY-SYNC-QA-debug.apk
+
+        '
+    - name: Upload installable QA APK
+      if: ${{ github.event_name == 'push' || inputs.build_mode == 'full' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: MovioTV-V8.4.2-TWO-WAY-SYNC-QA-DEBUG
+        path: dist/MovioTV-v8.4.2-TWO-WAY-SYNC-QA-debug.apk
+        retention-days: 30
+        if-no-files-found: error
+    - name: Capture reports on failed checks
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: MovioTV-V8.4.2-BUILD-DIAGNOSTICS
+        path: 'app/build/reports/tests/**
+
+          app/build/reports/lint-results-*.html
+
+          app/build/reports/lint-results-*.txt
+
+          build/reports/problems/**'
+        retention-days: 30
+        if-no-files-found: warn
