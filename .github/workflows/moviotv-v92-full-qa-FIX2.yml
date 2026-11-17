@@ -1,0 +1,389 @@
+name: MovioTV V9.2 FIX2 - verified mappings and Kotlin QA
+run-name: 'MovioTV V9.2 FIX2 - ${{ github.ref_name }} #${{ github.run_number }}'
+'on':
+  push:
+    branches:
+    - moviotv-v9
+    paths:
+    - .github/workflows/moviotv-v92-full-qa-FIX2.yml
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v92-full-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  v92-qa:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: 9.2.0-qa2
+      VERSION_CODE: '100211'
+    steps:
+    - name: Checkout verified V9 baseline
+      uses: actions/checkout@v4
+      with:
+        ref: moviotv-v9
+        fetch-depth: 0
+    - name: Checkout pinned core used by successful V9 FIX3
+      uses: actions/checkout@v4
+      with:
+        repository: ahXN00/OwnTV_Core
+        ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+        path: moviotv-core
+        persist-credentials: false
+    - name: Checkout pinned V8.1 patch used by successful FIX3
+      uses: actions/checkout@v4
+      with:
+        repository: tariqmahmood121/OwnTV-TM
+        ref: feature/moviotv-v81-stability
+        path: moviotv-v81-verified
+        persist-credentials: false
+    - name: 01 - Replay full verified FIX3 source and automated prechecks
+      shell: bash
+      run: "set -euo pipefail\npython3 -m pip install --quiet --disable-pip-version-check 'PyYAML==6.0.2'\n\
+        python3 - <<'PY_FIX3_REPLAY'\nfrom pathlib import Path\nimport subprocess\nimport yaml\n\
+        source=Path('.github/workflows/moviotv-v91-handover-PRECHECK-FIX3.yml')\nassert source.is_file(),\
+        \ 'Verified FIX3 workflow missing from V9 baseline'\nrecipe=yaml.safe_load(source.read_text(encoding='utf8'))\n\
+        steps=recipe['jobs']['v91-qa']['steps']\nfor name in (\n  '01 - Reproduce last successful\
+        \ V9 source and patches',\n  '02 - Apply existing V9.1 recovery and responsive source patch',\n\
+        \  '02B - Apply authenticated Smart Handover Kotlin/UI source patch',\n):\n    found=[step\
+        \ for step in steps if step.get('name')==name and 'run' in step]\n    assert len(found)==1,\
+        \ f'FIX3 baseline changed, cannot replay {name!r}'\n    print('REPLAY VERIFIED FIX3:', name,\
+        \ flush=True)\n    subprocess.run(['bash','-e','-u','-o','pipefail','-c',found[0]['run']],check=True)\n\
+        print('PASS: FIX3 V9.1 source assembled exactly as verified')\nPY_FIX3_REPLAY\n"
+    - name: 02A - Mandatory generated-source mapping preflight BEFORE patch
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY_V92_MAPPING'\nfrom pathlib import Path\nimport re\n\
+        import xml.etree.ElementTree as ET\nbase=Path('app/src/main/java/tv/own/owntv')\npaths={\n\
+        \  'api':base/'features/central/MovioCentralApi.kt',\n  'screen':base/'features/central/MovioCentralScreen.kt',\n\
+        \  'restore':base/'features/central/MovioCentralRestore.kt',\n  'dialog':base/'features/central/MovioV91HandoverDialog.kt',\n\
+        \  'handover':base/'features/central/MovioV91Handover.kt',\n  'shell':base/'features/shell/OwnTVShell.kt',\n\
+        }\nfor key,path in paths.items():\n    if not path.is_file():\n        raise RuntimeError(f'PRECOMPILER\
+        \ MAPPING FAIL: {key} missing: {path}')\nsource={key: p.read_text(encoding='utf-8') for key,p\
+        \ in paths.items()}\nanchors={\n  'api': [\n    'fun disconnect() = preferences.edit().remove(\"\
+        session\").apply()',\n    'storeToken(session)',\n  ],\n  'restore': ['require(remoteProfileId\
+        \ > 0L) { \"Invalid cloud profile\" }'],\n  'dialog': [\n    'client.awaitAcknowledgement(id,25)',\n\
+        \    'client.awaitProviderCapacity(source,35)',\n    'if (phase == \"ready\" || phase ==\
+        \ \"capacity_pending\")',\n  ],\n  'shell': ['    val v76CheckingLabel = stringResource(R.string.moviotv_diagnostics_title)'],\n\
+        }\nfor key, needles in anchors.items():\n    for needle in needles:\n        count = source[key].count(needle)\n\
+        \        if count != 1:\n            raise RuntimeError(f'PRECOMPILER MAPPING FAIL: {key}\
+        \ anchor {needle!r} found {count}, expected 1')\nlogout = re.compile(\n    r'(?s)StageButton\\\
+        s*\\(\\s*stringResource\\(R\\.string\\.moviotv_central_disconnect\\)'\n    r'\\s*,\\s*onClick\\\
+        s*=\\s*\\{(?P<body>.*?)\\}\\s*\\)'\n)\nbuttons=list(logout.finditer(source['screen']))\n\
+        if len(buttons)!=1:\n    raise RuntimeError(f'PRECOMPILER MAPPING FAIL: Expected 1 Central\
+        \ disconnect button, found {len(buttons)}')\nfor needle in ('api.disconnect()', 'signedIn\
+        \ = false', 'remoteProfiles = emptyList()',\n               'status = resources.getString(R.string.moviotv_central_disconnected)'):\n\
+        \    if needle not in buttons[0].group('body'):\n        raise RuntimeError('PRECOMPILER\
+        \ MAPPING FAIL: Central disconnect button missing ' + needle)\nET.parse('app/src/main/res/values/strings_moviotv_v91_handover.xml')\n\
+        print('PASS: All 6 generated-source paths, 7 exact anchors, Central button structure, and\
+        \ FIX3 resources')\nPY_V92_MAPPING\n"
+    - name: 02B - Apply V9.2 account, recovery and handover changes
+      shell: bash
+      run: "set -euo pipefail\ncat > /tmp/moviotv_v92_patch.py <<'PY_V92_SOURCE'\n#!/usr/bin/env\
+        \ python3\n\"\"\"Apply the additive V9.2 QA changes after verified V9.1 FIX3 source replay.\n\
+        Fail closed on source changes; never replace the working V9.1 workflow.\n\"\"\"\nfrom pathlib\
+        \ import Path\nimport xml.etree.ElementTree as ET\nimport re\n\nbase = Path('app/src/main/java/tv/own/owntv')\n\
+        api = base / 'features/central/MovioCentralApi.kt'\nscreen = base / 'features/central/MovioCentralScreen.kt'\n\
+        restore = base / 'features/central/MovioCentralRestore.kt'\nhand = base / 'features/central/MovioV91Handover.kt'\n\
+        dialog = base / 'features/central/MovioV91HandoverDialog.kt'\nshell = base / 'features/shell/OwnTVShell.kt'\n\
+        for p in (api, screen, restore, hand, dialog, shell):\n    assert p.is_file(), 'Expected\
+        \ generated FIX3 source is missing: ' + str(p)\n\ndef once(p: Path, old: str, new: str) ->\
+        \ None:\n    src = p.read_text(encoding='utf-8')\n    n = src.count(old)\n    if n != 1:\n\
+        \        raise RuntimeError(f'{p}: wanted precisely 1 anchor, saw {n}: {old[:85]!r}')\n \
+        \   p.write_text(src.replace(old, new, 1), encoding='utf-8')\n\n# 1) Account-specific cloud\
+        \ profile links and safe sign-out. Never delete the\n# local database, catalogues, favourites,\
+        \ history, or provider credentials.\n# Old unknown-owner links are quarantined, not automatically\
+        \ attributed to\n# whichever Central account signs in first after upgrading.\nonce(api, 'fun\
+        \ disconnect() = preferences.edit().remove(\"session\").apply()', '''fun disconnect() {\n\
+        \                  // On first V9.2 use, legacy local links have no verified account owner.\n\
+        \                  // Quarantine their mapping, not the underlying local user data.\n   \
+        \               if (preferences.getString(\"account_scope_v92\", null) == null) {\n     \
+        \                 val links = context.getSharedPreferences(\"moviotv_central_profile_links_v1\"\
+        , Context.MODE_PRIVATE)\n                      val owners = context.getSharedPreferences(\"\
+        moviotv_central_profile_owners_v92\", Context.MODE_PRIVATE)\n                      val changes\
+        \ = owners.edit()\n                      links.all.keys.filter { it.startsWith(\"local_\"\
+        ) }.forEach { key ->\n                          changes.putString(\"profile_\" + key.removePrefix(\"\
+        local_\"), \"legacy_unverified\")\n                      }\n                      changes.commit()\n\
+        \                      links.edit().clear().commit()\n                  }\n             \
+        \     preferences.edit().remove(\"session\").remove(\"handover_id\")\n                  \
+        \    .remove(\"handover_secret\").apply()\n              }\n\n              private fun installAccountScope(username:\
+        \ String) {\n                  val normalized = username.trim().lowercase(java.util.Locale.ROOT)\n\
+        \                  val scope = java.security.MessageDigest.getInstance(\"SHA-256\")\n   \
+        \                   .digest((\"movio-central-v92|\" + normalized).toByteArray(Charsets.UTF_8))\n\
+        \                      .joinToString(\"\") { \"%02x\".format(it.toInt() and 255) }\n    \
+        \              val previous = preferences.getString(\"account_scope_v92\", null)\n      \
+        \            val links = context.getSharedPreferences(\"moviotv_central_profile_links_v1\"\
+        , Context.MODE_PRIVATE)\n                  val owners = context.getSharedPreferences(\"moviotv_central_profile_owners_v92\"\
+        , Context.MODE_PRIVATE)\n                  val snapshots = context.getSharedPreferences(\"\
+        moviotv_central_link_snapshots_v92\", Context.MODE_PRIVATE)\n                  if (previous\
+        \ == null) {\n                      // Do not silently claim legacy records as belonging\
+        \ to this username.\n                      val editor = owners.edit()\n                 \
+        \     links.all.keys.filter { it.startsWith(\"local_\") }.forEach { key ->\n            \
+        \              editor.putString(\"profile_\" + key.removePrefix(\"local_\"), \"legacy_unverified\"\
+        )\n                      }\n                      editor.commit()\n                     \
+        \ links.edit().clear().commit()\n                  } else if (previous != scope) {\n    \
+        \                  val previousMap = JSONObject()\n                      links.all.forEach\
+        \ { (key, value) ->\n                          if (key.startsWith(\"local_\") && value is\
+        \ Long) previousMap.put(key, value)\n                      }\n                      snapshots.edit().putString(previous,\
+        \ previousMap.toString()).commit()\n                      val incoming = JSONObject(snapshots.getString(scope,\
+        \ \"{}\") ?: \"{}\")\n                      val editor = links.edit().clear()\n         \
+        \             val keys = incoming.keys()\n                      while (keys.hasNext()) {\n\
+        \                          val key = keys.next()\n                          if (key.startsWith(\"\
+        local_\")) editor.putLong(key, incoming.optLong(key, -1L))\n                      }\n   \
+        \                   editor.commit()\n                  }\n                  if (previous\
+        \ != scope) {\n                      context.getSharedPreferences(\"moviotv_central_sync_state_v1\"\
+        , Context.MODE_PRIVATE)\n                          .edit().clear().apply()\n            \
+        \      }\n                  preferences.edit().putString(\"account_scope_v92\", scope)\n\
+        \                      .remove(\"handover_id\").remove(\"handover_secret\").commit()\n  \
+        \            }\n\n              fun bindLocalProfileToCurrentAccount(localProfileId: Long)\
+        \ {\n                  require(localProfileId > 0L)\n                  val scope = preferences.getString(\"\
+        account_scope_v92\", null) ?: return\n                  val owners = context.getSharedPreferences(\"\
+        moviotv_central_profile_owners_v92\", Context.MODE_PRIVATE)\n                  val key =\
+        \ \"profile_$localProfileId\"\n                  val existing = owners.getString(key, null)\n\
+        \                  if (existing != null && existing != scope) {\n                      throw\
+        \ IOException(context.getString(tv.own.owntv.R.string.moviotv_v92_local_profile_guard))\n\
+        \                  }\n                  if (existing == null && !owners.edit().putString(key,\
+        \ scope).commit()) {\n                      throw IOException(context.getString(tv.own.owntv.R.string.moviotv_v92_account_save_error))\n\
+        \                  }\n              }''')\n\n# After a successful authenticated response,\
+        \ and BEFORE storing the new token,\n# assign the new account scope and detach remote mappings\
+        \ for the old account.\nonce(api, '                  storeToken(session)', '''          \
+        \        installAccountScope(username)\n                  storeToken(session)''')\n\n# Guard\
+        \ BOTH the cloud-first wizard and manual Central restore at one shared\n# mutating method.\
+        \ Prevent mixing cloud accounts into the same local profile.\nonce(restore, 'require(remoteProfileId\
+        \ > 0L) { \"Invalid cloud profile\" }', '''require(remoteProfileId > 0L) { \"Invalid cloud\
+        \ profile\" }\n                  MovioCentralApi(context).bindLocalProfileToCurrentAccount(localProfileId)''')\n\
+        \n# 2) Give the user explicit choices to sign out or switch accounts. Existing\n# cloud sign-in,\
+        \ offline fallback, and profile restores remain intact.\n# Find this button by Kotlin structure,\
+        \ never by indentation. V8.4.3 and\n# V9 replay steps can reindent the same valid UI without\
+        \ changing its behavior.\nold_block = re.compile(\n    r'(?s)StageButton\\s*\\(\\s*stringResource\\\
+        (R\\.string\\.moviotv_central_disconnect\\)'\n    r'\\s*,\\s*onClick\\s*=\\s*\\{(?P<body>.*?)\\\
+        }\\s*\\)'\n)\noriginal_screen = screen.read_text(encoding='utf-8')\nmatches = list(old_block.finditer(original_screen))\n\
+        if len(matches) != 1:\n    raise RuntimeError('Expected exactly one Central disconnect button,\
+        \ found '\n                       + str(len(matches)) + '. Check V8.4.3 source mapping before\
+        \ editing.')\nbody = matches[0].group('body')\nfor action in ('api.disconnect()', 'signedIn\
+        \ = false',\n               'remoteProfiles = emptyList()',\n               'status = resources.getString(R.string.moviotv_central_disconnected)'):\n\
+        \    if action not in body:\n        raise RuntimeError('Central logout mapping changed;\
+        \ missing ' + action)\nnew = '''Text(stringResource(R.string.moviotv_v92_account_note),\n\
+        \                          style = stageText(14, 500), color = StageColors.Muted)\n     \
+        \                 StageButton(stringResource(R.string.moviotv_v92_logout), onClick = {\n\
+        \                          api.disconnect()\n                          signedIn = false\n\
+        \                          user = \"\"\n                          password = \"\"\n     \
+        \                     remoteProfiles = emptyList()\n                          status = resources.getString(R.string.moviotv_central_disconnected)\n\
+        \                      })\n                      StageButton(stringResource(R.string.moviotv_v92_switch_account),\
+        \ onClick = {\n                          api.disconnect()\n                          signedIn\
+        \ = false\n                          user = \"\"\n                          password = \"\
+        \"\n                          remoteProfiles = emptyList()\n                          status\
+        \ = resources.getString(R.string.moviotv_v92_choose_new_account)\n                      })'''\n\
+        updated_screen, replacements = old_block.subn(lambda _match: new, original_screen)\nassert\
+        \ replacements == 1, 'No Central logout replacement performed'\nscreen.write_text(updated_screen,\
+        \ encoding='utf-8')\n\n# 3) More patient, bounded 0/1 provider release check. Never force\
+        \ disconnect\n# someone without confirmation; never claim a freed slot without provider proof.\n\
+        once(dialog, 'client.awaitAcknowledgement(id,25)', 'client.awaitAcknowledgement(id,35)')\n\
+        once(dialog, 'client.awaitProviderCapacity(source,35)', 'client.awaitProviderCapacity(source,90)')\n\
+        old = '''if (phase == \"ready\" || phase == \"capacity_pending\") {\n                tv.own.owntv.ui.stage.StageButton(stringResource(R.string.common_retry),\n\
+        \                    onClick = onRetryPlayback, tinted = true)\n            }'''\nnew = '''if\
+        \ (phase == \"ready\") {\n                tv.own.owntv.ui.stage.StageButton(stringResource(R.string.common_retry),\n\
+        \                    onClick = onRetryPlayback, tinted = true)\n            }\n         \
+        \   if (phase == \"capacity_pending\") {\n                tv.own.owntv.ui.stage.StageButton(\n\
+        \                    stringResource(R.string.moviotv_v92_check_capacity),\n             \
+        \       onClick = {\n                        phase = \"waiting\"\n                      \
+        \  scope.launch {\n                            phase = try {\n                          \
+        \      if (client.awaitProviderCapacity(source, 90)) \"ready\" else \"capacity_pending\"\n\
+        \                            } catch (_: Exception) { \"error\" }\n                     \
+        \   }\n                    }, tinted = true)\n            }'''\nonce(dialog, old, new)\n\n\
+        # 4) Re-check the active Xtream source on EACH playback item transition, even\n# with a cached\
+        \ catalogue. This is an asynchronous playback-start verification,\n# NOT an unimplemented\
+        \ promise to prevent all network errors before the player\n# opens. Existing in-player diagnostics\
+        \ remain the user-facing failure route.\nanchor = '    val v76CheckingLabel = stringResource(R.string.moviotv_diagnostics_title)'\n\
+        once(shell, anchor, '''    // V9.2: lightweight connection/auth probe on every new item,\
+        \ including cached VOD.\n    // Never open a second video connection just to test a provider.\n\
+        \    LaunchedEffect(watchingSourceId, playingMovie?.id, playingSeries?.id,\n            \
+        \       previewChannel?.id, playerMode, v76Sources) {\n        if (playerMode == PlayerMode.NONE)\
+        \ return@LaunchedEffect\n        val sourceId = watchingSourceId ?: return@LaunchedEffect\n\
+        \        val source = v76Sources.firstOrNull { it.id == sourceId } ?: return@LaunchedEffect\n\
+        \        if (source.type == tv.own.owntv.core.model.SourceType.XTREAM) {\n            v76DiagnosticsVm.testSource(source)\n\
+        \        }\n    }\n'''+anchor)\n\nres = Path('app/src/main/res/values/strings_moviotv_v92.xml')\n\
+        res.write_text('''<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n  <string name=\"\
+        moviotv_v92_logout\">Log out of MovioTV Cloud</string>\n  <string name=\"moviotv_v92_switch_account\"\
+        >Use a different cloud account</string>\n  <string name=\"moviotv_v92_choose_new_account\"\
+        >Enter the other account’s sign-in details.</string>\n  <string name=\"moviotv_v92_account_note\"\
+        >Local viewing data is preserved. Select or create a separate local profile for a different\
+        \ account.</string>\n  <string name=\"moviotv_v92_local_profile_guard\">This local profile\
+        \ belongs to another cloud account. Please select or create a different local profile.</string>\n\
+        \  <string name=\"moviotv_v92_account_save_error\">The cloud profile security binding could\
+        \ not be saved.</string>\n  <string name=\"moviotv_v92_check_capacity\">Check provider connection\
+        \ again</string>\n</resources>\n''', encoding='utf-8')\nET.parse(res)\n\n\n# Validate R.string\
+        \ mappings to declared resources before Gradle's resource compiler.\nresources_dir = Path('app/src/main/res')\n\
+        referenced = set()\nfor src in (api, screen, restore, hand, dialog, shell):\n    referenced.update(re.findall(r'R\\\
+        .string\\.(moviotv_v92_[A-Za-z0-9_]+)', src.read_text()))\ndeclared = set()\nfor xml in sorted((resources_dir\
+        \ / 'values').glob('strings_moviotv_v92*.xml')):\n    for item in ET.parse(xml).getroot():\n\
+        \        if item.tag == 'string' and item.get('name'):\n            if item.get('name') in\
+        \ declared:\n                raise RuntimeError('Duplicate V9.2 string resource: ' + item.get('name'))\n\
+        \            declared.add(item.get('name'))\nmissing = referenced - declared\nassert not\
+        \ missing, 'Kotlin-to-R.string mapping errors: ' + ', '.join(sorted(missing))\nassert set((\n\
+        \    'moviotv_v92_logout', 'moviotv_v92_switch_account',\n    'moviotv_v92_choose_new_account',\
+        \ 'moviotv_v92_local_profile_guard',\n    'moviotv_v92_account_save_error', 'moviotv_v92_check_capacity'\n\
+        )).issubset(declared), 'A required V9.2 resource was not declared'\nprint('PASS: V9.2 Kotlin\
+        \ resource mappings:', len(referenced), 'references')\n\nassert 'installAccountScope(username)'\
+        \ in api.read_text()\nassert 'bindLocalProfileToCurrentAccount(localProfileId)' in restore.read_text()\n\
+        assert 'moviotv_v92_switch_account' in screen.read_text()\nassert 'client.awaitProviderCapacity(source,90)'\
+        \ in dialog.read_text()\nassert 'playingMovie?.id' in shell.read_text()\nprint('V9.2 source-level\
+        \ guardrails passed. Central remote-stop routes still require live PHP deployment.')\nPY_V92_SOURCE\n\
+        python3 -m py_compile /tmp/moviotv_v92_patch.py\npython3 /tmp/moviotv_v92_patch.py\n"
+    - name: 03 - V9.2 source regression preflight before compiler
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_V92_PREFLIGHT''
+
+        from pathlib import Path
+
+        import xml.etree.ElementTree as ET
+
+        b=Path(''app/src/main/java/tv/own/owntv'')
+
+        api=(b/''features/central/MovioCentralApi.kt'').read_text()
+
+        ui=(b/''features/central/MovioCentralScreen.kt'').read_text()
+
+        rest=(b/''features/central/MovioCentralRestore.kt'').read_text()
+
+        dialog=(b/''features/central/MovioV91HandoverDialog.kt'').read_text()
+
+        shell=(b/''features/shell/OwnTVShell.kt'').read_text()
+
+        assert ''installAccountScope(username)'' in api
+
+        assert ''remove("handover_secret")'' in api
+
+        assert ''bindLocalProfileToCurrentAccount(localProfileId)'' in rest
+
+        assert ''moviotv_v92_switch_account'' in ui and ''moviotv_v92_logout'' in ui
+
+        assert ''client.awaitProviderCapacity(source,90)'' in dialog
+
+        assert ''client.awaitAcknowledgement(id,35)'' in dialog
+
+        assert ''playerMode, v76Sources'' in shell
+
+        assert ''LaunchedEffect(watchingSourceId'' in shell
+
+        assert ''awaitAcknowledgement'' in (b/''features/central/MovioV91Handover.kt'').read_text()
+
+        ET.parse(''app/src/main/res/values/strings_moviotv_v92.xml'')
+
+        print(''PASS: V9.2 account, handover, provider, cached-playback source gates'')
+
+        PY_V92_PREFLIGHT
+
+        '
+    - name: 04 - Re-run mandatory i18n ratchet on full new source
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_FIX3_I18N''
+
+        from pathlib import Path
+
+        import subprocess
+
+        import yaml
+
+        recipe=yaml.safe_load(Path(''.github/workflows/moviotv-v91-handover-PRECHECK-FIX3.yml'').read_text())
+
+        steps=recipe[''jobs''][''v91-qa''][''steps'']
+
+        found=[step for step in steps if step.get(''name'')==''02C - Mandatory Kotlin i18n literal
+        preflight before Gradle'' and ''run'' in step]
+
+        assert len(found)==1, ''Missing mandatory i18n scanner from original FIX3''
+
+        subprocess.run([''bash'',''-e'',''-u'',''-o'',''pipefail'',''-c'',found[0][''run'']],check=True)
+
+        print(''PASS: FIX3 i18n scanner also checked new V9.2 source'')
+
+        PY_FIX3_I18N
+
+        '
+    - name: Setup proven JDK 25 toolchain
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '25'
+    - name: Gradle cache
+      uses: gradle/actions/setup-gradle@v4
+    - name: 05 - Mandatory Kotlin compilation
+      shell: bash
+      run: 'set -euo pipefail
+
+        chmod +x ./gradlew
+
+        ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" :app:compileStandardDebugKotlin
+        --no-daemon --stacktrace
+
+        '
+    - name: 06 - Mandatory Android lint, unit tests and APK assembly
+      shell: bash
+      run: 'set -euo pipefail
+
+        ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" lintStandardDebug testStandardDebugUnitTest
+        assembleStandardDebug --no-daemon --stacktrace
+
+        '
+    - name: 07 - Verify APK signing, package, version and SHA256
+      shell: bash
+      run: 'set -euo pipefail
+
+        apk=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+
+        test -s "$apk"
+
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+        aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+
+        signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+
+        test -x "$aapt" && test -x "$signer"
+
+        "$signer" verify "$apk"
+
+        "$aapt" dump badging "$apk" > /tmp/moviotv-v92-badging.txt
+
+        grep -F "name=''com.oakstudios.moviotv''" /tmp/moviotv-v92-badging.txt
+
+        grep -F "versionCode=''100211''" /tmp/moviotv-v92-badging.txt
+
+        grep -F "versionName=''9.2.0-qa2''" /tmp/moviotv-v92-badging.txt
+
+        mkdir -p dist
+
+        cp "$apk" dist/MovioTV-v9.2.0-FIX2-HANDOVER-ACCOUNT-QA-debug.apk
+
+        sha256sum dist/*.apk > dist/SHA256SUMS.txt
+
+        '
+    - name: Upload V9.2 full QA APK (not production release)
+      uses: actions/upload-artifact@v4
+      with:
+        name: MovioTV-V9.2-FIX2-HANDOVER-ACCOUNT-QA-DEBUG
+        path: 'dist/MovioTV-v9.2.0-FIX2-HANDOVER-ACCOUNT-QA-debug.apk
+
+          dist/SHA256SUMS.txt'
+        retention-days: 30
+        if-no-files-found: error
+    - name: Collect failure diagnostics
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: MovioTV-V9.2-FIX2-BUILD-FAILURE-DIAGNOSTICS
+        path: 'app/build/reports/tests/**
+
+          app/build/reports/lint-results-*.html
+
+          app/build/reports/lint-results-*.txt
+
+          build/reports/problems/**'
+        retention-days: 30
+        if-no-files-found: warn
