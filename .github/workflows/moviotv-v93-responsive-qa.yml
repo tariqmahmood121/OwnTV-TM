@@ -1,0 +1,389 @@
+name: MovioTV V9.3 responsive QA (V9.2 verified baseline)
+run-name: 'MovioTV V9.3 responsive QA - ${{ github.ref_name }} #${{ github.run_number }}'
+'on':
+  push:
+    branches:
+      - moviotv-v9
+    paths:
+      - .github/workflows/moviotv-v93-responsive-qa.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moviotv-v93-responsive-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  v93-responsive-qa:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      VERSION_NAME: 9.3.0-qa1
+      VERSION_CODE: '100213'
+    steps:
+      - name: Checkout existing V9 source
+        uses: actions/checkout@v4
+        with:
+          ref: moviotv-v9
+          fetch-depth: 0
+      - name: Checkout exact upstream core from successful V9.2
+        uses: actions/checkout@v4
+        with:
+          repository: ahXN00/OwnTV_Core
+          ref: 0b60ef6d25e03a24193f1a5680cb239816fd8625
+          path: moviotv-core
+          persist-credentials: false
+      - name: Checkout V8.1 patch baseline
+        uses: actions/checkout@v4
+        with:
+          repository: tariqmahmood121/OwnTV-TM
+          ref: feature/moviotv-v81-stability
+          path: moviotv-v81-verified
+          persist-credentials: false
+
+      - name: 01 - Reconstruct verified V9.2 source, mapping, and regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check 'PyYAML==6.0.2'
+          python3 - <<'PY_BASE'
+          from pathlib import Path
+          import subprocess
+          import yaml
+          path = Path('.github/workflows/moviotv-v92-full-qa-FIX3.yml')
+          assert path.is_file(), 'V9.2 FIX3 workflow not found. Do not build from an unknown baseline.'
+          doc = yaml.safe_load(path.read_text(encoding='utf-8'))
+          steps = doc['jobs']['v92-qa']['steps']
+          names = (
+              '01 - Replay full verified FIX3 source and automated prechecks',
+              '02A - Mandatory generated-source mapping preflight BEFORE patch',
+              '02B - Apply V9.2 account, recovery and handover changes',
+              '03 - V9.2 source regression preflight before compiler',
+          )
+          for name in names:
+              selected = [step for step in steps if step.get('name') == name and 'run' in step]
+              assert len(selected) == 1, 'Baseline step not found or changed: ' + name
+              print('RUN VERIFIED BASELINE:', name, flush=True)
+              subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', selected[0]['run']], check=True)
+          print('PASS: Verified V9.2 source replay and regression preflight', flush=True)
+          PY_BASE
+
+      - name: 02 - Responsive More, Central, and Settings source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/moviotv_v93_responsive_patch.py <<'PY_RESPONSIVE'
+          #!/usr/bin/env python3
+          """Fail-closed responsive navigation patch for MovioTV generated V9.2 QA sources.
+
+          Run *after* the V9.2 FIX3 source generation recipe, before compile.
+          Designed to preserve wide-screen Android TV behavior and turn narrow More/Settings
+          screens into usable, full-width, independently scrolling mobile pages.
+          """
+          from pathlib import Path
+
+          ROOT = Path('app/src/main/java/tv/own/owntv')
+          more = ROOT / 'features/more/MoreScreen.kt'
+          settings = ROOT / 'features/settings/SettingsStage.kt'
+
+
+          def load(path: Path) -> str:
+              if not path.is_file():
+                  raise RuntimeError(f'RESPONSIVE PRECHECK FAIL: Missing source {path}')
+              return path.read_text(encoding='utf-8')
+
+
+          def one(source: str, before: str, after: str, where: str) -> str:
+              n = source.count(before)
+              if n != 1:
+                  raise RuntimeError(f'RESPONSIVE PRECHECK FAIL: {where}: {n} matches, expected 1: {before[:95]!r}')
+              return source.replace(before, after, 1)
+
+
+          m = load(more)
+          assert 'MoreItem.CENTRAL' in m, 'Expected generated Central item; run V9.2 recipe first'
+          assert 'MoreItem.LOCAL_SYNC -> LocalSyncScreen' in m, 'Central mapping has changed'
+
+          m = one(m, 'import androidx.compose.foundation.background\n',
+                  'import androidx.compose.foundation.background\n'
+                  'import androidx.compose.foundation.rememberScrollState\n'
+                  'import androidx.compose.foundation.verticalScroll\n'
+                  'import androidx.compose.ui.platform.LocalConfiguration\n'
+                  'import androidx.compose.ui.unit.dp\n', 'More imports')
+          m = one(m,
+                  '    var chosen by rememberSaveable { mutableStateOf(MoreItem.SETTINGS) }',
+                  '''    var chosen by rememberSaveable { mutableStateOf(MoreItem.SETTINGS) }
+              // Narrow windows show one navigable panel at a time, including Central.
+              val compactLayout = LocalConfiguration.current.screenWidthDp < 760
+              var compactDetailOpen by rememberSaveable { mutableStateOf(false) }''',
+                  'More compact state')
+          m = one(m,
+                  '    BackHandler(enabled = pageFocused) { backToSheet() }',
+                  '''    BackHandler(enabled = pageFocused && !compactLayout) { backToSheet() }
+              BackHandler(enabled = compactLayout && compactDetailOpen) {
+                  compactDetailOpen = false
+                  backToSheet()
+              }''', 'More back navigation')
+          m = one(m,
+                  '        Column(\n            Modifier\n                .padding(start = 24.mpx, top = 24.mpx, bottom = 24.mpx)\n                .width(440.mpx)\n                .fillMaxHeight()',
+                  '''        if (!compactLayout || !compactDetailOpen) Column(
+                      Modifier
+                          .padding(
+                              start = if (compactLayout) 8.mpx else 24.mpx,
+                              end = if (compactLayout) 8.mpx else 0.dp,
+                              top = if (compactLayout) 84.mpx else 24.mpx,
+                              bottom = if (compactLayout) 20.mpx else 24.mpx,
+                          )
+                          .then(if (compactLayout) Modifier.fillMaxWidth() else Modifier.width(440.mpx))
+                          .fillMaxHeight()''',
+                  'More sidebar layout')
+          m = one(m,
+                  '                .padding(horizontal = 16.mpx, vertical = 26.mpx)\n                // ◀ back',
+                  '''                .padding(
+                              horizontal = if (compactLayout) 8.mpx else 16.mpx,
+                              vertical = if (compactLayout) 12.mpx else 26.mpx,
+                          )
+                          .then(if (compactLayout) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                          // ◀ back''', 'More menu scrolling')
+          m = one(m,
+                  '                    onClick = { choose(it) },',
+                  '''                    onClick = {
+                                  choose(it)
+                                  if (compactLayout && !pinShut(it)) compactDetailOpen = true
+                              },''', 'More item selection')
+          m = one(m,
+                  '            Spacer(Modifier.weight(1f))',
+                  '            if (!compactLayout) Spacer(Modifier.weight(1f))',
+                  'More compact scroll spacer')
+          m = one(m,
+                  '        Box(\n            Modifier\n                .padding(start = 520.mpx, top = 128.mpx, end = 64.mpx)',
+                  '''        if (!compactLayout || compactDetailOpen) Box(
+                      Modifier
+                          .padding(
+                              start = if (compactLayout) 14.mpx else 520.mpx,
+                              top = if (compactLayout) 84.mpx else 128.mpx,
+                              end = if (compactLayout) 14.mpx else 64.mpx,
+                              bottom = if (compactLayout) 12.mpx else 0.dp,
+                          )''', 'More detail layout')
+          # Central/About have their own Back handlers; they must close the compact detail,
+          # not merely move D-pad focus behind an invisible sidebar.
+          m = one(m,
+                  'MovioCentralScreen(onBack = backToSheet, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())',
+                  'MovioCentralScreen(onBack = { if (compactLayout) compactDetailOpen = false else backToSheet() }, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())',
+                  'Central compact back')
+          m = one(m,
+                  'MovioAboutScreen(onBack = aboutBack, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())',
+                  'MovioAboutScreen(onBack = { if (compactLayout) compactDetailOpen = false else aboutBack() }, modifier = Modifier.fillMaxSize().focusRequester(pageTarget).focusGroup())',
+                  'About compact back')
+          m = one(m,
+                  'onUnlock = { pinPagesUnlocked = true; askPinFor = null; chosen = pinItem; pageEntry = null }',
+                  'onUnlock = { pinPagesUnlocked = true; askPinFor = null; chosen = pinItem; pageEntry = null; if (compactLayout) compactDetailOpen = true }',
+                  'More PIN navigation')
+
+          s = load(settings)
+          s = one(s, 'import androidx.compose.foundation.verticalScroll\n',
+                  'import androidx.compose.foundation.verticalScroll\nimport androidx.compose.ui.unit.dp\n',
+                  'Settings imports')
+          s = one(s,
+                  '            val w = maxWidth / 1920f\n            Row(',
+                  '''            val w = maxWidth / 1920f
+                      val compact = maxWidth < 760.dp
+                      if (compact) {
+                          Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                              verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                  Text(group, style = stageText(25, 800), color = StageColors.Text,
+                                      maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                      modifier = Modifier.weight(1f))
+                                  Text(count, style = stageText(14, 600), color = StageColors.Dim)
+                              }
+                              if (tools != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = tools)
+                              if (showSearch) StageSearchField(
+                                  query = searchQuery, onQueryChange = onSearchQuery,
+                                  placeholder = stringResource(R.string.more_settings_search),
+                                  modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
+                                  height = 46.dp, radius = 16.dp, horizontalPadding = 12.dp,
+                                  autoEdit = searchAutoEdit, onActivate = onSearchActivate,
+                              )
+                          }
+                      }
+                      if (!compact) Row(''', 'Settings compact header')
+          s = one(s,
+                  '            val rowsTop = if (toolbar != null) 300.mpx else 210.mpx',
+                  '            val rowsTop = if (compact) (if (toolbar != null) 172.dp else 124.dp) else if (toolbar != null) 300.mpx else 210.mpx',
+                  'Settings rows top')
+          s = one(s,
+                  'Modifier.padding(start = w * 50, top = 210.mpx).width(w * 1060).height(84.mpx)',
+                  'Modifier.padding(start = if (compact) 14.dp else w * 50, top = if (compact) 124.dp else 210.mpx).width(if (compact) maxWidth - 28.dp else w * 1060).height(if (compact) 44.dp else 84.mpx)',
+                  'Settings tools sizing')
+          s = one(s,
+                  'if (list != null) list(Modifier.padding(start = w * 50, top = rowsTop).width(w * 1060).fillMaxHeight())',
+                  'if (list != null) list(Modifier.padding(start = if (compact) 14.dp else w * 50, top = rowsTop).width(if (compact) maxWidth - 28.dp else w * 1060).fillMaxHeight())',
+                  'Settings list sizing')
+          s = one(s,
+                  '.padding(start = w * 50, top = rowsTop)\n                        .width(w * 1060)',
+                  '.padding(start = if (compact) 14.dp else w * 50, top = rowsTop)\n                        .width(if (compact) maxWidth - 28.dp else w * 1060)',
+                  'Settings row column sizing')
+          s = one(s,
+                  '.padding(start = w * 1160, top = 240.mpx)\n                        .width(w * 696)\n                        .heightIn(max = maxHeight - 280.mpx)',
+                  '''.padding(start = if (compact) 14.dp else w * 1160,
+                                      top = if (compact) 124.dp else 240.mpx)
+                                  .width(if (compact) maxWidth - 28.dp else w * 696)
+                                  .heightIn(max = if (compact) (maxHeight - 140.dp).coerceAtLeast(120.dp) else maxHeight - 280.mpx)''',
+                  'Settings help overlay')
+
+          # The row component is isolated before editing; similar Row/padding fragments are
+          # repeated in unrelated settings components and must NEVER be globally replaced.
+          start = s.index('fun StageSettingRow(')
+          end = s.index('private val FocusedDesc', start)
+          head, body, tail = s[:start], s[start:end], s[end:]
+          body = one(body,
+                  '    val panel = LocalSettingsPanel.current\n    var longAt',
+                  '    val panel = LocalSettingsPanel.current\n    val compactRow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 760\n    var longAt',
+                  'StageSettingRow compact state')
+          body = one(body,
+                  '.height(84.mpx)\n            .then(\n                if (onStep != null)',
+                  '.height(if (compactRow) 124.mpx else 84.mpx)\n            .then(\n                if (onStep != null)',
+                  'StageSettingRow height')
+          body = one(body,
+                  '            Modifier.fillMaxWidth().padding(horizontal = 22.mpx),\n            horizontalArrangement = Arrangement.spacedBy(18.mpx),',
+                  '            Modifier.fillMaxWidth().padding(horizontal = if (compactRow) 10.mpx else 22.mpx),\n            horizontalArrangement = Arrangement.spacedBy(if (compactRow) 10.mpx else 18.mpx),',
+                  'StageSettingRow spacing')
+          body = one(body,
+                  'Text(title, style = stageText(21, 700), color = if (enabled) StageColors.Text else StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis',
+                  'Text(title, style = stageText(21, 700), color = if (enabled) StageColors.Text else StageColors.Dim, maxLines = if (compactRow) 2 else 1, overflow = TextOverflow.Ellipsis',
+                  'StageSettingRow title')
+          body = one(body,
+                  'desc, style = stageText(15.5f, 500),\n                        color = if (focused) FocusedDesc else StageColors.Muted,\n                        maxLines = 1',
+                  'desc, style = stageText(15.5f, 500),\n                        color = if (focused) FocusedDesc else StageColors.Muted,\n                        maxLines = if (compactRow) 2 else 1',
+                  'StageSettingRow description')
+          body = one(body,
+                  '                }\n            }\n            if (value != null) SettingValueView(value)\n        }\n    }\n}\n\n',
+                  '                }\n                if (compactRow && value != null) SettingValueView(value)\n            }\n            if (!compactRow && value != null) SettingValueView(value)\n        }\n    }\n}\n\n',
+                  'StageSettingRow value')
+          s = head + body + tail
+
+          # The More > Settings landing page also hard-codes three cards per row. On a
+          # portrait phone this truncates every title even after the detail pane is fixed.
+          more_pages = ROOT / 'features/more/MorePages.kt'
+          pages = load(more_pages)
+          pages = one(pages,
+              'import androidx.compose.foundation.background\n',
+              'import androidx.compose.foundation.background\nimport androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.verticalScroll\n',
+              'MorePages imports')
+          start = pages.index('internal fun SettingsPage(')
+          end = pages.index('private enum class FavFilter', start)
+          intro, cards, outro = pages[:start], pages[start:end], pages[end:]
+          cards = one(cards,
+              '    val back = lastOpenedCard',
+              '    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 760\n    val back = lastOpenedCard',
+              'Settings card compact state')
+          cards = one(cards,
+              '    Column(Modifier.fillMaxSize().focusGroup()) {',
+              '    Column(Modifier.fillMaxSize().then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier).focusGroup()) {',
+              'Settings card scroll')
+          cards = one(cards,
+              'SettingsCards.chunked(3).forEach { row ->',
+              'SettingsCards.chunked(if (compact) 1 else 3).forEach { row ->',
+              'Settings card columns')
+          cards = one(cards,
+              'Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(20.mpx)) {',
+              'Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(20.mpx)) {',
+              'Settings card row sizing')
+          cards = one(cards,
+              'Text(stringResource(card.nameRes), style = stageText(24, 800), color = StageColors.Text, maxLines = 1,',
+              'Text(stringResource(card.nameRes), style = stageText(24, 800), color = StageColors.Text, maxLines = if (compact) 2 else 1,',
+              'Settings card titles')
+          cards = one(cards,
+              'Text(stringResource(card.summaryRes), style = stageText(16, 500), color = StageColors.Muted, maxLines = 1,',
+              'Text(stringResource(card.summaryRes), style = stageText(16, 500), color = StageColors.Muted, maxLines = if (compact) 2 else 1,',
+              'Settings card descriptions')
+          pages = intro + cards + outro
+
+          # Never partially write: all preflight anchors and key V9 identifiers are checked first.
+          for path, source in ((more, m), (settings, s), (more_pages, pages)):
+              if source.count('{') != source.count('}'):
+                  raise RuntimeError(f'RESPONSIVE PRECHECK FAIL: unmatched braces: {path}')
+          if 'MoreItem.CENTRAL' not in m or 'compactDetailOpen' not in m or 'compactRow' not in s:
+              raise RuntimeError('RESPONSE PRECHECK FAIL: key screens not transformed')
+          more.write_text(m, encoding='utf-8')
+          settings.write_text(s, encoding='utf-8')
+          more_pages.write_text(pages, encoding='utf-8')
+          print('RESPONSIVE STATIC PRECHECK PASS: More/Central menus, shared Settings widths and one-column mobile cards adapted')
+          print('NEXT: actual Kotlin compilation, Android lint, unit tests and device testing are mandatory')
+          PY_RESPONSIVE
+          python3 -m py_compile /tmp/moviotv_v93_responsive_patch.py
+          python3 /tmp/moviotv_v93_responsive_patch.py
+
+      - name: 03 - Ratchet resource and generated Kotlin checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_RATCHET'
+          import subprocess
+          from pathlib import Path
+          import yaml
+          source = yaml.safe_load(Path('.github/workflows/moviotv-v92-full-qa-FIX3.yml').read_text(encoding='utf-8'))
+          name = '04 - Mandatory i18n ratchet with V9.2 empty-literal review before Kotlin'
+          steps = [s for s in source['jobs']['v92-qa']['steps'] if s.get('name') == name]
+          assert len(steps) == 1
+          subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', steps[0]['run']], check=True)
+          print('PASS: Original V9.2 i18n checks after responsive patch')
+          PY_RATCHET
+
+      - name: Setup JDK 25 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: 04 - Mandatory Kotlin compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" :app:compileStandardDebugKotlin --no-daemon --stacktrace
+      - name: 05 - Lint, unit tests and debug APK assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew -Powntv.corePath="$GITHUB_WORKSPACE/moviotv-core" lintStandardDebug testStandardDebugUnitTest assembleStandardDebug --no-daemon --stacktrace
+      - name: 06 - Verify actual APK, version, signature and fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          test -s "$apk"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt="$(find "$sdk/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt" && test -x "$signer"
+          "$signer" verify "$apk"
+          "$aapt" dump badging "$apk" > /tmp/moviotv-v93-badging.txt
+          grep -F "name='com.oakstudios.moviotv'" /tmp/moviotv-v93-badging.txt
+          grep -F "versionCode='100213'" /tmp/moviotv-v93-badging.txt
+          grep -F "versionName='9.3.0-qa1'" /tmp/moviotv-v93-badging.txt
+          mkdir -p dist
+          cp "$apk" dist/MovioTV-v9.3.0-RESPONSIVE-QA-debug.apk
+          sha256sum dist/*.apk > dist/SHA256SUMS.txt
+      - name: Upload QA APK (not a production-signed release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V9.3-RESPONSIVE-QA
+          path: |
+            dist/MovioTV-v9.3.0-RESPONSIVE-QA-debug.apk
+            dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Collect failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovioTV-V9.3-RESPONSIVE-FAILURE-LOGS
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.txt
+            build/reports/problems/**
+          if-no-files-found: warn
