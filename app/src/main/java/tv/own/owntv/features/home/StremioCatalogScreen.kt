@@ -636,11 +636,14 @@ fun StremioCatalogScreen(
                     "channel" to R.string.moviotv_xp_filter_channels,
                     "anime" to R.string.moviotv_xp_filter_anime,
                 )
-                val typeOptions = listOf("all" to context.getString(R.string.moviotv_xp_filter_all)) +
-                    availableCatalogRows.map { it.catalog.type }.distinct().map { type ->
-                        type to typeLabelResources[type.lowercase()]?.let(context::getString)
-                            ?: type.replaceFirstChar(Char::uppercase)
-                    }
+                val typeOptions: List<Pair<String, String>> =
+                    listOf("all" to context.getString(R.string.moviotv_xp_filter_all)) +
+                        availableCatalogRows.map { it.catalog.type }.distinct().map { type ->
+                            type to (
+                                typeLabelResources[type.lowercase()]?.let(context::getString)
+                                    ?: type.replaceFirstChar(Char::uppercase)
+                            )
+                        }
                 val catalogOptions = listOf("all" to context.getString(R.string.moviotv_xp_filter_all)) +
                     availableCatalogRows.distinctBy(::catalogKey).map { row ->
                         catalogKey(row) to context.getString(R.string.moviotv_xp_filter_catalog_label, row.catalog.name, row.addon.name)
