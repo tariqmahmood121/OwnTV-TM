@@ -31,8 +31,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -581,30 +579,34 @@ fun StremioCatalogScreen(
             if (page == "addons") {
                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
                     Text(stringResource(R.string.moviotv_xp_addon_category), color = XpMuted, fontSize = 13.sp)
-                    Box {
+                    Column {
                         val categoryLabel = when (addonCategory) {
                             "official" -> stringResource(R.string.moviotv_xp_addon_official)
                             "installed" -> stringResource(R.string.moviotv_xp_addon_installed)
                             else -> stringResource(R.string.moviotv_xp_addon_community)
                         }
                         XpAction("$categoryLabel  ▾", false) { categoryMenuExpanded = true }
-                        DropdownMenu(
-                            expanded = categoryMenuExpanded,
-                            onDismissRequest = { categoryMenuExpanded = false },
-                        ) {
+                        if (categoryMenuExpanded) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(14.dp))
+                                    .background(XpPanel),
+                            ) {
                             listOf(
                                 "official" to R.string.moviotv_xp_addon_official,
                                 "community" to R.string.moviotv_xp_addon_community,
                                 "installed" to R.string.moviotv_xp_addon_installed,
                             ).forEach { (key, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(label)) },
-                                    onClick = {
+                                Text(
+                                    text = stringResource(label),
+                                    color = if (addonCategory == key) XpAccent else XpText,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.fillMaxWidth().clickable {
                                         addonCategory = key
                                         categoryMenuExpanded = false
                                         notice = null
-                                    },
+                                    }.padding(horizontal = 14.dp, vertical = 12.dp),
                                 )
+                            }
                             }
                         }
                     }
