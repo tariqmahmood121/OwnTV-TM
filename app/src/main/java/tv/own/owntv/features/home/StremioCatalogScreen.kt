@@ -76,7 +76,13 @@ private val XpAccent = Color(0xFFB994E8)
 private val XpText = Color(0xFFF8F4FC)
 private val XpMuted = Color(0xFFB8ACBF)
 
-private data class XpAddon(val url: String, val id: String, val name: String, val catalogs: List<XpCatalog>)
+private data class XpAddon(
+    val url: String,
+    val id: String,
+    val name: String,
+    val catalogs: List<XpCatalog>,
+    val builtIn: Boolean = false,
+)
 private data class XpCatalog(val type: String, val id: String, val name: String, val defaults: List<Pair<String, String>>)
 private data class XpMeta(
     val id: String, val type: String, val name: String, val poster: String?,
@@ -256,9 +262,15 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 
     LaunchedEffect(Unit) {
         busy = true
+        runCatching {
+            XpAddonProtocol.loadManifest(context.getString(R.string.moviotv_xp_default_catalogue_manifest))
+                .copy(builtIn = true)
+        }
+            .onSuccess { builtIn -> addons.add(builtIn) }
+            .onFailure { notice = context.getString(R.string.moviotv_xp_default_catalogue_load_failed) }
         XpAddonStore.read(context).forEach { saved ->
             runCatching { XpAddonProtocol.loadManifest(saved) }
-                .onSuccess { addons.add(it) }
+                .onSuccess { addon -> if (addons.none { it.url == addon.url }) addons.add(addon) }
                 .onFailure { notice = context.getString(R.string.moviotv_xp_addon_refresh_failed) }
         }
         fetchRows()
@@ -315,7 +327,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                         if (addons.any { it.url == addon.url }) notice = context.getString(R.string.moviotv_xp_addon_already_installed)
                                         else {
                                             addons.add(addon)
-                                            XpAddonStore.write(context, addons.map { it.url })
+                                            XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
                                             address = ""
                                             adding = false
                                             notice = null
@@ -345,7 +357,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                         ) {
                             Text(addon.name, color = XpText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             var removeFocused by remember { mutableStateOf(false) }
-                            Text(
+                            if (!addon.builtIn) Text(
                                 "  ${stringResource(R.string.moviotv_xp_remove_symbol)}",
                                 color = if (removeFocused) XpText else XpAccent,
                                 fontWeight = FontWeight.Bold,
@@ -353,7 +365,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                     .onFocusChanged { removeFocused = it.isFocused }
                                     .clickable {
                                         addons.remove(addon)
-                                        XpAddonStore.write(context, addons.map { it.url })
+                                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
                                         fetchRows()
                                     }
                                     .focusable(),
