@@ -1,0 +1,46 @@
+name: MovioXP Catalogue APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [MovioXP]
+    paths:
+      - app/src/main/java/tv/own/owntv/features/home/**
+      - .github/workflows/movioxp-catalogue-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out MovioXP
+        uses: actions/checkout@v7
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build standard Android TV debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleStandardDebug --stacktrace
+
+      - name: Upload MovioXP APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MovioXP-catalogue-debug-apk
+          path: app/build/outputs/apk/standard/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
