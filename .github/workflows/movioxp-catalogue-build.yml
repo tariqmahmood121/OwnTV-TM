@@ -6,6 +6,8 @@ on:
     branches: [MovioXP]
     paths:
       - app/src/main/java/tv/own/owntv/features/home/**
+      - app/src/main/res/values/strings_moviotv.xml
+      - tools/i18n/safe_literals.txt
       - .github/workflows/movioxp-catalogue-build.yml
 
 permissions:
