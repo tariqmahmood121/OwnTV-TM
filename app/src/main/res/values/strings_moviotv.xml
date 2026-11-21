@@ -140,7 +140,12 @@
     <string name="moviotv_xp_loading_catalogue">Loading catalogue…</string>
     <string name="moviotv_xp_no_titles">No titles returned yet</string>
     <string name="moviotv_xp_back_to_catalogues">Back to catalogues</string>
-    <string name="moviotv_xp_streams_next_phase">Stream choices are planned for the next phase.</string>
+    <string name="moviotv_xp_stream_sources">Sources</string>
+    <string name="moviotv_xp_loading_streams">Checking installed add-ons…</string>
+    <string name="moviotv_xp_no_streams">No playable sources returned by installed add-ons.</string>
+    <string name="moviotv_xp_stream_result">%1$s · %2$s</string>
+    <string name="moviotv_xp_stream_result_detail">%1$s — %2$s</string>
+    <string name="moviotv_xp_stream_torrent_unsupported">%1$s — this torrent source needs a resolver.</string>
     <string name="moviotv_xp_default_addon_name">Stremio add-on</string>
     <string name="moviotv_xp_meta_separator"> · </string>
     <string name="moviotv_xp_remove_symbol">×</string>
