@@ -236,7 +236,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var notice by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<XpMeta?>(null) }
 
-    fun rowKey(row: XpCatalogRow) = "${row.addon.id}|${row.catalog.type}|${row.catalog.id}"
+    fun rowKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun fetchRows() {
         rows.clear()
         rows.addAll(addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } })
@@ -310,7 +310,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             scope.launch {
                                 runCatching { XpAddonProtocol.loadManifest(candidate) }
                                     .onSuccess { addon ->
-                                        if (addons.any { it.id == addon.id }) notice = "That add-on is already installed."
+                                        if (addons.any { it.url == addon.url }) notice = "That add-on is already installed."
                                         else {
                                             addons.add(addon)
                                             XpAddonStore.write(context, addons.map { it.url })
@@ -334,22 +334,28 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 Text("Installed add-ons · select × to remove", color = XpMuted, fontSize = 13.sp,
                     modifier = Modifier.padding(start = 34.dp, top = 4.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 34.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(addons, key = { it.id }) { addon ->
-                        var focused by remember { mutableStateOf(false) }
+                    items(addons, key = { it.url }) { addon ->
                         Row(
                             Modifier.clip(RoundedCornerShape(18.dp))
-                                .background(if (focused) XpAccent.copy(alpha = .22f) else XpPanel)
-                                .clickable {
-                                    addons.remove(addon)
-                                    XpAddonStore.write(context, addons.map { it.url })
-                                    fetchRows()
-                                }
-                                .onFocusChanged { focused = it.isFocused }.focusable()
+                                .background(XpPanel)
                                 .padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(addon.name, color = XpText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("  ×", color = XpAccent, fontWeight = FontWeight.Bold)
+                            var removeFocused by remember { mutableStateOf(false) }
+                            Text(
+                                "  ×",
+                                color = if (removeFocused) XpText else XpAccent,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .onFocusChanged { removeFocused = it.isFocused }
+                                    .clickable {
+                                        addons.remove(addon)
+                                        XpAddonStore.write(context, addons.map { it.url })
+                                        fetchRows()
+                                    }
+                                    .focusable(),
+                            )
                         }
                     }
                 }
