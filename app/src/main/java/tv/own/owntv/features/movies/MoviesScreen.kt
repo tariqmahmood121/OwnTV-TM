@@ -265,7 +265,7 @@ fun MoviesScreen(
     val vodLayout by settingsVm.vodLayout.collectAsStateWithLifecycle()
     // Cinematic is the browse section's; More → Favourites / History pin the plain Separate list.
     val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
-    val cinematic = false // MovioTV keeps the category and title panes in TV mode
+    val cinematic = vodLayout.name == "CINEMATIC"
     val cinematicDetailsPct by settingsVm.cinematicDetailsHeight(PanelSection.MOVIES).collectAsStateWithLifecycle()
     // Cinematic is grid-only: the List rows have nowhere to put a full-bleed backdrop. The stored
     // choice is deliberately not rewritten, so switching back to Separate restores the user's List.
