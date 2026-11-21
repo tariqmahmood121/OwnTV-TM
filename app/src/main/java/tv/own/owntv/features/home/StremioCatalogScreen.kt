@@ -123,11 +123,12 @@ private object XpAddonProtocol {
     }
 
     suspend fun loadCatalog(row: XpCatalogRow): List<XpMeta> = withContext(Dispatchers.IO) {
-        val path = "catalog/${Uri.encode(row.catalog.type)}/${Uri.encode(row.catalog.id)}.json"
-        val query = row.catalog.defaults.joinToString("&") { (key, value) ->
+        val route = "catalog/${Uri.encode(row.catalog.type)}/${Uri.encode(row.catalog.id)}"
+        val extra = row.catalog.defaults.joinToString("&") { (key, value) ->
             "${Uri.encode(key)}=${Uri.encode(value)}"
         }
-        val source = get(resourceUrl(row.addon.url, path, query)).optJSONArray("metas") ?: JSONArray()
+        val path = if (extra.isBlank()) "$route.json" else "$route/$extra.json"
+        val source = get(resourceUrl(row.addon.url, path)).optJSONArray("metas") ?: JSONArray()
         buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
@@ -162,12 +163,11 @@ private object XpAddonProtocol {
         return "${uri.scheme}://${uri.rawAuthority}$endpoint" + (uri.rawQuery?.let { "?$it" } ?: "")
     }
 
-    private fun resourceUrl(manifest: String, resource: String, extra: String): String {
+    private fun resourceUrl(manifest: String, resource: String): String {
         val uri = URI(manifest)
         val base = uri.rawPath.orEmpty().removeSuffix("manifest.json").trimEnd('/')
-        val query = listOfNotNull(uri.rawQuery?.takeIf { it.isNotBlank() }, extra.takeIf { it.isNotBlank() })
-            .joinToString("&").takeIf { it.isNotBlank() }
-        return "${uri.scheme}://${uri.rawAuthority}$base/$resource" + (query?.let { "?$it" } ?: "")
+        return "${uri.scheme}://${uri.rawAuthority}$base/$resource" +
+            (uri.rawQuery?.takeIf { it.isNotBlank() }?.let { "?$it" } ?: "")
     }
 
     private fun get(url: String): JSONObject {
