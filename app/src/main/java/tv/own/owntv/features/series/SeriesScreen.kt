@@ -313,7 +313,7 @@ private fun SeriesGrid(
     val vodLayout by settingsVm.vodLayout.collectAsStateWithLifecycle()
     // Cinematic is the browse section's; More → Favourites / History pin the plain Separate list.
     val touchUi = tv.own.owntv.features.home.LocalMovioTouchMode.current
-    val cinematic = false // MovioTV two-pane TV browsing
+    val cinematic = vodLayout.name == "CINEMATIC"
     val cinematicDetailsPct by settingsVm.cinematicDetailsHeight(PanelSection.SERIES).collectAsStateWithLifecycle()
     // Cinematic is grid-only. The stored choice is deliberately not rewritten, so switching back to
     // Separate restores the user's List.
