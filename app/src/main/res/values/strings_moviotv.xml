@@ -176,4 +176,20 @@
     <string name="moviotv_xp_addon_storage_note">Add-ons configured in MovioXP are stored on this device. Central account sync can be added once the Central API has an add-on settings endpoint.</string>
     <string name="moviotv_xp_library_empty">Titles you start from an add-on will appear here.</string>
     <string name="moviotv_xp_no_search_matches">No matching titles in the installed catalogues.</string>
+    <string name="moviotv_xp_search_minimum">Enter at least 2 characters to search all installed add-ons.</string>
+    <string name="moviotv_xp_searching_addons">Searching all searchable installed add-ons…</string>
+    <string name="moviotv_xp_search_unsupported">None of the installed add-ons advertises search support.</string>
+    <string name="moviotv_xp_search_partial">Some add-on catalogues could not be searched (%1$d failed).</string>
+    <string name="moviotv_xp_filter_type">Type</string>
+    <string name="moviotv_xp_filter_catalog">Catalogue</string>
+    <string name="moviotv_xp_filter_genre">Genre</string>
+    <string name="moviotv_xp_filter_all">All</string>
+    <string name="moviotv_xp_filter_any_genre">Any genre</string>
+    <string name="moviotv_xp_filter_movies">Movies</string>
+    <string name="moviotv_xp_filter_series">Series</string>
+    <string name="moviotv_xp_filter_channels">Channels</string>
+    <string name="moviotv_xp_filter_anime">Anime</string>
+    <string name="moviotv_xp_filter_catalog_label">%1$s · %2$s</string>
+    <string name="moviotv_xp_filter_expanded">▴</string>
+    <string name="moviotv_xp_filter_collapsed">▾</string>
 </resources>
