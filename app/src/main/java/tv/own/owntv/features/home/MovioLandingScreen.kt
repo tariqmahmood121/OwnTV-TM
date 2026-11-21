@@ -71,7 +71,7 @@ fun MovioLandingScreen(
     providerName: String,
     onProfileClick: () -> Unit,
     onProviderClick: () -> Unit,
-    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String) -> Unit,
+    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {

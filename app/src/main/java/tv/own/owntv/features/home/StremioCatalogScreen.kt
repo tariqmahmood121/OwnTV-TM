@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,9 +83,22 @@ private data class XpAddon(
     val url: String,
     val id: String,
     val name: String,
+    val version: String,
+    val description: String,
+    val types: List<String>,
+    val logo: String?,
     val resources: List<XpResource>,
     val catalogs: List<XpCatalog>,
     val builtIn: Boolean = false,
+)
+private data class XpAddonListing(
+    val url: String,
+    val id: String,
+    val name: String,
+    val version: String,
+    val description: String,
+    val types: List<String>,
+    val logo: String?,
 )
 private data class XpResource(val name: String, val types: List<String>, val idPrefixes: List<String>) {
     fun supports(type: String, id: String): Boolean =
@@ -91,9 +106,10 @@ private data class XpResource(val name: String, val types: List<String>, val idP
             (idPrefixes.isEmpty() || idPrefixes.any(id::startsWith))
 }
 private data class XpCatalog(val type: String, val id: String, val name: String, val defaults: List<Pair<String, String>>)
-private data class XpMeta(
+internal data class XpMeta(
     val id: String, val type: String, val name: String, val poster: String?,
     val description: String?, val releaseInfo: String?, val rating: String?,
+    val positionMs: Long = 0L, val durationMs: Long = 0L,
 )
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
@@ -151,9 +167,40 @@ private object XpAddonProtocol {
             url,
             json.optString("id").ifBlank { url },
             json.optString("name").ifBlank { URI(url).host ?: url },
+            json.optString("version").ifBlank { "—" },
+            json.optString("description"),
+            json.stringList("types"),
+            json.optString("logo").takeIf { it.isNotBlank() },
             resources,
             catalogs,
         )
+    }
+
+    suspend fun loadDirectory(category: String): List<XpAddonListing> = withContext(Dispatchers.IO) {
+        require(category == "official" || category == "community")
+        val source = get("https://v3-cinemeta.strem.io/addon_catalog/all/$category.json")
+            .optJSONArray("addons") ?: JSONArray()
+        buildList {
+            for (index in 0 until source.length()) {
+                val entry = source.optJSONObject(index) ?: continue
+                val transportUrl = entry.optString("transportUrl").trim()
+                val manifest = entry.optJSONObject("manifest") ?: continue
+                val url = runCatching { manifestUrl(transportUrl) }.getOrNull() ?: continue
+                val resources = manifest.optJSONArray("resources")
+                if (resources == null || resources.length() == 0) continue
+                add(
+                    XpAddonListing(
+                        url = url,
+                        id = manifest.optString("id").ifBlank { url },
+                        name = manifest.optString("name").ifBlank { url },
+                        version = manifest.optString("version").ifBlank { "—" },
+                        description = manifest.optString("description"),
+                        types = manifest.stringList("types"),
+                        logo = manifest.optString("logo").takeIf { it.isNotBlank() },
+                    )
+                )
+            }
+        }
     }
 
     suspend fun loadCatalog(row: XpCatalogRow): List<XpMeta> = withContext(Dispatchers.IO) {
@@ -282,7 +329,7 @@ private object XpAddonStore {
 }
 
 /** Lightweight recent-title shelf for Stremio catalogue items opened from MovioXP. */
-private object XpContinueStore {
+internal object XpContinueStore {
     private const val PREFS = "movioxp_catalogues"
     private const val VALUE = "continue_titles"
 
@@ -296,18 +343,41 @@ private object XpContinueStore {
                 if (id.isNotBlank() && name.isNotBlank()) add(
                     XpMeta(id, item.optString("type", "movie"), name,
                         item.optString("poster").takeIf(String::isNotBlank), null,
-                        item.optString("year").takeIf(String::isNotBlank), null)
+                        item.optString("year").takeIf(String::isNotBlank), null,
+                        item.optLong("positionMs", 0L), item.optLong("durationMs", 0L))
                 )
             }
         }
     }.getOrDefault(emptyList())
 
     fun add(context: Context, item: XpMeta) {
+        save(context, item.copy(positionMs = 0L, durationMs = 0L))
+    }
+
+    fun updateProgress(
+        context: Context, id: String, type: String, name: String, poster: String?, year: String?,
+        positionMs: Long, durationMs: Long,
+    ) {
+        if (durationMs <= 0L) return
+        if (positionMs >= durationMs * .95f) {
+            val remaining = read(context).filterNot { it.id == id && it.type == type }
+            write(context, remaining)
+        } else if (positionMs > 0L) {
+            save(context, XpMeta(id, type, name, poster, null, year, null, positionMs, durationMs))
+        }
+    }
+
+    private fun save(context: Context, item: XpMeta) {
         val updated = (listOf(item) + read(context).filterNot { it.id == item.id && it.type == item.type }).take(20)
+        write(context, updated)
+    }
+
+    private fun write(context: Context, updated: List<XpMeta>) {
         val json = JSONArray().apply {
             updated.forEach { meta ->
                 put(JSONObject().put("id", meta.id).put("type", meta.type).put("name", meta.name)
-                    .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: ""))
+                    .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: "")
+                    .put("positionMs", meta.positionMs).put("durationMs", meta.durationMs))
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(VALUE, json.toString()).apply()
@@ -317,12 +387,13 @@ private object XpContinueStore {
 @Composable
 fun StremioCatalogScreen(
     onBack: () -> Unit,
-    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String) -> Unit,
+    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val addons = remember { mutableStateListOf<XpAddon>() }
+    val directoryAddons = remember { mutableStateListOf<XpAddonListing>() }
     val rows = remember { mutableStateListOf<XpCatalogRow>() }
     val metas = remember { mutableStateMapOf<String, List<XpMeta>>() }
     val loadingRows = remember { mutableStateMapOf<String, Boolean>() }
@@ -333,6 +404,10 @@ fun StremioCatalogScreen(
     var selected by remember { mutableStateOf<XpMeta?>(null) }
     var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
     var streamsLoading by remember { mutableStateOf(false) }
+    var directoryLoading by remember { mutableStateOf(false) }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var addonCategory by remember { mutableStateOf("community") }
+    var addonFilter by remember { mutableStateOf("") }
     var page by remember { mutableStateOf("home") }
     var searchText by remember { mutableStateOf("") }
     var continueTitles by remember { mutableStateOf(XpContinueStore.read(context)) }
@@ -351,6 +426,35 @@ fun StremioCatalogScreen(
                 loadingRows[key] = false
             }
         }
+    }
+
+    fun installAddon(url: String) {
+        if (addons.any { it.url == url }) {
+            notice = context.getString(R.string.moviotv_xp_addon_already_installed)
+            return
+        }
+        busy = true
+        notice = null
+        scope.launch {
+            runCatching { XpAddonProtocol.loadManifest(url) }
+                .onSuccess { addon ->
+                    if (addons.none { it.url == addon.url }) {
+                        addons.add(addon)
+                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
+                        fetchRows()
+                    }
+                    notice = null
+                }
+                .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
+            busy = false
+        }
+    }
+
+    fun removeAddon(addon: XpAddon) {
+        if (addon.builtIn) return
+        addons.remove(addon)
+        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
+        fetchRows()
     }
 
     LaunchedEffect(Unit) {
@@ -391,6 +495,16 @@ fun StremioCatalogScreen(
         }
     }
     BackHandler(enabled = selected == null && !adding && page == "home", onBack = onBack)
+
+    LaunchedEffect(page, addonCategory) {
+        if (page != "addons" || addonCategory == "installed") return@LaunchedEffect
+        directoryLoading = true
+        directoryAddons.clear()
+        runCatching { XpAddonProtocol.loadDirectory(addonCategory) }
+            .onSuccess { directoryAddons.addAll(it) }
+            .onFailure { notice = context.getString(R.string.moviotv_xp_addon_directory_failed) }
+        directoryLoading = false
+    }
 
     Box(modifier.fillMaxSize().background(XpBackground)) {
         Column(Modifier.fillMaxSize()) {
@@ -448,23 +562,9 @@ fun StremioCatalogScreen(
                         val candidate = address.trim()
                         if (candidate.isBlank()) notice = context.getString(R.string.moviotv_xp_enter_addon_url)
                         else {
-                            busy = true
-                            scope.launch {
-                                runCatching { XpAddonProtocol.loadManifest(candidate) }
-                                    .onSuccess { addon ->
-                                        if (addons.any { it.url == addon.url }) notice = context.getString(R.string.moviotv_xp_addon_already_installed)
-                                        else {
-                                            addons.add(addon)
-                                            XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
-                                            address = ""
-                                            adding = false
-                                            notice = null
-                                            fetchRows()
-                                        }
-                                    }
-                                    .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
-                                busy = false
-                            }
+                            installAddon(candidate)
+                            address = ""
+                            adding = false
                         }
                     }
                 }
@@ -478,43 +578,106 @@ fun StremioCatalogScreen(
                     items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title -> XpPoster(title) { selected = title } }
                 }
             }
-            if (page == "addons" && addons.isNotEmpty()) {
-                Text(stringResource(R.string.moviotv_xp_installed_addons), color = XpMuted, fontSize = 13.sp,
-                    modifier = Modifier.padding(start = 34.dp, top = 4.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 34.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(addons, key = { it.url }) { addon ->
-                        Row(
-                            Modifier.clip(RoundedCornerShape(18.dp))
-                                .background(XpPanel)
-                                .padding(horizontal = 14.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+            if (page == "addons") {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                    Text(stringResource(R.string.moviotv_xp_addon_category), color = XpMuted, fontSize = 13.sp)
+                    Box {
+                        val categoryLabel = when (addonCategory) {
+                            "official" -> stringResource(R.string.moviotv_xp_addon_official)
+                            "installed" -> stringResource(R.string.moviotv_xp_addon_installed)
+                            else -> stringResource(R.string.moviotv_xp_addon_community)
+                        }
+                        XpAction("$categoryLabel  ▾", false) { categoryMenuExpanded = true }
+                        DropdownMenu(
+                            expanded = categoryMenuExpanded,
+                            onDismissRequest = { categoryMenuExpanded = false },
                         ) {
-                            Text(addon.name, color = XpText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            var removeFocused by remember { mutableStateOf(false) }
-                            if (!addon.builtIn) Text(
-                                "  ${stringResource(R.string.moviotv_xp_remove_symbol)}",
-                                color = if (removeFocused) XpText else XpAccent,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .onFocusChanged { removeFocused = it.isFocused }
-                                    .clickable {
-                                        addons.remove(addon)
-                                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url })
-                                        fetchRows()
-                                    }
-                                    .focusable(),
-                            )
+                            listOf(
+                                "official" to R.string.moviotv_xp_addon_official,
+                                "community" to R.string.moviotv_xp_addon_community,
+                                "installed" to R.string.moviotv_xp_addon_installed,
+                            ).forEach { (key, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(label)) },
+                                    onClick = {
+                                        addonCategory = key
+                                        categoryMenuExpanded = false
+                                        notice = null
+                                    },
+                                )
+                            }
                         }
                     }
-                }
-            }
-            if (page == "addons") {
-                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 34.dp, vertical = 14.dp)) {
-                    Text(stringResource(R.string.moviotv_xp_addon_manifest_title), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.moviotv_xp_addon_paste_help), color = XpMuted, fontSize = 15.sp)
-                    Spacer(Modifier.height(14.dp))
-                    Text(stringResource(R.string.moviotv_xp_addon_storage_note), color = XpMuted, fontSize = 13.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(XpPanel)
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (addonFilter.isBlank()) Text(stringResource(R.string.moviotv_xp_addon_search_hint), color = XpMuted)
+                        BasicTextField(
+                            value = addonFilter,
+                            onValueChange = { addonFilter = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = XpText, fontSize = 16.sp),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    val installed = addonCategory == "installed"
+                    val addonEntries = if (installed) {
+                        addons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
+                    } else {
+                        directoryAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
+                    }
+                    if (!installed && directoryLoading) {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.moviotv_xp_addon_directory_loading), color = XpMuted, fontSize = 16.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(bottom = 12.dp),
+                        ) {
+                            if (addonEntries.isEmpty()) {
+                                item {
+                                    Text(
+                                        stringResource(if (installed) R.string.moviotv_xp_addon_none_installed else R.string.moviotv_xp_addon_directory_empty),
+                                        color = XpMuted,
+                                        fontSize = 15.sp,
+                                        modifier = Modifier.padding(vertical = 12.dp),
+                                    )
+                                }
+                            } else if (installed) {
+                                items(addons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "installed:${it.url}" }) { addon ->
+                                    XpAddonInfoCard(
+                                        name = addon.name,
+                                        version = addon.version,
+                                        description = addon.description,
+                                        types = addon.types,
+                                        logo = addon.logo,
+                                        action = stringResource(if (addon.builtIn) R.string.moviotv_xp_addon_builtin else R.string.moviotv_xp_remove),
+                                        disabled = addon.builtIn || busy,
+                                    ) { removeAddon(addon) }
+                                }
+                            } else {
+                                items(directoryAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "directory:${it.url}" }) { addon ->
+                                    val alreadyInstalled = addons.any { it.url == addon.url }
+                                    XpAddonInfoCard(
+                                        name = addon.name,
+                                        version = addon.version,
+                                        description = addon.description,
+                                        types = addon.types,
+                                        logo = addon.logo,
+                                        action = stringResource(if (alreadyInstalled) R.string.moviotv_xp_addon_installed_badge else R.string.moviotv_xp_install),
+                                        disabled = alreadyInstalled || busy,
+                                    ) { installAddon(addon.url) }
+                                }
+                            }
+                        }
+                    }
+                    Text(stringResource(R.string.moviotv_xp_addon_paste_help), color = XpMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
                 }
             } else if (page == "library") {
                 if (continueTitles.isEmpty()) {
@@ -626,7 +789,7 @@ fun StremioCatalogScreen(
                                 stream.url?.let { playable ->
                                     XpContinueStore.add(context, item)
                                     continueTitles = XpContinueStore.read(context)
-                                    onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id)
+                                    onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
                                 }
                             }
                         }
@@ -652,9 +815,51 @@ private fun XpPoster(item: XpMeta, onClick: () -> Unit) {
             item.poster?.let {
                 AsyncImage(model = it, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
+            if (item.durationMs > 0L && item.positionMs > 0L) {
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp)
+                        .background(XpText.copy(alpha = .35f)),
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth((item.positionMs.toFloat() / item.durationMs).coerceIn(0f, 1f))
+                            .height(4.dp).background(XpAccent),
+                    )
+                }
+            }
         }
         Text(item.name, color = XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun XpAddonInfoCard(
+    name: String,
+    version: String,
+    description: String,
+    types: List<String>,
+    logo: String?,
+    action: String,
+    disabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(XpPanel).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!logo.isNullOrBlank()) {
+                AsyncImage(model = logo, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+                Spacer(Modifier.width(12.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(name, color = XpText, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(types.distinct().joinToString(" · ").ifBlank { stringResource(R.string.moviotv_xp_addon_types_unknown) }, color = XpMuted, fontSize = 13.sp)
+            }
+            Text("v$version", color = XpMuted, fontSize = 14.sp)
+        }
+        if (description.isNotBlank()) Text(description, color = XpMuted, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        XpAction(action, disabled, onAction)
     }
 }
 
