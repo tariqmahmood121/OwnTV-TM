@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,15 +81,22 @@ private data class XpAddon(
     val url: String,
     val id: String,
     val name: String,
+    val resources: List<XpResource>,
     val catalogs: List<XpCatalog>,
     val builtIn: Boolean = false,
 )
+private data class XpResource(val name: String, val types: List<String>, val idPrefixes: List<String>) {
+    fun supports(type: String, id: String): Boolean =
+        name == "stream" && (types.isEmpty() || type in types) &&
+            (idPrefixes.isEmpty() || idPrefixes.any(id::startsWith))
+}
 private data class XpCatalog(val type: String, val id: String, val name: String, val defaults: List<Pair<String, String>>)
 private data class XpMeta(
     val id: String, val type: String, val name: String, val poster: String?,
     val description: String?, val releaseInfo: String?, val rating: String?,
 )
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
+private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
 
 private object XpAddonProtocol {
     private val client = OkHttpClient.Builder()
@@ -98,6 +106,23 @@ private object XpAddonProtocol {
     suspend fun loadManifest(raw: String): XpAddon = withContext(Dispatchers.IO) {
         val url = manifestUrl(raw)
         val json = get(url)
+        val resourceSource = json.optJSONArray("resources") ?: JSONArray()
+        val resources = buildList {
+            for (index in 0 until resourceSource.length()) {
+                val item = resourceSource.opt(index)
+                when (item) {
+                    is String -> item.trim().takeIf(String::isNotBlank)?.let {
+                        add(XpResource(it, emptyList(), emptyList()))
+                    }
+                    is JSONObject -> {
+                        val name = item.optString("name").trim()
+                        if (name.isNotBlank()) add(
+                            XpResource(name, item.stringList("types"), item.stringList("idPrefixes"))
+                        )
+                    }
+                }
+            }
+        }
         val source = json.optJSONArray("catalogs") ?: JSONArray()
         val catalogs = buildList {
             for (index in 0 until source.length()) {
@@ -121,11 +146,12 @@ private object XpAddonProtocol {
                 add(XpCatalog(type, id, item.optString("name").ifBlank { id }, defaults))
             }
         }
-        require(catalogs.isNotEmpty()) { "This add-on manifest has no catalogues." }
+        require(resources.isNotEmpty()) { "This add-on manifest has no supported resources." }
         XpAddon(
             url,
             json.optString("id").ifBlank { url },
             json.optString("name").ifBlank { URI(url).host ?: url },
+            resources,
             catalogs,
         )
     }
@@ -154,6 +180,22 @@ private object XpAddonProtocol {
                         rating = item.optString("imdbRating").takeIf { it.isNotBlank() },
                     )
                 )
+            }
+        }
+    }
+
+    suspend fun loadStreams(addon: XpAddon, item: XpMeta): List<XpStream> = withContext(Dispatchers.IO) {
+        val source = get(resourceUrl(addon.url, "stream/${Uri.encode(item.type)}/${Uri.encode(item.id)}.json"))
+            .optJSONArray("streams") ?: JSONArray()
+        buildList {
+            for (index in 0 until source.length()) {
+                val stream = source.optJSONObject(index) ?: continue
+                val url = stream.optString("url").trim().takeIf(::isHttpUrl)
+                val label = stream.optString("title").ifBlank {
+                    stream.optString("name").ifBlank { addon.name }
+                }
+                val detail = stream.optString("description").takeIf { it.isNotBlank() }
+                add(XpStream(addon, label, detail, url))
             }
         }
     }
@@ -187,6 +229,15 @@ private object XpAddonProtocol {
             return JSONObject(body)
         }
     }
+
+    private fun JSONObject.stringList(key: String): List<String> {
+        val array = optJSONArray(key) ?: return emptyList()
+        return buildList { for (index in 0 until array.length()) array.optString(index).trim().takeIf(String::isNotBlank)?.let(::add) }
+    }
+
+    private fun isHttpUrl(raw: String): Boolean = runCatching {
+        URI(raw).let { (it.scheme == "https" || it.scheme == "http") && it.host != null }
+    }.getOrDefault(false)
 }
 
 /** Add-on URLs can contain tokens, so persist the URL list encrypted with an Android Keystore key. */
@@ -231,7 +282,11 @@ private object XpAddonStore {
 }
 
 @Composable
-fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun StremioCatalogScreen(
+    onBack: () -> Unit,
+    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val addons = remember { mutableStateListOf<XpAddon>() }
@@ -243,6 +298,8 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<XpMeta?>(null) }
+    var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
+    var streamsLoading by remember { mutableStateOf(false) }
 
     fun rowKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun fetchRows() {
@@ -275,6 +332,20 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         }
         fetchRows()
         busy = false
+    }
+    LaunchedEffect(selected?.id, selected?.type, addons.size) {
+        val item = selected ?: return@LaunchedEffect
+        selectedStreams = emptyList()
+        val providers = addons.filter { addon -> addon.resources.any { it.supports(item.type, item.id) } }
+        if (providers.isEmpty()) {
+            streamsLoading = false
+        } else {
+            streamsLoading = true
+            selectedStreams = providers.flatMap { addon ->
+                runCatching { XpAddonProtocol.loadStreams(addon, item) }.getOrDefault(emptyList())
+            }
+            streamsLoading = false
+        }
     }
     BackHandler(enabled = selected != null || adding) {
         if (selected != null) selected = null else adding = false
@@ -411,7 +482,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                     contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    items(titles, key = { it.id }) { item -> XpPoster(item) { selected = item } }
+                                    items(titles, key = { "${it.type}:${it.id}" }) { item -> XpPoster(item) { selected = item } }
                                 }
                             }
                         }
@@ -432,9 +503,32 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 )
                 item.description?.let { Text(it, color = XpMuted, fontSize = 17.sp, modifier = Modifier.padding(top = 16.dp)) }
                 Spacer(Modifier.height(22.dp))
+                Text(stringResource(R.string.moviotv_xp_stream_sources), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                when {
+                    streamsLoading -> Text(stringResource(R.string.moviotv_xp_loading_streams), color = XpMuted, fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 8.dp))
+                    selectedStreams.isEmpty() -> Text(stringResource(R.string.moviotv_xp_no_streams), color = XpMuted, fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 8.dp))
+                    else -> androidx.compose.foundation.lazy.LazyColumn(
+                        Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(selectedStreams) { stream ->
+                            val resultLabel = stringResource(R.string.moviotv_xp_stream_result, stream.label, stream.addon.name)
+                            val action = when {
+                                stream.url == null -> stringResource(R.string.moviotv_xp_stream_torrent_unsupported, resultLabel)
+                                stream.detail != null -> stringResource(R.string.moviotv_xp_stream_result_detail, resultLabel, stream.detail)
+                                else -> resultLabel
+                            }
+                            XpAction(action, disabled = stream.url == null) {
+                                stream.url?.let { playable ->
+                                    onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id)
+                                }
+                            }
+                        }
+                    }
+                }
                 XpAction(stringResource(R.string.moviotv_xp_back_to_catalogues), false) { selected = null }
-                Text(stringResource(R.string.moviotv_xp_streams_next_phase), color = XpMuted, fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 12.dp))
             }
         }
     }

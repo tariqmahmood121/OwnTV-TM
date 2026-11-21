@@ -71,6 +71,7 @@ fun MovioLandingScreen(
     providerName: String,
     onProfileClick: () -> Unit,
     onProviderClick: () -> Unit,
+    onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String) -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -86,7 +87,11 @@ fun MovioLandingScreen(
     }
 
     if (showStremioCatalogues) {
-        StremioCatalogScreen(onBack = { showStremioCatalogues = false }, modifier = modifier.fillMaxSize())
+        StremioCatalogScreen(
+            onBack = { showStremioCatalogues = false },
+            onPlayStream = onPlayStream,
+            modifier = modifier.fillMaxSize(),
+        )
     } else BoxWithConstraints(
         modifier = modifier.fillMaxSize().background(
             Brush.linearGradient(if (purple) listOf(Color(0xFF17121F), Color(0xFF0D0B14), Color(0xFF08080E)) else listOf(Color(0xFF0D191C), Color(0xFF091114), Color(0xFF05090B)))
