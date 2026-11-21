@@ -122,6 +122,8 @@
     <string name="moviotv_xp_catalogue_icon">▦</string>
     <string name="moviotv_xp_title">MOVIO XP</string>
     <string name="moviotv_xp_catalogue_load_failed">A catalogue could not be loaded.</string>
+    <string name="moviotv_xp_default_catalogue_load_failed">Could not load the default movie and series catalogue. Check your connection and refresh.</string>
+    <string name="moviotv_xp_default_catalogue_manifest" translatable="false">https://v3-cinemeta.strem.io/manifest.json</string>
     <string name="moviotv_xp_addon_refresh_failed">An installed add-on could not be refreshed.</string>
     <string name="moviotv_xp_refresh">Refresh</string>
     <string name="moviotv_xp_cancel">Cancel</string>
