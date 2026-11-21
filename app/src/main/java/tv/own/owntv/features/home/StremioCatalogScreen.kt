@@ -46,12 +46,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import tv.own.owntv.R
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -117,7 +119,7 @@ private object XpAddonProtocol {
         XpAddon(
             url,
             json.optString("id").ifBlank { url },
-            json.optString("name").ifBlank { URI(url).host ?: "Stremio add-on" },
+            json.optString("name").ifBlank { URI(url).host ?: url },
             catalogs,
         )
     }
@@ -246,7 +248,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             scope.launch {
                 runCatching { XpAddonProtocol.loadCatalog(row) }
                     .onSuccess { metas[key] = it }
-                    .onFailure { notice = it.message ?: "A catalogue could not be loaded." }
+                    .onFailure { notice = context.getString(R.string.moviotv_xp_catalogue_load_failed) }
                 loadingRows[key] = false
             }
         }
@@ -257,7 +259,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         XpAddonStore.read(context).forEach { saved ->
             runCatching { XpAddonProtocol.loadManifest(saved) }
                 .onSuccess { addons.add(it) }
-                .onFailure { notice = it.message ?: "An installed add-on could not be refreshed." }
+                .onFailure { notice = context.getString(R.string.moviotv_xp_addon_refresh_failed) }
         }
         fetchRows()
         busy = false
@@ -275,12 +277,12 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("MOVIO XP", color = XpText, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                    Text("Catalogues", color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.moviotv_xp_title), color = XpText, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    Text(stringResource(R.string.moviotv_xp_catalogues), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
-                XpAction("Refresh", busy) { fetchRows() }
-                XpAction(if (adding) "Cancel" else "Add catalogue", false) { adding = !adding; notice = null }
-                XpAction("Back", false, onBack)
+                XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
+                XpAction(if (adding) stringResource(R.string.moviotv_xp_cancel) else stringResource(R.string.moviotv_xp_add_catalogue), false) { adding = !adding; notice = null }
+                XpAction(stringResource(R.string.moviotv_xp_back), false, onBack)
             }
             if (adding) {
                 Row(
@@ -293,7 +295,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             .background(XpPanel).padding(horizontal = 16.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        if (address.isBlank()) Text("HTTPS add-on URL or /manifest.json URL", color = XpMuted)
+                        if (address.isBlank()) Text(stringResource(R.string.moviotv_xp_addon_url_hint), color = XpMuted)
                         BasicTextField(
                             value = address,
                             onValueChange = { address = it },
@@ -302,15 +304,15 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    XpAction("Install", busy) {
+                    XpAction(stringResource(R.string.moviotv_xp_install), busy) {
                         val candidate = address.trim()
-                        if (candidate.isBlank()) notice = "Enter an add-on URL first."
+                        if (candidate.isBlank()) notice = context.getString(R.string.moviotv_xp_enter_addon_url)
                         else {
                             busy = true
                             scope.launch {
                                 runCatching { XpAddonProtocol.loadManifest(candidate) }
                                     .onSuccess { addon ->
-                                        if (addons.any { it.url == addon.url }) notice = "That add-on is already installed."
+                                        if (addons.any { it.url == addon.url }) notice = context.getString(R.string.moviotv_xp_addon_already_installed)
                                         else {
                                             addons.add(addon)
                                             XpAddonStore.write(context, addons.map { it.url })
@@ -320,7 +322,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                             fetchRows()
                                         }
                                     }
-                                    .onFailure { notice = it.message ?: "Could not install the add-on." }
+                                    .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
                                 busy = false
                             }
                         }
@@ -331,7 +333,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp, modifier = Modifier.padding(horizontal = 34.dp, vertical = 4.dp))
             }
             if (addons.isNotEmpty()) {
-                Text("Installed add-ons · select × to remove", color = XpMuted, fontSize = 13.sp,
+                Text(stringResource(R.string.moviotv_xp_installed_addons), color = XpMuted, fontSize = 13.sp,
                     modifier = Modifier.padding(start = 34.dp, top = 4.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 34.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(addons, key = { it.url }) { addon ->
@@ -344,7 +346,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             Text(addon.name, color = XpText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             var removeFocused by remember { mutableStateOf(false) }
                             Text(
-                                "  ×",
+                                "  ${stringResource(R.string.moviotv_xp_remove_symbol)}",
                                 color = if (removeFocused) XpText else XpAccent,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
@@ -363,9 +365,9 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             if (rows.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Your catalogues will appear here", color = XpText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.moviotv_xp_empty_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(8.dp))
-                        Text("Add a Stremio-compatible add-on to load movie and series rows.", color = XpMuted, fontSize = 16.sp)
+                        Text(stringResource(R.string.moviotv_xp_empty_description), color = XpMuted, fontSize = 16.sp)
                     }
                 }
             } else {
@@ -388,7 +390,7 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             }
                             if (titles.isEmpty()) {
                                 Text(
-                                    if (loadingRows[key] == true) "Loading catalogue…" else "No titles returned yet",
+                                    if (loadingRows[key] == true) stringResource(R.string.moviotv_xp_loading_catalogue) else stringResource(R.string.moviotv_xp_no_titles),
                                     color = XpMuted, fontSize = 14.sp,
                                     modifier = Modifier.padding(horizontal = 34.dp, vertical = 8.dp),
                                 )
@@ -412,14 +414,14 @@ fun StremioCatalogScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             ) {
                 Text(item.name, color = XpText, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, item.rating?.let { "★ $it" })
-                        .joinToString(" · "),
+                    listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, item.rating?.let { context.getString(R.string.moviotv_xp_rating, it) })
+                        .joinToString(stringResource(R.string.moviotv_xp_meta_separator)),
                     color = XpAccent, fontSize = 17.sp, modifier = Modifier.padding(top = 8.dp),
                 )
                 item.description?.let { Text(it, color = XpMuted, fontSize = 17.sp, modifier = Modifier.padding(top = 16.dp)) }
                 Spacer(Modifier.height(22.dp))
-                XpAction("Back to catalogues", false) { selected = null }
-                Text("Stream choices are planned for the next phase.", color = XpMuted, fontSize = 14.sp,
+                XpAction(stringResource(R.string.moviotv_xp_back_to_catalogues), false) { selected = null }
+                Text(stringResource(R.string.moviotv_xp_streams_next_phase), color = XpMuted, fontSize = 14.sp,
                     modifier = Modifier.padding(top = 12.dp))
             }
         }

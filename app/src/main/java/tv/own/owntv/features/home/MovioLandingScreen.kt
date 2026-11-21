@@ -100,8 +100,8 @@ fun MovioLandingScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(painter = painterResource(R.drawable.moviotv_launcher), contentDescription = null, modifier = Modifier.size(if (wide) 62.dp else 48.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("Movio", color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
-                Text("XP", color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                Text(stringResource(R.string.moviotv_xp_brand_movio), color = Color.White, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
+                Text(stringResource(R.string.moviotv_xp_brand_xp), color = accent, fontWeight = FontWeight.Black, fontSize = if (wide) 38.sp else 29.sp)
                 Text(stringResource(R.string.moviotv_version, tv.own.owntv.BuildConfig.VERSION_NAME), color = if (purple) Color(0xFFC3B2D2) else Color(0xFFB0CACC), fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp, top = 14.dp))
             }
             Text(stringResource(R.string.moviotv_credit), color = muted, fontSize = 12.sp)
@@ -140,14 +140,14 @@ fun MovioLandingScreen(
                     MovioTile(stringResource(R.string.moviotv_home_live), stringResource(R.string.moviotv_watch_channels), stringResource(R.string.moviotv_icon_play), tileHeight, onLiveTv, onFocused, Modifier.weight(1f), firstFocus)
                     MovioTile(stringResource(R.string.moviotv_home_movies), stringResource(R.string.moviotv_browse_films), stringResource(R.string.moviotv_icon_movies), tileHeight, onMovies, onFocused, Modifier.weight(1f))
                     MovioTile(stringResource(R.string.moviotv_home_series), stringResource(R.string.moviotv_watch_episodes), stringResource(R.string.moviotv_icon_series), tileHeight, onSeries, onFocused, Modifier.weight(1f))
-                    MovioTile("Catalogues", "Browse add-on catalogues", "▦", tileHeight, { showStremioCatalogues = true }, onFocused, Modifier.weight(1f))
+                    MovioTile(stringResource(R.string.moviotv_xp_catalogues), stringResource(R.string.moviotv_xp_browse_catalogues), stringResource(R.string.moviotv_xp_catalogue_icon), tileHeight, { showStremioCatalogues = true }, onFocused, Modifier.weight(1f))
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(if (short) 8.dp else 12.dp)) {
                     MovioTile(stringResource(R.string.moviotv_home_live), stringResource(R.string.moviotv_watch_channels), stringResource(R.string.moviotv_icon_play), tileHeight, onLiveTv, onFocused, Modifier.fillMaxWidth(), firstFocus)
                     MovioTile(stringResource(R.string.moviotv_home_movies), stringResource(R.string.moviotv_browse_films), stringResource(R.string.moviotv_icon_movies), tileHeight, onMovies, onFocused, Modifier.fillMaxWidth())
                     MovioTile(stringResource(R.string.moviotv_home_series), stringResource(R.string.moviotv_watch_episodes), stringResource(R.string.moviotv_icon_series), tileHeight, onSeries, onFocused, Modifier.fillMaxWidth())
-                    MovioTile("Catalogues", "Browse add-on catalogues", "▦", tileHeight, { showStremioCatalogues = true }, onFocused, Modifier.fillMaxWidth())
+                    MovioTile(stringResource(R.string.moviotv_xp_catalogues), stringResource(R.string.moviotv_xp_browse_catalogues), stringResource(R.string.moviotv_xp_catalogue_icon), tileHeight, { showStremioCatalogues = true }, onFocused, Modifier.fillMaxWidth())
                 }
             }
             Spacer(Modifier.height(if (short) 10.dp else 20.dp))
