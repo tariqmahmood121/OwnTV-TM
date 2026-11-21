@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -77,7 +79,8 @@ fun MovioLandingScreen(
         onEntryHook?.invoke { runCatching { firstFocus.requestFocus() }.getOrDefault(false) }
         onDispose { onEntryHook?.invoke(null) }
     }
-    var showStremioCatalogues by remember { mutableStateOf(false) }
+    // Open discovery first so Movies and Series have posters before add-ons are installed.
+    var showStremioCatalogues by remember { mutableStateOf(true) }
     LaunchedEffect(touchMode, showStremioCatalogues) {
         if (!touchMode && !showStremioCatalogues) runCatching { firstFocus.requestFocus() }
     }
@@ -94,7 +97,9 @@ fun MovioLandingScreen(
         val tileHeight = if (wide) (if (short) 126.dp else 222.dp) else (if (short) 70.dp else 96.dp)
         val edge = if (wide) 48.dp else 20.dp
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = edge, vertical = if (short) 10.dp else 25.dp),
+            modifier = Modifier.fillMaxSize()
+                .then(if (touchMode) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                .padding(horizontal = edge, vertical = if (short) 10.dp else 25.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
