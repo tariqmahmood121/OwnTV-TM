@@ -1388,6 +1388,18 @@ fun OwnTVShell(
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
                                 onSelectSection(MainSection.SETTINGS)
                             },
+                            onPlayStream = { url, title, type, year, contentId ->
+                                val target = if (type.equals("series", ignoreCase = true)) MainSection.SERIES else MainSection.MOVIES
+                                subtitleController.clear()
+                                player.play(
+                                    url = url,
+                                    title = title,
+                                    year = year,
+                                    contentKey = "stremio:$type:$contentId",
+                                )
+                                onSelectSection(target)
+                                openFullscreen(target)
+                            },
                             onEntryHook = { homeEntry = it },
                             modifier = Modifier.fillMaxSize(),
                         )
