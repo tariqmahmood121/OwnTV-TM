@@ -281,6 +281,39 @@ private object XpAddonStore {
     }
 }
 
+/** Lightweight recent-title shelf for Stremio catalogue items opened from MovioXP. */
+private object XpContinueStore {
+    private const val PREFS = "movioxp_catalogues"
+    private const val VALUE = "continue_titles"
+
+    fun read(context: Context): List<XpMeta> = runCatching {
+        val source = JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(VALUE, "[]"))
+        buildList {
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val id = item.optString("id")
+                val name = item.optString("name")
+                if (id.isNotBlank() && name.isNotBlank()) add(
+                    XpMeta(id, item.optString("type", "movie"), name,
+                        item.optString("poster").takeIf(String::isNotBlank), null,
+                        item.optString("year").takeIf(String::isNotBlank), null)
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    fun add(context: Context, item: XpMeta) {
+        val updated = (listOf(item) + read(context).filterNot { it.id == item.id && it.type == item.type }).take(20)
+        val json = JSONArray().apply {
+            updated.forEach { meta ->
+                put(JSONObject().put("id", meta.id).put("type", meta.type).put("name", meta.name)
+                    .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: ""))
+            }
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(VALUE, json.toString()).apply()
+    }
+}
+
 @Composable
 fun StremioCatalogScreen(
     onBack: () -> Unit,
@@ -300,6 +333,9 @@ fun StremioCatalogScreen(
     var selected by remember { mutableStateOf<XpMeta?>(null) }
     var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
     var streamsLoading by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf("home") }
+    var searchText by remember { mutableStateOf("") }
+    var continueTitles by remember { mutableStateOf(XpContinueStore.read(context)) }
 
     fun rowKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun fetchRows() {
@@ -347,10 +383,14 @@ fun StremioCatalogScreen(
             streamsLoading = false
         }
     }
-    BackHandler(enabled = selected != null || adding) {
-        if (selected != null) selected = null else adding = false
+    BackHandler(enabled = selected != null || adding || page != "home") {
+        when {
+            selected != null -> selected = null
+            adding -> adding = false
+            else -> page = "home"
+        }
     }
-    BackHandler(enabled = selected == null && !adding, onBack = onBack)
+    BackHandler(enabled = selected == null && !adding && page == "home", onBack = onBack)
 
     Box(modifier.fillMaxSize().background(XpBackground)) {
         Column(Modifier.fillMaxSize()) {
@@ -361,13 +401,30 @@ fun StremioCatalogScreen(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.moviotv_xp_title), color = XpText, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                    Text(stringResource(R.string.moviotv_xp_catalogues), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(when (page) { "search" -> "Search"; "library" -> "Library"; "addons" -> "Add-ons"; else -> "Discover" }, color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
-                XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
-                XpAction(if (adding) stringResource(R.string.moviotv_xp_cancel) else stringResource(R.string.moviotv_xp_add_catalogue), false) { adding = !adding; notice = null }
+                if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
+                if (page == "addons") XpAction(if (adding) stringResource(R.string.moviotv_xp_cancel) else stringResource(R.string.moviotv_xp_add_catalogue), false) { adding = !adding; notice = null }
                 XpAction(stringResource(R.string.moviotv_xp_back), false, onBack)
             }
-            if (adding) {
+            if (page == "home" || page == "search") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(16.dp)).background(XpPanel).padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (searchText.isBlank()) Text("You can search anything…", color = XpMuted, fontSize = 17.sp)
+                    BasicTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it; if (it.isNotBlank()) page = "search" },
+                        singleLine = true,
+                        textStyle = TextStyle(color = XpText, fontSize = 17.sp),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("⌕", color = XpText, fontSize = 24.sp, modifier = Modifier.clickable { page = "search" })
+                }
+            }
+            if (page == "addons" && adding) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -415,7 +472,13 @@ fun StremioCatalogScreen(
             notice?.let {
                 Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp, modifier = Modifier.padding(horizontal = 34.dp, vertical = 4.dp))
             }
-            if (addons.isNotEmpty()) {
+            if (page == "home" && continueTitles.isNotEmpty()) {
+                Text("Continue Watching", color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, top = 2.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title -> XpPoster(title) { selected = title } }
+                }
+            }
+            if (page == "addons" && addons.isNotEmpty()) {
                 Text(stringResource(R.string.moviotv_xp_installed_addons), color = XpMuted, fontSize = 13.sp,
                     modifier = Modifier.padding(start = 34.dp, top = 4.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 34.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -445,8 +508,33 @@ fun StremioCatalogScreen(
                     }
                 }
             }
-            if (rows.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (page == "addons") {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 34.dp, vertical = 14.dp)) {
+                    Text("Add an add-on manifest URL", color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Paste the HTTPS link from an add-on configuration page. Installed links are saved securely on this device.", color = XpMuted, fontSize = 15.sp)
+                    Spacer(Modifier.height(14.dp))
+                    Text("Add-ons configured in MovioXP are stored on this device. Central account sync can be added once the Central API has an add-on settings endpoint.", color = XpMuted, fontSize = 13.sp)
+                }
+            } else if (page == "library") {
+                if (continueTitles.isEmpty()) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("Titles you start from an add-on will appear here.", color = XpMuted, fontSize = 16.sp)
+                    }
+                } else {
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
+                        item { Text("Continue Watching", color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+                        items(continueTitles, key = { "library:${it.type}:${it.id}" }) { title ->
+                            XpPoster(title) { selected = title }
+                        }
+                    }
+                }
+            } else if (page == "search" && searchText.isNotBlank() && rows.none { row -> metas[rowKey(row)].orEmpty().any { it.name.contains(searchText, true) } }) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("No matching titles in the installed catalogues.", color = XpMuted, fontSize = 16.sp)
+                }
+            } else if (rows.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.moviotv_xp_empty_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(8.dp))
@@ -455,13 +543,14 @@ fun StremioCatalogScreen(
                 }
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 36.dp),
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(rows, key = { rowKey(it) }) { row ->
+                    items(if (page == "search") rows.filter { row -> metas[rowKey(row)].orEmpty().any { it.name.contains(searchText, true) } } else rows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
-                        val titles = metas[key].orEmpty()
+                        val titles = metas[key].orEmpty().let { list -> if (page == "search") list.filter { it.name.contains(searchText, true) } else list }
+                        if (page != "search" || titles.isNotEmpty())
                         Column {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 4.dp),
@@ -487,6 +576,19 @@ fun StremioCatalogScreen(
                             }
                         }
                     }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().background(Color(0xFF100D18)).padding(horizontal = 18.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf("home" to "Home", "search" to "Search", "library" to "Library", "addons" to "Add-ons").forEach { (key, label) ->
+                    Text(label, color = if (page == key) XpAccent else XpMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable {
+                            page = key
+                            if (key == "addons") adding = false
+                        }.padding(horizontal = 18.dp, vertical = 10.dp))
                 }
             }
         }
@@ -522,6 +624,8 @@ fun StremioCatalogScreen(
                             }
                             XpAction(action, disabled = stream.url == null) {
                                 stream.url?.let { playable ->
+                                    XpContinueStore.add(context, item)
+                                    continueTitles = XpContinueStore.read(context)
                                     onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id)
                                 }
                             }
