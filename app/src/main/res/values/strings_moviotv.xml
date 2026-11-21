@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="moviotv_app_name">MovioTV</string>
+    <string name="moviotv_app_name">MovioXP</string>
     <string name="moviotv_setup_welcome_title">Welcome to MovioTV</string>
     <string name="moviotv_setup_welcome_sub">Your movies, series and Live TV in one place. Choose a language to begin.</string>
     <string name="moviotv_setup_choice_title">Set up MovioTV</string>
@@ -159,6 +159,20 @@
     <string name="moviotv_xp_search_symbol">⌕</string>
     <string name="moviotv_xp_addon_manifest_title">Add an add-on manifest URL</string>
     <string name="moviotv_xp_addon_paste_help">Paste the HTTPS link from an add-on configuration page. Installed links are saved securely on this device.</string>
+    <string name="moviotv_xp_addon_category">Browse add-ons</string>
+    <string name="moviotv_xp_addon_official">Official add-ons</string>
+    <string name="moviotv_xp_addon_community">Community add-ons</string>
+    <string name="moviotv_xp_addon_installed">Installed</string>
+    <string name="moviotv_xp_addon_search_hint">Search add-ons</string>
+    <string name="moviotv_xp_addon_directory_loading">Loading add-ons…</string>
+    <string name="moviotv_xp_addon_directory_empty">No add-ons found in this category.</string>
+    <string name="moviotv_xp_addon_directory_failed">Could not load the add-on directory. Try again later.</string>
+    <string name="moviotv_xp_addon_none_installed">No add-ons installed yet.</string>
+    <string name="moviotv_xp_addon_builtin">Built in</string>
+    <string name="moviotv_xp_remove">Remove</string>
+    <string name="moviotv_xp_addon_installed_badge">Installed</string>
+    <string name="moviotv_xp_addon_types_unknown">Add-on</string>
+    <string name="moviotv_xp_continue_resume">Continue</string>
     <string name="moviotv_xp_addon_storage_note">Add-ons configured in MovioXP are stored on this device. Central account sync can be added once the Central API has an add-on settings endpoint.</string>
     <string name="moviotv_xp_library_empty">Titles you start from an add-on will appear here.</string>
     <string name="moviotv_xp_no_search_matches">No matching titles in the installed catalogues.</string>
