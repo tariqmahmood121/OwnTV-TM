@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import tv.own.owntv.R
 import tv.own.owntv.core.database.entity.ChannelEntity
@@ -110,6 +111,14 @@ internal enum class PlayerMode { NONE, FULLSCREEN, MINI, AUDIO }
  * The MD3 shell: a fixed navigation panel (Layer 1) plus the active destination. Settings is a
  * single-pane sectioned screen; browse sections keep the Folder Rail → Content → Preview layout.
  */
+private data class MovioXpPlayback(
+    val id: String,
+    val type: String,
+    val title: String,
+    val year: String?,
+    val poster: String?,
+)
+
 @Composable
 fun OwnTVShell(
     selectedSection: MainSection,
@@ -280,6 +289,25 @@ fun OwnTVShell(
         }
     }
     val mpvEngine = remember(player) { tv.own.owntv.player.MpvPlaybackEngine(player) }
+    var movioXpPlayback by remember { mutableStateOf<MovioXpPlayback?>(null) }
+    LaunchedEffect(movioXpPlayback) {
+        val current = movioXpPlayback ?: return@LaunchedEffect
+        while (true) {
+            delay(5_000L)
+            val position = mpvEngine.position.value
+            val duration = mpvEngine.duration.value
+            tv.own.owntv.features.home.XpContinueStore.updateProgress(
+                movioContext,
+                current.id,
+                current.type,
+                current.title,
+                current.poster,
+                current.year,
+                position,
+                duration,
+            )
+        }
+    }
     // Audio focus + MediaSession. This is the only place that knows which engine currently owns
     // the speaker, so it hands that engine over and takes it back when the player closes.
     val playbackSession = koinInject<tv.own.owntv.player.PlaybackSession>()
@@ -1388,8 +1416,9 @@ fun OwnTVShell(
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
                                 onSelectSection(MainSection.SETTINGS)
                             },
-                            onPlayStream = { url, title, type, year, contentId ->
+                            onPlayStream = { url, title, type, year, contentId, poster, resumePositionMs ->
                                 val target = if (type.equals("series", ignoreCase = true)) MainSection.SERIES else MainSection.MOVIES
+                                movioXpPlayback = MovioXpPlayback(contentId, type, title, year, poster)
                                 subtitleController.clear()
                                 player.play(
                                     url = url,
@@ -1397,6 +1426,12 @@ fun OwnTVShell(
                                     year = year,
                                     contentKey = "stremio:$type:$contentId",
                                 )
+                                if (resumePositionMs > 0L) {
+                                    scope.launch {
+                                        delay(1_500L)
+                                        mpvEngine.seekBy(resumePositionMs)
+                                    }
+                                }
                                 onSelectSection(target)
                                 openFullscreen(target)
                             },
