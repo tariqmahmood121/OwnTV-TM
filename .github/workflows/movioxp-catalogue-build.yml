@@ -9,6 +9,7 @@ on:
       - app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt
       - app/src/main/res/values/strings_moviotv.xml
       - tools/i18n/safe_literals.txt
+      - app/build.gradle.kts
       - .github/workflows/movioxp-catalogue-build.yml
 
 permissions:
@@ -36,6 +37,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build standard Android TV debug APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
           chmod +x ./gradlew
           ./gradlew :app:assembleStandardDebug --stacktrace
@@ -43,7 +47,7 @@ jobs:
       - name: Upload MovioXP APK
         uses: actions/upload-artifact@v7
         with:
-          name: MovioXP-catalogue-debug-apk
+          name: MovioXP-v1.0.${{ github.run_number }}-debug-apk
           path: app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error
           retention-days: 14
