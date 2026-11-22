@@ -1311,9 +1311,13 @@ fun StremioCatalogScreen(
                                             centralApiBase = it.apiBase.removeSuffix("/")
                                             centralPassword = ""
                                             centralSyncMessage = context.getString(R.string.moviotv_xp_central_connected_as, it.username)
+                                            centralSyncBusy = false
+                                            syncAddonsWithCentral()
                                         }
-                                        .onFailure { centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed) }
-                                    centralSyncBusy = false
+                                        .onFailure {
+                                            centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed)
+                                            centralSyncBusy = false
+                                        }
                                 }
                             }
                         }
