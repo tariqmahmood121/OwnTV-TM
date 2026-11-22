@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 38452)
-Total output lines: 1696
+Warning: truncated output (original token count: 38604)
+Total output lines: 1701
 
 # Technical Kotlin literals explicitly excluded from translation.
 # schema-version: 1
@@ -213,13 +213,14 @@ Total output lines: 1696
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	idPrefixes
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	imdbRating
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	isRequired
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	last_source_${favoritesProfileId}_${("stremio:${item.type}:${item.id}").hashCode()}
 3	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library:${it.type}:${it.id}
 6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	live
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	manifest.json
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	metas
 5	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movie
-10	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movies
+12	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movies
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_addons_aes_v1
 4	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_catalogues
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_playback
@@ -234,11 +235,12 @@ Total output lines: 1696
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	releaseInfo
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	resources
 12	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	search
-11	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	series
+13	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	series
 4	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	settings
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stream
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stream/${Uri.encode(item.type)}/${Uri.encode(item.id)}.json
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	streams
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stremio:${item.type}:${item.id}
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	title
 9	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	type
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	types
@@ -634,9 +636,7 @@ Total output lines: 1696
 1	locale	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesAccountScreen.kt	uk
 1	locale	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesAccountScreen.kt	vi
 1	locale	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesAccountScreen.kt	zh-cn
-1	locale	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesAccountScreen.kt	zh-tw
-2	log	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesViewModel.kt	OpenSubtitles
-1	log	app/src/main/java/tv/own/owntv/features/settings/OpenSubtitlesViewModel.kt	user-info refresh failed: ${it.messag…8452 tokens truncated…wntv/features/shell/components/SettingsScreen.kt	theme
+1	locale	app/src/main/jav…8604 tokens truncated…wntv/features/shell/components/SettingsScreen.kt	theme
 2	technical	app/src/main/java/tv/own/owntv/features/shell/components/SettingsScreen.kt	ui_zoom
 1	technical	app/src/main/java/tv/own/owntv/features/shell/components/SettingsScreen.kt	update_startup
 2	technical	app/src/main/java/tv/own/owntv/features/shell/components/SettingsScreen.kt	v${tv.own.owntv.BuildConfig.VERSION_NAME}
