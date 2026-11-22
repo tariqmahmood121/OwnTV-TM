@@ -52,7 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.focusGroup
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -1525,12 +1525,12 @@ private fun XpAddonInfoCard(
             Text("v$version", color = XpMuted, fontSize = 14.sp)
         }
         if (description.isNotBlank()) Text(description, color = XpMuted, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        XpAction(action, disabled, onAction)
+        XpAction(action, disabled, onClick = onAction)
     }
 }
 
 @Composable
-private fun XpAction(label: String, disabled: Boolean, onClick: () -> Unit, focusRequester: FocusRequester? = null) {
+private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))
