@@ -607,8 +607,9 @@ fun StremioCatalogScreen(
     DisposableEffect(context, favoritesProfileId) {
         val preferences = context.getSharedPreferences("movioxp_catalogues", Context.MODE_PRIVATE)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "favorites_profile_$favoritesProfileId") {
-                favoriteTitles = XpFavoritesStore.read(context, favoritesProfileId)
+            when (key) {
+                "favorites_profile_$favoritesProfileId" -> favoriteTitles = XpFavoritesStore.read(context, favoritesProfileId)
+                "continue_titles_profile_$favoritesProfileId" -> continueTitles = XpContinueStore.read(context, favoritesProfileId)
             }
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
