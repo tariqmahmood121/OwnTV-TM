@@ -173,26 +173,41 @@ internal class WizardCard(val icon: OwnTVIcon, val title: String, val line: Stri
  */
 @Composable
 internal fun WizardCards(cards: List<WizardCard>, firstFocus: FocusRequester? = null) {
-    Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.mpx)) {
-        cards.forEachIndexed { i, card ->
-            StageSurface(
-                onClick = card.onClick,
-                radius = 22.mpx,
-                focusStyle = StageFocus.FX,
-                idle = Modifier.background(StageColors.Ink.copy(alpha = 0.05f), RoundedCornerShape(22.mpx)),
-                contentAlignment = Alignment.TopStart,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .heightIn(min = 170.mpx)
-                    .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier),
-            ) { focused ->
-                Column(Modifier.fillMaxWidth().padding(24.mpx)) {
-                    OwnTVIcon(card.icon, if (focused) StageColors.Text else StageColors.Muted, Modifier.size(30.mpx))
-                    Text(card.title, style = stageText(23, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 18.mpx))
-                    Text(card.line, style = stageText(16, 500).copy(lineHeight = 23.mpxLine()), color = StageColors.Muted, modifier = Modifier.padding(top = 6.mpx))
+    // Landscape TV uses a horizontal row. On phones, never squeeze three large action cards into
+    // 100dp-wide columns: stack them with full labels and touch-friendly targets instead.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 720.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.mpx)) {
+                cards.forEachIndexed { i, card ->
+                    WizardCardTile(card, Modifier.fillMaxWidth().heightIn(min = 120.mpx)
+                        .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier))
                 }
             }
+        } else {
+            Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.mpx)) {
+                cards.forEachIndexed { i, card ->
+                    WizardCardTile(card, Modifier.weight(1f).fillMaxHeight().heightIn(min = 170.mpx)
+                        .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WizardCardTile(card: WizardCard, modifier: Modifier) {
+    StageSurface(
+        onClick = card.onClick,
+        radius = 22.mpx,
+        focusStyle = StageFocus.FX,
+        idle = Modifier.background(StageColors.Ink.copy(alpha = 0.05f), RoundedCornerShape(22.mpx)),
+        contentAlignment = Alignment.TopStart,
+        modifier = modifier,
+    ) { focused ->
+        Column(Modifier.fillMaxWidth().padding(24.mpx)) {
+            OwnTVIcon(card.icon, if (focused) StageColors.Text else StageColors.Muted, Modifier.size(30.mpx))
+            Text(card.title, style = stageText(23, 800), color = StageColors.Text, modifier = Modifier.padding(top = 18.mpx))
+            Text(card.line, style = stageText(16, 500).copy(lineHeight = 23.mpxLine()), color = StageColors.Muted, modifier = Modifier.padding(top = 6.mpx))
         }
     }
 }

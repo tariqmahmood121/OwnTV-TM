@@ -77,7 +77,9 @@ import tv.own.owntv.ui.theme.LocalMainFontFamily
 import tv.own.owntv.ui.theme.asComposeFamily
 import tv.own.owntv.core.theme.AppFontFamily
 
-private enum class Step { CENTRAL_GATE, CENTRAL_ACCOUNT, WELCOME, DISPLAY_SIZE, DISCLAIMER, SETUP_CHOICE, SYNC_DEVICE, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE_REMOTE, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP_CHOOSER, IMPORT_BACKUP_REMOTE, IMPORT_BACKUP }
+private enum class Step { CENTRAL_GATE, CENTRAL_ACCOUNT, CENTRAL_PROFILES, WELCOME, DISPLAY_SIZE, DISCLAIMER, SETUP_CHOICE, SYNC_DEVICE, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE_REMOTE, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP_CHOOSER, IMPORT_BACKUP_REMOTE, IMPORT_BACKUP }
+
+private data class CentralProfileChoice(val id: Long, val name: String, val isChild: Boolean)
 
 /**
  * Onboarding for one profile. [firstRun] shows language/welcome/disclaimer; otherwise it
@@ -94,11 +96,17 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
     val defaultIptvName = stringResource(R.string.setup_default_iptv)
     val defaultPlaylistName = stringResource(R.string.setup_name_default_playlist)
     val defaultPortalName = stringResource(R.string.setup_default_portal)
-    var step by rememberSaveable(firstRun) { mutableStateOf(if (firstRun) { if (savedCentralConnection == null) Step.CENTRAL_GATE else Step.WELCOME } else Step.CREATE_PROFILE) }
+    var step by rememberSaveable(firstRun) { mutableStateOf(if (firstRun) { if (savedCentralConnection == null) Step.CENTRAL_GATE else Step.CENTRAL_PROFILES } else Step.CREATE_PROFILE) }
     var centralRegistering by remember { mutableStateOf(false) }
+    var centralProfiles by remember { mutableStateOf<List<CentralProfileChoice>>(emptyList()) }
+    var centralProfilesBusy by remember { mutableStateOf(false) }
+    var centralProfilesError by remember { mutableStateOf<String?>(null) }
+    var centralSelecting by remember { mutableStateOf(false) }
     val importState by vm.state.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val epgSync by vm.epgSync.collectAsStateWithLifecycle()
+    val setupError by vm.setupError.collectAsStateWithLifecycle()
+    val profileSaving by vm.profileSaving.collectAsStateWithLifecycle()
     var existing by remember { mutableStateOf<List<SourceEntity>>(emptyList()) }
     // Where "Try Again" returns to when an import fails (new source vs. linking existing).
     var importOrigin by remember { mutableStateOf(Step.ADD_SOURCE) }
@@ -115,6 +123,36 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
 
     // Refresh the "existing playlists" availability whenever we land on the add-content step.
     LaunchedEffect(step) { if (step == Step.ADD_CONTENT) existing = runCatching { vm.availableExistingSources() }.getOrDefault(emptyList()) }
+    // Central profiles are loaded before selecting/creating a local device profile. Never assume a
+    // successful account login means the current device already has that account's profile data.
+    LaunchedEffect(step) {
+        if (step == Step.CENTRAL_PROFILES) {
+            centralProfilesBusy = true
+            centralProfilesError = null
+            centralSelecting = false
+            vm.clearSetupError()
+            try {
+                val connection = XpCentralConnectionStore.read(context)
+                    ?: error("Central login has expired; sign in again")
+                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token)
+                }
+                val items = response.optJSONArray("profiles")
+                centralProfiles = buildList {
+                    if (items != null) for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val id = item.optLong("id")
+                        if (id > 0L) add(CentralProfileChoice(id, item.optString("name").ifBlank { defaultProfileName }, item.optBoolean("is_child")))
+                    }
+                }
+            } catch (failure: Exception) {
+                centralProfilesError = failure.localizedMessage ?: failure.javaClass.simpleName
+            } finally {
+                centralProfilesBusy = false
+            }
+        }
+    }
+    LaunchedEffect(setupError) { if (setupError != null) centralSelecting = false }
 
     val accent = stageAccent.accent
     CompositionLocalProvider(LocalMainFontFamily provides AppFontFamily.POPPINS.asComposeFamily()) {
@@ -139,8 +177,41 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
             Step.CENTRAL_ACCOUNT -> CentralAccountStep(
                 registering = centralRegistering,
                 onBack = { step = Step.CENTRAL_GATE },
-                onConnected = { step = Step.WELCOME },
+                onConnected = { step = Step.CENTRAL_PROFILES },
             )
+            Step.CENTRAL_PROFILES -> WizardFrame(
+                step = WizardStep.PROFILE,
+                title = stringResource(R.string.moviotv_xp_choose_central_profile),
+                sub = stringResource(R.string.moviotv_xp_choose_central_profile_sub),
+                back = WizardAction(stringResource(R.string.common_back), { step = Step.CENTRAL_GATE }),
+                next = null,
+            ) {
+                when {
+                    centralProfilesBusy -> Text(stringResource(R.string.moviotv_xp_loading_profiles), style = stageText(18, 600), color = StageColors.Muted)
+                    centralProfilesError != null -> Text(centralProfilesError.orEmpty(), style = stageText(18, 600), color = StageColors.Warn)
+                    centralProfiles.isEmpty() -> {
+                        Text(stringResource(R.string.moviotv_xp_no_central_profiles), style = stageText(18, 600), color = StageColors.Muted)
+                        StagePill(stringResource(R.string.moviotv_xp_create_local_profile), onClick = { step = Step.CREATE_PROFILE })
+                    }
+                    else -> {
+                        WizardCards(centralProfiles.map { remote ->
+                            WizardCard(OwnTVIcon.PERSON, remote.name, stringResource(R.string.moviotv_xp_use_existing_profile)) {
+                                if (!centralSelecting && !profileSaving) {
+                                    centralSelecting = true
+                                    vm.createProfile(remote.name, -1, remote.isChild, null, null) { localId ->
+                                        val connection = XpCentralConnectionStore.read(context)
+                                        if (connection != null) context.getSharedPreferences("movioxp_central_profiles", android.content.Context.MODE_PRIVATE)
+                                            .edit().putLong("${connection.accountId}:$localId", remote.id).apply()
+                                        vm.finish(onDone)
+                                    }
+                                }
+                            }
+                        }, rememberFirstFocus())
+                        if (centralSelecting) Text(stringResource(R.string.moviotv_xp_restoring_profile), style = stageText(16, 600), color = StageColors.Muted)
+                    }
+                }
+                if (setupError != null) Text(stringResource(R.string.moviotv_xp_setup_failed, setupError.orEmpty()), style = stageText(16, 600), color = StageColors.Warn)
+            }
             Step.WELCOME -> WelcomeStep(onNext = { step = Step.DISPLAY_SIZE })
             // Before the disclaimer, which is the first screen with a paragraph of real text on it:
             // if the interface is too small to read, that is the screen it first hurts on.
@@ -185,6 +256,8 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
             Step.CREATE_PROFILE -> ProfileStep(
                 onCreate = { name, avatar, kids, pin, picture -> vm.createProfile(name.ifBlank { defaultProfileName }, avatar, kids, pin, picture) { step = Step.ADD_CONTENT } },
                 onBack = { if (firstRun) step = Step.SETUP_CHOICE else onCancel() },
+                error = setupError,
+                busy = profileSaving,
             )
             Step.ADD_CONTENT -> AddContentStep(
                 hasExisting = existing.isNotEmpty(),
@@ -537,7 +610,7 @@ private fun AppIconSwatches(icons: List<AppIcon>, chosen: AppIcon) {
  * the profile has no id to store it under before it exists.
  */
 @Composable
-private fun ProfileStep(onCreate: (name: String, avatarId: Int, isKids: Boolean, pin: String?, picture: java.io.File?) -> Unit, onBack: () -> Unit) {
+private fun ProfileStep(onCreate: (name: String, avatarId: Int, isKids: Boolean, pin: String?, picture: java.io.File?) -> Unit, onBack: () -> Unit, error: String? = null, busy: Boolean = false) {
     var name by remember { mutableStateOf("") }
     var avatarId by remember { mutableIntStateOf(-1) } // new profiles start on the letter
     var isKids by remember { mutableStateOf(false) }
@@ -554,7 +627,7 @@ private fun ProfileStep(onCreate: (name: String, avatarId: Int, isKids: Boolean,
         title = stringResource(R.string.profiles_gate_title),
         sub = stringResource(R.string.setup_profile_sub),
         back = WizardAction(stringResource(R.string.common_back), onBack),
-        next = WizardAction(stringResource(R.string.setup_create_profile), { if (valid) onCreate(name, avatarId, isKids, pin.takeIf { it.isNotBlank() }, picture) }, enabled = valid),
+        next = WizardAction(stringResource(R.string.setup_create_profile), { if (valid && !busy) onCreate(name, avatarId, isKids, pin.takeIf { it.isNotBlank() }, picture) }, enabled = valid && !busy),
     ) {
         StageFieldRow(
             OwnTVIcon.PENCIL, nameLabel, name, { name = it }, SettingHelp(nameLabel, fieldHelp),
@@ -588,6 +661,7 @@ private fun ProfileStep(onCreate: (name: String, avatarId: Int, isKids: Boolean,
             OwnTVIcon.PENCIL, pinLabel, pin, { if (it.length <= 6 && it.all(Char::isDigit)) pin = it }, SettingHelp(pinLabel, fieldHelp),
             placeholder = stringResource(R.string.profiles_pin_digits), password = true, keyboardType = KeyboardType.NumberPassword,
         )
+        if (error != null) Text(stringResource(R.string.moviotv_xp_setup_failed, error), style = stageText(16, 600), color = StageColors.Warn)
     }
     if (choosingPicture) {
         tv.own.owntv.features.profiles.ProfilePictureChooser(

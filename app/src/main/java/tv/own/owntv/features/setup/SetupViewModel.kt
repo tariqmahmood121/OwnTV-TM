@@ -1,7 +1,9 @@
 package tv.own.owntv.features.setup
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +63,13 @@ class SetupViewModel(
     val state: StateFlow<SourceImporter.ImportState> = importer.state
     val progress = importer.progress
 
+    // Keep onboarding failures visible rather than terminating a coroutine and leaving a partial profile.
+    private val _setupError = MutableStateFlow<String?>(null)
+    val setupError: StateFlow<String?> = _setupError.asStateFlow()
+    private val _profileSaving = MutableStateFlow(false)
+    val profileSaving: StateFlow<Boolean> = _profileSaving.asStateFlow()
+    fun clearSetupError() { _setupError.value = null }
+
     // Semi-auto EPG: after the first playlist imports, offer a one-tap guide sync (with a live count) if it
     // has a guide feed.
     private var pendingEpgSource: SourceEntity? = null
@@ -94,10 +103,22 @@ class SetupViewModel(
      * when one was chosen, is stored once the profile has an id to store it under.
      */
     fun createProfile(name: String, avatarId: Int, isKids: Boolean, pin: String?, picture: File?, onCreated: (Long) -> Unit = {}) {
+        if (_profileSaving.value) return
+        _profileSaving.value = true
+        _setupError.value = null
         viewModelScope.launch {
-            val id = importer.createProfile(name, avatarId, isKids, pin)
-            if (picture != null) profileDao.getById(id)?.let { profiles.setCustomAvatar(it, picture) }
-            onCreated(id)
+            try {
+                val id = importer.createProfile(name, avatarId, isKids, pin)
+                if (picture != null) profileDao.getById(id)?.let { profiles.setCustomAvatar(it, picture) }
+                onCreated(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.e("MovioXPSetup", "Profile creation failed", failure)
+                _setupError.value = failure.localizedMessage?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
+            } finally {
+                _profileSaving.value = false
+            }
         }
     }
 
@@ -235,6 +256,18 @@ class SetupViewModel(
 
     /** Completes onboarding → makes the new profile active, routing the app into the shell. */
     fun finish(onDone: (Long?) -> Unit = {}) {
-        viewModelScope.launch { onDone(importer.finish()) }
+        viewModelScope.launch {
+            _setupError.value = null
+            try {
+                val profileId = importer.finish()
+                check(profileId != null && profileId > 0L) { "No active profile after setup" }
+                onDone(profileId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.e("MovioXPSetup", "Profile setup finalisation failed", failure)
+                _setupError.value = failure.localizedMessage?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
+            }
+        }
     }
 }
