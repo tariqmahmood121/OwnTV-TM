@@ -449,8 +449,10 @@ internal object XpFavoritesStore {
     fun toggle(context: Context, profileId: Long, item: XpMeta): Boolean {
         val current = read(context, profileId)
         val exists = current.any { it.type == item.type && it.id == item.id }
-        write(context, profileId, if (exists) current.filterNot { it.type == item.type && it.id == item.id }
-            else listOf(item.copy(positionMs = 0L, durationMs = 0L)) + current)
+        val updated = if (exists) current.filterNot { it.type == item.type && it.id == item.id }
+            else listOf(item.copy(positionMs = 0L, durationMs = 0L)) + current
+        write(context, profileId, updated)
+        XpCentralDataSync.markFavorite(context, profileId, item, deleted = exists)
         return !exists
     }
 }
@@ -488,7 +490,9 @@ internal object XpContinueStore {
     }.getOrDefault(emptyList())
 
     fun add(context: Context, profileId: Long, item: XpMeta) {
-        save(context, profileId, item.copy(positionMs = 0L, durationMs = 0L))
+        val existing = read(context, profileId).firstOrNull { it.id == item.id && it.type == item.type }
+        // Opening a title must not erase the saved playhead before the player can use it.
+        save(context, profileId, if (existing != null) existing else item.copy(positionMs = 0L, durationMs = 0L))
     }
 
     fun updateProgress(
@@ -496,11 +500,14 @@ internal object XpContinueStore {
         positionMs: Long, durationMs: Long,
     ) {
         if (durationMs <= 0L) return
+        val meta = XpMeta(id, type, name, poster, null, year, null, positionMs, durationMs)
         if (positionMs >= durationMs * .95f) {
             val remaining = read(context, profileId).filterNot { it.id == id && it.type == type }
             write(context, profileId, remaining)
+            XpCentralDataSync.markResume(context, profileId, meta, deleted = true)
         } else if (positionMs > 0L) {
-            save(context, profileId, XpMeta(id, type, name, poster, null, year, null, positionMs, durationMs))
+            save(context, profileId, meta)
+            XpCentralDataSync.markResume(context, profileId, meta, deleted = false)
         }
     }
 
@@ -508,6 +515,8 @@ internal object XpContinueStore {
         val updated = (listOf(item) + read(context, profileId).filterNot { it.id == item.id && it.type == item.type }).take(20)
         write(context, profileId, updated)
     }
+
+    internal fun writeCloud(context: Context, profileId: Long, updated: List<XpMeta>) = write(context, profileId, updated)
 
     private fun write(context: Context, profileId: Long, updated: List<XpMeta>) {
         val json = JSONArray().apply {
@@ -687,16 +696,21 @@ fun StremioCatalogScreen(
         XpFavoritesStore.write(context, favoritesProfileId, favoriteTitles)
     }
 
+    fun withSavedResume(item: XpMeta): XpMeta {
+        val saved = continueTitles.firstOrNull { it.id == item.id && it.type == item.type }
+        return if (saved != null) item.copy(positionMs = saved.positionMs, durationMs = saved.durationMs) else item
+    }
+
     fun openItem(item: XpMeta) {
         manualSourceSelection = false
         showManualSources = true
-        selected = item
+        selected = withSavedResume(item)
     }
 
     fun openDetails(item: XpMeta, showSources: Boolean) {
         manualSourceSelection = true
         showManualSources = showSources
-        selected = item
+        selected = withSavedResume(item)
     }
 
     fun syncAddonsWithCentral() {
@@ -749,6 +763,20 @@ fun StremioCatalogScreen(
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
             }
             centralSyncBusy = false
+        }
+    }
+
+    LaunchedEffect(centralConnection, favoritesProfileId, activeProfileName, activeProfile?.isKids) {
+        val connection = centralConnection ?: return@LaunchedEffect
+        if (favoritesProfileId <= 0L || activeProfileName.isBlank()) return@LaunchedEffect
+        while (true) {
+            runCatching {
+                XpCentralDataSync.sync(context, connection, favoritesProfileId, activeProfileName, activeProfile?.isKids == true)
+            }.onSuccess {
+                favoriteTitles = XpFavoritesStore.read(context, favoritesProfileId)
+                continueTitles = XpContinueStore.read(context, favoritesProfileId)
+            }
+            delay(90_000L)
         }
     }
 
@@ -1370,6 +1398,7 @@ fun StremioCatalogScreen(
                     ) {
                         autoSelectSource = !autoSelectSource
                         playbackPrefs.edit().putBoolean("auto_select_source", autoSelectSource).apply()
+                        XpCentralDataSync.markSetting(context, favoritesProfileId, "auto_select_source", autoSelectSource)
                     }
                     Text(stringResource(R.string.moviotv_xp_preferred_addon), color = XpText, fontSize = 21.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 12.dp))
@@ -1379,6 +1408,7 @@ fun StremioCatalogScreen(
                     ) {
                         preferredAddonUrl = ""
                         playbackPrefs.edit().putString("preferred_addon", "").apply()
+                        XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", "")
                     }
                     addons.forEach { addon ->
                         XpAction(
@@ -1387,6 +1417,7 @@ fun StremioCatalogScreen(
                         ) {
                             preferredAddonUrl = addon.url
                             playbackPrefs.edit().putString("preferred_addon", addon.url).apply()
+                            XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", addon.url)
                         }
                     }
 

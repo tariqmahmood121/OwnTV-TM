@@ -154,7 +154,7 @@ internal object XpCentralAddonSync {
         mergedUrls.toList()
     }
 
-    private fun ensureProfile(
+    internal fun ensureProfile(
         context: Context,
         connection: XpCentralConnection,
         localProfileId: Long,
@@ -186,7 +186,7 @@ internal object XpCentralAddonSync {
         return match
     }
 
-    private fun request(
+    internal fun request(
         base: String,
         path: String,
         token: String?,

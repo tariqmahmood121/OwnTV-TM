@@ -791,6 +791,7 @@ fun OwnTVShell(
                 val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
                 movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
                     .edit().putString(sourceKey, activeSource.provider).apply()
+                tv.own.owntv.features.home.XpCentralDataSync.markSetting(movioContext, activeProfileId ?: -1L, sourceKey, activeSource.provider)
             }
         }
     }
@@ -2109,9 +2110,15 @@ fun OwnTVShell(
                     } else null,
                     onAudioTrackSelected = movioXpPlayback?.let { media -> { trackId ->
                         xpTrackPreferences.edit().putInt("xp_audio_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId).apply()
+                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
+                            movioContext, media.profileId, "xp_audio_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId,
+                        )
                     } },
                     onSubtitleTrackSelected = movioXpPlayback?.let { media -> { trackId ->
                         xpTrackPreferences.edit().putInt("xp_subtitle_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId ?: -1).apply()
+                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
+                            movioContext, media.profileId, "xp_subtitle_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId ?: -1,
+                        )
                     } },
                     // In-stream favorite toggle for the current channel/movie/series.
                     favorite = favActive,
@@ -2182,6 +2189,7 @@ fun OwnTVShell(
                                     val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
                                     movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
                                         .edit().putString(sourceKey, source.provider).apply()
+                                    tv.own.owntv.features.home.XpCentralDataSync.markSetting(movioContext, media.profileId, sourceKey, source.provider)
                                     onPlayMovioXpStream(
                                         source.url, media.title, media.type, media.year, media.id, media.poster, position,
                                     )
