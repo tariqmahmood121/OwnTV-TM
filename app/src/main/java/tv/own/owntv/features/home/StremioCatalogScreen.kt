@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.focus.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -147,7 +147,7 @@ internal data class XpMeta(
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
 )
-internal data class XpPlaybackSource(val url: String, val label: String, val provider: String)
+data class XpPlaybackSource(val url: String, val label: String, val provider: String)
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
@@ -1601,7 +1601,7 @@ private fun XpAddonInfoCard(
 }
 
 @Composable
-private fun XpAction(label: String, disabled: Boolean, onClick: () -> Unit, focusRequester: FocusRequester? = null) {
+private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))
