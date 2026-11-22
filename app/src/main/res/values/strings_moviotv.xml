@@ -192,4 +192,12 @@
     <string name="moviotv_xp_filter_catalog_label">%1$s · %2$s</string>
     <string name="moviotv_xp_filter_expanded">▴</string>
     <string name="moviotv_xp_filter_collapsed">▾</string>
+    <string name="moviotv_xp_more_group">MovioXP</string>
+    <string name="moviotv_xp_more_favorites">MovioXP Favourites</string>
+    <string name="moviotv_xp_more_addons">MovioXP Add-ons</string>
+    <string name="moviotv_xp_all_movies">All movies</string>
+    <string name="moviotv_xp_all_series">All series</string>
+    <string name="moviotv_xp_all_live_tv">All Live TV</string>
+    <string name="moviotv_xp_add_favorite">♡  Add favourite</string>
+    <string name="moviotv_xp_remove_favorite">♥  Remove favourite</string>
 </resources>

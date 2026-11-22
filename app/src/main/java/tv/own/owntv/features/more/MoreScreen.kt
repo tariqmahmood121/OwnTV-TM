@@ -71,7 +71,7 @@ import tv.own.owntv.ui.theme.stageAccent
 import tv.own.owntv.ui.theme.stageText
 
 /** The sheet's items, top to bottom. [DEVELOPER] exists only in local builds (BuildConfig.DEV_TOOLS). */
-private enum class MoreItem { SETTINGS, FAVORITES, HISTORY, BACKUP, LOCAL_SYNC, ERROR_LOG, ABOUT, DEVELOPER }
+private enum class MoreItem { SETTINGS, FAVORITES, HISTORY, XP_FAVORITES, XP_ADDONS, BACKUP, LOCAL_SYNC, ERROR_LOG, ABOUT, DEVELOPER }
 
 /** The pages that ask for the Settings PIN when it is on. */
 private val PIN_PAGES = setOf(MoreItem.BACKUP, MoreItem.LOCAL_SYNC, MoreItem.DEVELOPER)
@@ -96,6 +96,7 @@ fun MoreScreen(
     onPlayMovie: (Long, Long) -> Unit,
     onPlayEpisode: (seriesId: Long, episodeId: Long, positionMs: Long) -> Unit,
     onOpenSeries: (Long) -> Unit,
+    onPlayMovioXpStream: (String, String, String, String?, String, String?, Long) -> Unit,
     onChildFocused: () -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     /** Back from Settings: land on the Settings page's first card instead of the rail. */
@@ -185,6 +186,9 @@ fun MoreScreen(
             GroupLabel(stringResource(R.string.more_group_your_things))
             item(MoreItem.FAVORITES, OwnTVIcon.FAVORITE, stringResource(R.string.content_category_favorites), favorites.total.toString(), false)
             item(MoreItem.HISTORY, OwnTVIcon.HISTORY, stringResource(R.string.content_category_history), history.total.toString(), false)
+            GroupLabel(stringResource(R.string.moviotv_xp_more_group))
+            item(MoreItem.XP_FAVORITES, OwnTVIcon.FAVORITE, stringResource(R.string.moviotv_xp_more_favorites), null, false)
+            item(MoreItem.XP_ADDONS, OwnTVIcon.MOVIES, stringResource(R.string.moviotv_xp_more_addons), null, false)
             GroupLabel(stringResource(R.string.more_group_keep_safe))
             item(
                 MoreItem.BACKUP, OwnTVIcon.DOWNLOADS, stringResource(R.string.settings_backup_restore),
@@ -230,6 +234,20 @@ fun MoreScreen(
                     vm = vm, setEntry = setEntry,
                     onClearHistory = { settingsVm.clearWatchHistory(it) },
                     onPlayChannel = onPlayChannel, onPlayMovie = onPlayMovie, onPlayEpisode = onPlayEpisode, onOpenSeries = onOpenSeries,
+                )
+                MoreItem.XP_FAVORITES -> tv.own.owntv.features.home.StremioCatalogScreen(
+                    onBack = backToSheet,
+                    onPlayStream = onPlayMovioXpStream,
+                    initialPage = "favorites",
+                    showBottomNavigation = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                MoreItem.XP_ADDONS -> tv.own.owntv.features.home.StremioCatalogScreen(
+                    onBack = backToSheet,
+                    onPlayStream = onPlayMovioXpStream,
+                    initialPage = "addons",
+                    showBottomNavigation = false,
+                    modifier = Modifier.fillMaxSize(),
                 )
                 MoreItem.BACKUP -> BackupScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())
                 MoreItem.LOCAL_SYNC -> LocalSyncScreen(entry = pageTarget, modifier = Modifier.fillMaxSize())

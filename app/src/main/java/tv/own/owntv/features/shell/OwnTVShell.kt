@@ -658,6 +658,23 @@ fun OwnTVShell(
         player.exitAudioOnly(); runCatching { liveVm.previewEngine.exitAudioOnly() }
         if (playerMode != PlayerMode.MINI) playerMode = PlayerMode.FULLSCREEN
     }
+    val onPlayMovioXpStream: (String, String, String, String?, String, String?, Long) -> Unit =
+        { url, title, type, year, contentId, poster, resumePositionMs ->
+            val target = when {
+                type.equals("series", ignoreCase = true) -> MainSection.SERIES
+                type.equals("channel", ignoreCase = true) -> MainSection.LIVE_TV
+                else -> MainSection.MOVIES
+            }
+            movioXpPlayback = MovioXpPlayback(contentId, type, title, year, poster)
+            subtitleController.clear()
+            player.play(url = url, title = title, year = year, contentKey = "stremio:$type:$contentId")
+            if (resumePositionMs > 0L) scope.launch {
+                delay(1_500L)
+                mpvEngine.seekBy(resumePositionMs)
+            }
+            onSelectSection(target)
+            openFullscreen(target)
+        }
     // Restore video output on both engines (no-op unless we were in Audio Mode). mpv `vid=auto` /
     // ExoPlayer surface is re-attached by the surface remount right after.
     val resumeVideo = {
@@ -1353,6 +1370,7 @@ fun OwnTVShell(
                             onPlayMovie = { id, pos -> scope.launch { if (movieVm.playByIdAsync(id, pos) && !movieVm.externalPlayerOn.value) openFullscreen(MainSection.MOVIES) } },
                             onPlayEpisode = { seriesId, epId, pos -> scope.launch { if (seriesVm.playFromHomeAsync(seriesId, epId, pos) && !seriesVm.externalPlayerOn.value) openFullscreen(MainSection.SERIES) } },
                             onOpenSeries = { id -> seriesVm.openSeriesById(id); restoreFocus = true; onSelectSection(MainSection.SERIES) },
+                            onPlayMovioXpStream = onPlayMovioXpStream,
                             onChildFocused = { focusedLayer = ShellLayer.CONTENT },
                             onEntryHook = { moreEntry = it },
                             restoreFocus = restoreFocus,
@@ -1416,25 +1434,7 @@ fun OwnTVShell(
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
                                 onSelectSection(MainSection.SETTINGS)
                             },
-                            onPlayStream = { url, title, type, year, contentId, poster, resumePositionMs ->
-                                val target = if (type.equals("series", ignoreCase = true)) MainSection.SERIES else MainSection.MOVIES
-                                movioXpPlayback = MovioXpPlayback(contentId, type, title, year, poster)
-                                subtitleController.clear()
-                                player.play(
-                                    url = url,
-                                    title = title,
-                                    year = year,
-                                    contentKey = "stremio:$type:$contentId",
-                                )
-                                if (resumePositionMs > 0L) {
-                                    scope.launch {
-                                        delay(1_500L)
-                                        mpvEngine.seekBy(resumePositionMs)
-                                    }
-                                }
-                                onSelectSection(target)
-                                openFullscreen(target)
-                            },
+                            onPlayStream = onPlayMovioXpStream,
                             onEntryHook = { homeEntry = it },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1474,6 +1474,30 @@ fun OwnTVShell(
                                 restoreFocus = false
                                 onSelectSection(MainSection.HOME)
                             },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.LIVE_TV -> tv.own.owntv.features.home.StremioCatalogScreen(
+                            onBack = { onSelectSection(MainSection.HOME) },
+                            onPlayStream = onPlayMovioXpStream,
+                            initialPage = "live",
+                            showBottomNavigation = false,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.MOVIES -> tv.own.owntv.features.home.StremioCatalogScreen(
+                            onBack = { onSelectSection(MainSection.HOME) },
+                            onPlayStream = onPlayMovioXpStream,
+                            initialPage = "movies",
+                            showBottomNavigation = false,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.SERIES -> tv.own.owntv.features.home.StremioCatalogScreen(
+                            onBack = { onSelectSection(MainSection.HOME) },
+                            onPlayStream = onPlayMovioXpStream,
+                            initialPage = "series",
+                            showBottomNavigation = false,
                             modifier = Modifier.fillMaxSize(),
                         )
 

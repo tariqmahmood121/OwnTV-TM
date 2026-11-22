@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -53,10 +54,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.Text
 import tv.own.owntv.R
+import tv.own.owntv.features.profiles.ProfilesViewModel
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -67,6 +71,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.koin.androidx.compose.koinViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -375,6 +381,45 @@ private object XpAddonStore {
     }
 }
 
+/** MovioXP favourites are local and isolated by the active local profile. */
+private object XpFavoritesStore {
+    private const val PREFS = "movioxp_catalogues"
+    private const val PREFIX = "favorites_profile_"
+
+    fun read(context: Context, profileId: Long): List<XpMeta> = runCatching {
+        val source = JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREFIX + profileId, "[]"))
+        buildList {
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val id = item.optString("id").trim()
+                val name = item.optString("name").trim()
+                if (id.isNotBlank() && name.isNotBlank()) add(
+                    XpMeta(
+                        id = id,
+                        type = item.optString("type", "movie"),
+                        name = name,
+                        poster = item.optString("poster").takeIf(String::isNotBlank),
+                        description = item.optString("description").takeIf(String::isNotBlank),
+                        releaseInfo = item.optString("year").takeIf(String::isNotBlank),
+                        rating = item.optString("rating").takeIf(String::isNotBlank),
+                    )
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    fun write(context: Context, profileId: Long, titles: List<XpMeta>) {
+        val json = JSONArray().apply {
+            titles.distinctBy { "${it.type}:${it.id}" }.forEach { item ->
+                put(JSONObject().put("id", item.id).put("type", item.type).put("name", item.name)
+                    .put("poster", item.poster ?: "").put("description", item.description ?: "")
+                    .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: ""))
+            }
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREFIX + profileId, json.toString()).apply()
+    }
+}
+
 /** Lightweight recent-title shelf for Stremio catalogue items opened from MovioXP. */
 internal object XpContinueStore {
     private const val PREFS = "movioxp_catalogues"
@@ -435,10 +480,15 @@ internal object XpContinueStore {
 fun StremioCatalogScreen(
     onBack: () -> Unit,
     onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
+    initialPage: String = "home",
+    showBottomNavigation: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val profiles: ProfilesViewModel = koinViewModel()
+    val activeProfileId by profiles.activeProfileId.collectAsStateWithLifecycle()
+    val favoritesProfileId = activeProfileId ?: -1L
     val addons = remember { mutableStateListOf<XpAddon>() }
     val directoryAddons = remember { mutableStateListOf<XpAddonListing>() }
     val rows = remember { mutableStateListOf<XpCatalogRow>() }
@@ -455,32 +505,46 @@ fun StremioCatalogScreen(
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var addonCategory by remember { mutableStateOf("community") }
     var addonFilter by remember { mutableStateOf("") }
-    var page by remember { mutableStateOf("home") }
+    val browsePages = setOf("movies", "series", "live", "favorites")
+    var page by remember(initialPage) { mutableStateOf(initialPage) }
+    var returnPage by remember(initialPage) { mutableStateOf(initialPage) }
     var searchText by remember { mutableStateOf("") }
     var discoveryType by remember { mutableStateOf("all") }
     var discoveryCatalog by remember { mutableStateOf("all") }
     var discoveryGenre by remember { mutableStateOf("all") }
+    var genrePickerOpen by remember { mutableStateOf(false) }
+    var reverseTitleSort by remember { mutableStateOf(false) }
     var expandedFilter by remember { mutableStateOf<String?>(null) }
     var searchHits by remember { mutableStateOf<List<XpSearchHit>>(emptyList()) }
     var searchLoading by remember { mutableStateOf(false) }
     var searchableCatalogCount by remember { mutableStateOf(0) }
     var searchFailureCount by remember { mutableStateOf(0) }
     var continueTitles by remember { mutableStateOf(XpContinueStore.read(context)) }
+    var favoriteTitles by remember(favoritesProfileId) { mutableStateOf(XpFavoritesStore.read(context, favoritesProfileId)) }
 
     fun catalogKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
-    fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover") discoveryGenre else "all"}"
+    fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}"
     fun fetchRows() {
         rows.clear()
         val catalogRows = addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
         rows.addAll(catalogRows.filter { row ->
-            val typeMatches = page != "discover" || discoveryType == "all" || row.catalog.type == discoveryType
+            val typeMatches = when (page) {
+                "movies" -> row.catalog.type.equals("movie", true)
+                "series" -> row.catalog.type.equals("series", true)
+                "live" -> row.catalog.type.equals("channel", true)
+                "favorites" -> false
+                "discover" -> discoveryType == "all" || row.catalog.type == discoveryType
+                else -> true
+            }
+            val genreSupported = discoveryGenre == "all" || page !in setOf("movies", "series") ||
+                row.catalog.extraFields.keys.any { it.equals("genre", true) }
             val catalogMatches = page != "discover" || discoveryCatalog == "all" || catalogKey(row) == discoveryCatalog
-            typeMatches && catalogMatches
+            typeMatches && catalogMatches && genreSupported
         })
         rows.forEach { row ->
             val key = rowKey(row)
             val genreField = row.catalog.extraFields.keys.firstOrNull { it.equals("genre", true) }
-            val overrides = if (page == "discover" && discoveryGenre != "all" && genreField != null) {
+            val overrides = if ((page == "discover" || page == "movies" || page == "series") && discoveryGenre != "all" && genreField != null) {
                 mapOf(genreField to discoveryGenre)
             } else emptyMap()
             loadingRows[key] = true
@@ -494,11 +558,29 @@ fun StremioCatalogScreen(
     }
 
     val availableCatalogRows = addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
-        .filter { discoveryType == "all" || it.catalog.type == discoveryType }
+    val activeType = when (page) {
+        "movies" -> "movie"
+        "series" -> "series"
+        "live" -> "channel"
+        else -> discoveryType
+    }
     val genreOptions = availableCatalogRows
-        .filter { discoveryCatalog == "all" || catalogKey(it) == discoveryCatalog }
+        .filter { activeType == "all" || it.catalog.type.equals(activeType, true) }
+        .filter { page != "discover" || discoveryCatalog == "all" || catalogKey(it) == discoveryCatalog }
         .flatMap { row -> row.catalog.extraFields.filterKeys { it.equals("genre", true) }.values.flatten() }
         .distinct()
+
+    val sectionTitles = (if (page == "favorites") favoriteTitles else rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
+        .distinctBy { "${it.type}:${it.id}" }
+        .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedBy { meta -> meta.name.lowercase() } }
+    val gridState = rememberLazyGridState()
+
+    fun toggleFavorite(item: XpMeta) {
+        val existing = favoriteTitles.any { it.type == item.type && it.id == item.id }
+        favoriteTitles = if (existing) favoriteTitles.filterNot { it.type == item.type && it.id == item.id }
+        else listOf(item.copy(positionMs = 0L, durationMs = 0L)) + favoriteTitles
+        XpFavoritesStore.write(context, favoritesProfileId, favoriteTitles)
+    }
 
     fun installAddon(url: String) {
         if (addons.any { it.url == url }) {
@@ -543,7 +625,7 @@ fun StremioCatalogScreen(
         busy = false
     }
     LaunchedEffect(page, discoveryType, discoveryCatalog, discoveryGenre, addons.size) {
-        if (page == "home" || page == "discover") fetchRows()
+        if (page == "home" || page == "discover" || page in browsePages) fetchRows()
     }
     LaunchedEffect(page, searchText, addons.size) {
         val query = searchText.trim()
@@ -577,14 +659,14 @@ fun StremioCatalogScreen(
             streamsLoading = false
         }
     }
-    BackHandler(enabled = selected != null || adding || page != "home") {
+    BackHandler(enabled = selected != null || adding || page != initialPage) {
         when {
             selected != null -> selected = null
             adding -> adding = false
-            else -> page = "home"
+            else -> page = if (page == "search" && returnPage.isNotBlank()) returnPage else initialPage
         }
     }
-    BackHandler(enabled = selected == null && !adding && page == "home", onBack = onBack)
+    BackHandler(enabled = selected == null && !adding && page == initialPage, onBack = onBack)
 
     LaunchedEffect(page, addonCategory) {
         if (page != "addons" || addonCategory == "installed") return@LaunchedEffect
@@ -598,15 +680,16 @@ fun StremioCatalogScreen(
 
     Box(modifier.fillMaxSize().background(XpBackground)) {
         Column(Modifier.fillMaxSize()) {
-            Row(
+            if (showBottomNavigation || page !in browsePages) Row(
                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.moviotv_xp_title), color = XpText, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                    Text(stringResource(when (page) { "search" -> R.string.moviotv_xp_nav_search; "library" -> R.string.moviotv_xp_nav_library; "addons" -> R.string.moviotv_xp_nav_addons; "home" -> R.string.moviotv_nav_home; else -> R.string.moviotv_xp_nav_discover }), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(when (page) { "movies" -> R.string.moviotv_nav_movies; "series" -> R.string.moviotv_nav_series; "live" -> R.string.moviotv_nav_live_tv; "search" -> R.string.moviotv_xp_nav_search; "library" -> R.string.moviotv_xp_nav_library; "addons" -> R.string.moviotv_xp_nav_addons; "home" -> R.string.moviotv_nav_home; else -> R.string.moviotv_xp_nav_discover }), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
+                if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_nav_addons), false) { page = "addons"; adding = false }
                 if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
                 if (page == "addons") XpAction(if (adding) stringResource(R.string.moviotv_xp_cancel) else stringResource(R.string.moviotv_xp_add_catalogue), false) { adding = !adding; notice = null }
                 XpAction(stringResource(R.string.moviotv_xp_back), false, onBack)
@@ -620,7 +703,13 @@ fun StremioCatalogScreen(
                     if (searchText.isBlank()) Text(stringResource(R.string.moviotv_xp_search_hint), color = XpMuted, fontSize = 17.sp)
                     BasicTextField(
                         value = searchText,
-                        onValueChange = { searchText = it; if (it.isNotBlank()) page = "search" },
+                        onValueChange = {
+                            searchText = it
+                            if (it.isNotBlank()) {
+                                if (page != "search") returnPage = page
+                                page = "search"
+                            } else if (page == "search") page = returnPage
+                        },
                         singleLine = true,
                         textStyle = TextStyle(color = XpText, fontSize = 17.sp),
                         modifier = Modifier.weight(1f),
@@ -684,6 +773,46 @@ fun StremioCatalogScreen(
                     )
                 }
             }
+            if (page in browsePages) {
+                MovioTouchPosterBrowser(
+                    title = stringResource(when (page) { "movies" -> R.string.moviotv_nav_movies; "series" -> R.string.moviotv_nav_series; "favorites" -> R.string.content_category_favorites; else -> R.string.moviotv_nav_live_tv }),
+                    category = if (page == "favorites") stringResource(R.string.content_category_favorites) else if (page == "movies") {
+                        if (discoveryGenre == "all") context.getString(R.string.moviotv_xp_all_movies) else discoveryGenre
+                    } else if (page == "series") {
+                        if (discoveryGenre == "all") context.getString(R.string.moviotv_xp_all_series) else discoveryGenre
+                    } else context.getString(R.string.moviotv_xp_all_live_tv),
+                    query = searchText,
+                    onSearch = {
+                        searchText = it
+                        if (it.isNotBlank()) { returnPage = page; page = "search" }
+                    },
+                    categoryEnabled = page != "favorites" && page != "live" && genreOptions.isNotEmpty(),
+                    onCategories = { genrePickerOpen = true },
+                    categories = { railModifier ->
+                        XpGenreRail(
+                            modifier = railModifier,
+                            genres = if (page == "favorites") emptyList() else genreOptions,
+                            selected = discoveryGenre,
+                            allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
+                            onSelect = { discoveryGenre = it; genrePickerOpen = false },
+                        )
+                    },
+                    onSort = { reverseTitleSort = !reverseTitleSort },
+                    itemCount = sectionTitles.size,
+                    gridState = gridState,
+                    emptyText = stringResource(if (busy || rows.any { loadingRows[rowKey(it)] == true }) R.string.moviotv_xp_loading_catalogue else R.string.moviotv_xp_no_titles),
+                    poster = { index, width ->
+                        val item = sectionTitles[index]
+                        XpPoster(
+                            item = item,
+                            width = width,
+                            favorite = favoriteTitles.any { it.type == item.type && it.id == item.id },
+                            onToggleFavorite = { toggleFavorite(item) },
+                        ) { selected = item }
+                    },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            }
             if (page == "addons" && adding) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 6.dp),
@@ -724,7 +853,9 @@ fun StremioCatalogScreen(
                     items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title -> XpPoster(title) { selected = title } }
                 }
             }
-            if (page == "addons") {
+            if (page in browsePages) {
+                // The add-on catalogue rows are rendered as the MovioXP poster grid above.
+            } else if (page == "addons") {
                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
                     Text(stringResource(R.string.moviotv_xp_addon_category), color = XpMuted, fontSize = 13.sp)
                     Column {
@@ -908,17 +1039,34 @@ fun StremioCatalogScreen(
                     }
                 }
             }
-            Row(
+            if (showBottomNavigation) Row(
                 Modifier.fillMaxWidth().background(Color(0xFF100D18)).padding(horizontal = 18.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                listOf("home" to R.string.moviotv_nav_home, "discover" to R.string.moviotv_xp_nav_discover, "search" to R.string.moviotv_xp_nav_search, "library" to R.string.moviotv_xp_nav_library, "addons" to R.string.moviotv_xp_nav_addons).forEach { (key, labelRes) ->
+                    listOf("home" to R.string.moviotv_nav_home, "discover" to R.string.moviotv_xp_nav_discover, "search" to R.string.moviotv_xp_nav_search, "library" to R.string.moviotv_xp_nav_library, "addons" to R.string.moviotv_xp_nav_addons).forEach { (key, labelRes) ->
                     Text(stringResource(labelRes), color = if (page == key) XpAccent else XpMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable {
                             page = key
                             if (key == "addons") adding = false
                         }.padding(horizontal = 18.dp, vertical = 10.dp))
+                }
+            }
+        }
+        if (genrePickerOpen) {
+            Dialog(onDismissRequest = { genrePickerOpen = false }) {
+                Column(
+                    Modifier.width(340.dp).heightIn(max = 560.dp)
+                        .clip(RoundedCornerShape(18.dp)).background(XpBackground).padding(16.dp),
+                ) {
+                    Text(stringResource(R.string.moviotv_categories), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    XpGenreRail(
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp),
+                        genres = genreOptions,
+                        selected = discoveryGenre,
+                        allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
+                        onSelect = { discoveryGenre = it; genrePickerOpen = false },
+                    )
                 }
             }
         }
@@ -928,6 +1076,10 @@ fun StremioCatalogScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(item.name, color = XpText, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                XpAction(
+                    stringResource(if (favoriteTitles.any { it.type == item.type && it.id == item.id }) R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite),
+                    disabled = false,
+                ) { toggleFavorite(item) }
                 Text(
                     listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, item.rating?.let { context.getString(R.string.moviotv_xp_rating, it) })
                         .joinToString(stringResource(R.string.moviotv_xp_meta_separator)),
@@ -1037,18 +1189,71 @@ private fun XpSearchResultCard(hit: XpSearchHit, onClick: () -> Unit) {
 }
 
 @Composable
-private fun XpPoster(item: XpMeta, onClick: () -> Unit) {
+private fun XpGenreRail(
+    modifier: Modifier,
+    genres: List<String>,
+    selected: String,
+    allLabel: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(modifier.background(XpPanel).padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Text(stringResource(R.string.moviotv_categories), color = XpMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            item(key = "all") { XpGenreRow(allLabel, selected == "all") { onSelect("all") } }
+            items(genres.distinct().sorted(), key = { "genre:$it" }) { genre ->
+                XpGenreRow(genre, selected.equals(genre, true)) { onSelect(genre) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun XpGenreRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Text(
+        label,
+        color = if (selected || focused) XpText else XpMuted,
+        fontSize = 15.sp,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+            .background(if (selected || focused) XpAccent.copy(alpha = .22f) else Color.Transparent)
+            .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+    )
+}
+
+@Composable
+private fun XpPoster(
+    item: XpMeta,
+    width: Dp = 142.dp,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     Column(
-        Modifier.width(142.dp).onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable(),
+        Modifier.width(width).onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable(),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(
-            Modifier.size(142.dp, 208.dp).clip(RoundedCornerShape(12.dp))
+            Modifier.size(width, width * 1.46f).clip(RoundedCornerShape(12.dp))
                 .background(if (focused) XpAccent.copy(alpha = .24f) else XpPanel),
         ) {
             item.poster?.let {
                 AsyncImage(model = it, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
+            if (onToggleFavorite != null) {
+                Text(
+                    if (favorite) "♥" else "♡",
+                    color = if (favorite) Color(0xFFFFD166) else XpText,
+                    fontSize = 20.sp,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                        .clip(RoundedCornerShape(18.dp)).background(XpBackground.copy(alpha = .8f))
+                        .clickable(onClick = onToggleFavorite).focusable().padding(horizontal = 8.dp, vertical = 3.dp),
+                )
             }
             if (item.durationMs > 0L && item.positionMs > 0L) {
                 Box(
