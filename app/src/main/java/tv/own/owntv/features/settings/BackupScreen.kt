@@ -307,16 +307,28 @@ fun BackupScreen(
                     if (s.invalidLocale) Text(stringResource(R.string.settings_backup_invalid_locale), style = stageText(16, 500), color = StageColors.Muted)
                 }
             }
-            is BackupViewModel.State.Error -> status(
-                stringResource(
-                    when (s.kind) {
-                        BackupError.EXPORT -> R.string.settings_backup_export_error
-                        BackupError.READ -> R.string.settings_backup_read_error
-                        BackupError.IMPORT -> R.string.settings_backup_import_error
-                    },
-                ),
-                StageColors.Danger,
-            )
+            is BackupViewModel.State.Error -> Column {
+                status(
+                    stringResource(
+                        when (s.kind) {
+                            BackupError.EXPORT -> R.string.settings_backup_export_error
+                            BackupError.READ -> R.string.settings_backup_read_error
+                            BackupError.IMPORT -> R.string.settings_backup_import_error
+                        },
+                    ),
+                    StageColors.Danger,
+                )
+                s.detail?.let { detail ->
+                    Text(
+                        detail,
+                        style = stageText(15, 500),
+                        color = StageColors.Muted,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.mpx),
+                    )
+                }
+            }
             else -> Unit
         }
     }

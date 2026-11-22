@@ -2,6 +2,8 @@ package tv.own.owntv.features.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,12 +41,15 @@ class BackupViewModel(
     fun exportRemote(sections: Set<BackupManager.Section>, backupPassword: String?, profileIds: Set<Long>) {
         viewModelScope.launch {
             _state.value = State.Working
-            backup.export(companion.backupExportDir, sections, backupPassword, profileIds).fold(
+            backup.exportSafely(companion.backupExportDir, sections, backupPassword, profileIds).fold(
                 onSuccess = { path ->
                     companion.startForBackupDownload(tv.own.owntv.core.companion.CompanionLink.DEFAULT_PORT, File(path))
                     _state.value = State.Idle
                 },
-                onFailure = { _state.value = State.Error(BackupError.EXPORT) },
+                onFailure = { error ->
+                    Log.e(TAG, "Remote backup export failed", error)
+                    _state.value = State.Error(BackupError.EXPORT, error.backupFailureDetail())
+                },
             )
         }
     }
@@ -99,7 +104,8 @@ class BackupViewModel(
             val skippedSources: Int = 0,
             val invalidLocale: Boolean = false,
         ) : State
-        data class Error(val kind: BackupError) : State
+        /** Short underlying cause retained so the screen can tell the user what actually failed. */
+        data class Error(val kind: BackupError, val detail: String? = null) : State
 
         /**
          * The file has profiles named like ones here: ask what to do with each ([clashes]). Merging or
@@ -151,11 +157,14 @@ class BackupViewModel(
     fun export(folder: File, sections: Set<BackupManager.Section>, backupPassword: String?, profileIds: Set<Long>) {
         viewModelScope.launch {
             _state.value = State.Working
-            backup.export(folder, sections, backupPassword, profileIds).fold(
+            backup.exportSafely(folder, sections, backupPassword, profileIds).fold(
                 onSuccess = {
                     _state.value = State.Done(DoneKind.EXPORTED, path = it, passwordsOmitted = backupPassword.isNullOrBlank())
                 },
-                onFailure = { _state.value = State.Error(BackupError.EXPORT) },
+                onFailure = { error ->
+                    Log.e(TAG, "Backup export failed", error)
+                    _state.value = State.Error(BackupError.EXPORT, error.backupFailureDetail())
+                },
             )
         }
     }
@@ -259,4 +268,29 @@ class BackupViewModel(
     }
 
     fun reset() { _state.value = State.Idle }
+
+    private companion object {
+        const val TAG = "MovioXPBackup"
+    }
+}
+
+/** Keep the useful root-cause text while avoiding a giant stack trace in the TV UI. */
+private fun Throwable.backupFailureDetail(): String {
+    val root = generateSequence(this) { it.cause }.last()
+    return (root.message?.takeIf(String::isNotBlank) ?: root.javaClass.simpleName)
+        .replace(Regex("\\s+"), " ")
+        .take(240)
+}
+
+private suspend fun BackupManager.exportSafely(
+    folder: File,
+    sections: Set<BackupManager.Section>,
+    password: String?,
+    profileIds: Set<Long>,
+): Result<String> = try {
+    export(folder, sections, password, profileIds)
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (error: Exception) {
+    Result.failure(error)
 }

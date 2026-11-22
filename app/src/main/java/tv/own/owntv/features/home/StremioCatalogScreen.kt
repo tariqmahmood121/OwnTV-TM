@@ -6,6 +6,7 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.Image
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -35,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -48,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -63,6 +66,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.Text
 import tv.own.owntv.R
 import tv.own.owntv.features.profiles.ProfilesViewModel
+import tv.own.owntv.core.database.entity.ChannelEntity
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -384,7 +388,7 @@ private object XpAddonStore {
 }
 
 /** MovioXP favourites are local and isolated by the active local profile. */
-private object XpFavoritesStore {
+internal object XpFavoritesStore {
     private const val PREFS = "movioxp_catalogues"
     private const val PREFIX = "favorites_profile_"
 
@@ -419,6 +423,17 @@ private object XpFavoritesStore {
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREFIX + profileId, json.toString()).apply()
+    }
+
+    fun isFavorite(context: Context, profileId: Long, type: String, id: String): Boolean =
+        read(context, profileId).any { it.type == type && it.id == id }
+
+    fun toggle(context: Context, profileId: Long, item: XpMeta): Boolean {
+        val current = read(context, profileId)
+        val exists = current.any { it.type == item.type && it.id == item.id }
+        write(context, profileId, if (exists) current.filterNot { it.type == item.type && it.id == item.id }
+            else listOf(item.copy(positionMs = 0L, durationMs = 0L)) + current)
+        return !exists
     }
 }
 
@@ -482,6 +497,8 @@ internal object XpContinueStore {
 fun StremioCatalogScreen(
     onBack: () -> Unit,
     onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
+    localLiveChannels: List<ChannelEntity> = emptyList(),
+    onPlayLocalLiveChannel: (Long) -> Unit = {},
     initialPage: String = "home",
     showBottomNavigation: Boolean = true,
     modifier: Modifier = Modifier,
@@ -499,6 +516,9 @@ fun StremioCatalogScreen(
     var address by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var showAddonRemote by remember { mutableStateOf(false) }
+    val addonRemoteServer = remember { XpAddonRemoteServer() }
+    val addonRemoteState by addonRemoteServer.state.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<XpMeta?>(null) }
     var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
@@ -523,6 +543,17 @@ fun StremioCatalogScreen(
     var searchFailureCount by remember { mutableStateOf(0) }
     var continueTitles by remember { mutableStateOf(XpContinueStore.read(context)) }
     var favoriteTitles by remember(favoritesProfileId) { mutableStateOf(XpFavoritesStore.read(context, favoritesProfileId)) }
+
+    DisposableEffect(context, favoritesProfileId) {
+        val preferences = context.getSharedPreferences("movioxp_catalogues", Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "favorites_profile_$favoritesProfileId") {
+                favoriteTitles = XpFavoritesStore.read(context, favoritesProfileId)
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     fun catalogKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}"
@@ -570,9 +601,23 @@ fun StremioCatalogScreen(
         .filter { activeType == "all" || it.catalog.type.equals(activeType, true) }
         .filter { page != "discover" || discoveryCatalog == "all" || catalogKey(it) == discoveryCatalog }
         .flatMap { row -> row.catalog.extraFields.filterKeys { it.equals("genre", true) }.values.flatten() }
+        // Some catalogues incorrectly advertise release years as genre choices; keep the rail
+        // focused on actual genres instead of filling it with entries such as 1920, 1921, ... .
+        .filterNot { it.trim().matches(Regex("\\d{4}")) }
         .distinct()
 
-    val sectionTitles = (if (page == "favorites") favoriteTitles else rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
+    val localLiveTitles = if (page == "live") localLiveChannels.map { channel ->
+        XpMeta(
+            id = "own-live:${channel.id}",
+            type = "channel",
+            name = channel.name,
+            poster = channel.logoUrl,
+            description = null,
+            releaseInfo = null,
+            rating = null,
+        )
+    } else emptyList()
+    val sectionTitles = (if (page == "favorites") favoriteTitles else localLiveTitles + rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
         .distinctBy { "${it.type}:${it.id}" }
         .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedBy { meta -> meta.name.lowercase() } }
     val gridState = rememberLazyGridState()
@@ -603,6 +648,20 @@ fun StremioCatalogScreen(
                 .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
             busy = false
         }
+    }
+
+    DisposableEffect(addonRemoteServer) {
+        onDispose { addonRemoteServer.close() }
+    }
+    LaunchedEffect(addonRemoteServer) {
+        addonRemoteServer.submissions.collect { url ->
+            showAddonRemote = false
+            adding = false
+            installAddon(url)
+        }
+    }
+    LaunchedEffect(showAddonRemote) {
+        if (!showAddonRemote) addonRemoteServer.close()
     }
 
     fun removeAddon(addon: XpAddon) {
@@ -650,6 +709,10 @@ fun StremioCatalogScreen(
     LaunchedEffect(selected?.id, selected?.type, addons.size) {
         val item = selected ?: return@LaunchedEffect
         selectedStreams = emptyList()
+        if (item.id.startsWith("own-live:")) {
+            streamsLoading = false
+            return@LaunchedEffect
+        }
         val providers = addons.filter { addon -> addon.resources.any { it.supports(item.type, item.id) } }
         if (providers.isEmpty()) {
             streamsLoading = false
@@ -808,9 +871,10 @@ fun StremioCatalogScreen(
                         XpPoster(
                             item = item,
                             width = width,
-                            favorite = favoriteTitles.any { it.type == item.type && it.id == item.id },
-                            onToggleFavorite = { toggleFavorite(item) },
-                        ) { selected = item }
+                        ) {
+                            val liveChannelId = item.id.removePrefix("own-live:").toLongOrNull()
+                            if (liveChannelId != null) onPlayLocalLiveChannel(liveChannelId) else selected = item
+                        }
                     },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
@@ -843,6 +907,10 @@ fun StremioCatalogScreen(
                             address = ""
                             adding = false
                         }
+                    }
+                    XpAction("Enter on phone", busy) {
+                        showAddonRemote = true
+                        addonRemoteServer.start()
                     }
                 }
             }
@@ -1072,6 +1140,37 @@ fun StremioCatalogScreen(
                 }
             }
         }
+        if (showAddonRemote) {
+            Dialog(onDismissRequest = { showAddonRemote = false; addonRemoteServer.close() }) {
+                Column(
+                    Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(XpBackground).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Add an add-on from your phone", color = XpText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Scan the QR code, enter the TV code, then paste the add-on URL on your phone.",
+                        color = XpMuted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                    )
+                    when {
+                        addonRemoteState == null -> Text("Opening the secure local entry page…", color = XpMuted, fontSize = 16.sp)
+                        addonRemoteState?.failure != null -> Text(addonRemoteState?.failure.orEmpty(), color = Color(0xFFFFB4AB), fontSize = 16.sp)
+                        else -> {
+                            val link = addonRemoteState!!
+                            link.qr?.let { qr ->
+                                Image(
+                                    bitmap = qr.asImageBitmap(),
+                                    contentDescription = "Scan to open add-on entry on your phone",
+                                    modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
+                                )
+                            }
+                            Text(link.url, color = XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+                            Text("TV code: ${link.pin}", color = XpAccent, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        }
+                    }
+                    XpAction("Cancel", false) { showAddonRemote = false; addonRemoteServer.close() }
+                }
+            }
+        }
         selected?.let { item ->
             Column(
                 Modifier.fillMaxSize().background(XpBackground.copy(alpha = .98f)).padding(38.dp),
@@ -1231,11 +1330,8 @@ private fun XpGenreRow(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun XpPoster(
     item: XpMeta,
     width: Dp = 142.dp,
-    favorite: Boolean = false,
-    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    val context = LocalContext.current
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier.width(width).onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable(),
@@ -1247,21 +1343,6 @@ private fun XpPoster(
         ) {
             item.poster?.let {
                 AsyncImage(model = it, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            }
-            if (onToggleFavorite != null) {
-                Text(
-                    stringResource(if (favorite) R.string.moviotv_xp_favorite_on_symbol else R.string.moviotv_xp_favorite_off_symbol),
-                    color = if (favorite) Color(0xFFFFD166) else XpText,
-                    fontSize = 20.sp,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
-                        .clip(RoundedCornerShape(18.dp)).background(XpBackground.copy(alpha = .8f))
-                        .semantics {
-                            contentDescription = context.getString(
-                                if (favorite) R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite,
-                            )
-                        }
-                        .clickable(onClick = onToggleFavorite).focusable().padding(horizontal = 8.dp, vertical = 3.dp),
-                )
             }
             if (item.durationMs > 0L && item.positionMs > 0L) {
                 Box(

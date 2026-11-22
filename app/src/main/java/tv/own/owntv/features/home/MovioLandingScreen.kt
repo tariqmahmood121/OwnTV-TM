@@ -81,7 +81,7 @@ fun MovioLandingScreen(
         onDispose { onEntryHook?.invoke(null) }
     }
     // Open discovery first so Movies and Series have posters before add-ons are installed.
-    var showStremioCatalogues by remember { mutableStateOf(false) }
+    var showStremioCatalogues by remember { mutableStateOf(true) }
     LaunchedEffect(touchMode, showStremioCatalogues) {
         if (!touchMode && !showStremioCatalogues) runCatching { firstFocus.requestFocus() }
     }

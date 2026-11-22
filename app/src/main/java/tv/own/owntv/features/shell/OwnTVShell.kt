@@ -68,6 +68,8 @@ import tv.own.owntv.features.downloads.DownloadsScreen
 import tv.own.owntv.features.epg.EpgScreen
 import tv.own.owntv.features.home.HomeScreen
 import tv.own.owntv.features.home.HomeViewModel
+import tv.own.owntv.features.home.XpFavoritesStore
+import tv.own.owntv.features.home.XpMeta
 import tv.own.owntv.features.live.LiveScreen
 import tv.own.owntv.features.live.LiveViewModel
 import tv.own.owntv.features.movies.MoviesScreen
@@ -117,6 +119,7 @@ private data class MovioXpPlayback(
     val title: String,
     val year: String?,
     val poster: String?,
+    val favorite: Boolean = false,
 )
 
 @Composable
@@ -480,19 +483,35 @@ fun OwnTVShell(
     val movieFavoriteIds by movieVm.favoriteIds.collectAsStateWithLifecycle()
     val playingSeries by seriesVm.playingSeries.collectAsStateWithLifecycle()
     val seriesFavoriteIds by seriesVm.favoriteIds.collectAsStateWithLifecycle()
+    fun xpFavoriteToggle(expectedType: String): (() -> Unit)? = movioXpPlayback
+        ?.takeIf { it.type.equals(expectedType, ignoreCase = true) }
+        ?.let { current ->
+            {
+                val profileId = activeProfileId ?: -1L
+                val nowFavorite = XpFavoritesStore.toggle(
+                    movioContext,
+                    profileId,
+                    XpMeta(current.id, current.type, current.title, current.poster, null, current.year, null),
+                )
+                movioXpPlayback = current.copy(favorite = nowFavorite)
+            }
+        }
     // Favorite toggle for whatever is playing: the live channel, the movie, or the series (episodes
     // favorite their parent series). Picked by the section that armed the stream. Hoisted here because
     // the audio capsule in the top bar carries the same control as the fullscreen HUD.
     val favToggle: (() -> Unit)? = when (zapSource) {
-        MainSection.LIVE_TV -> previewChannel?.let { ch -> { liveVm.toggleFavorite(ch) } }
-        MainSection.MOVIES -> playingMovie?.let { m -> { movieVm.toggleFavorite(m) } }
-        MainSection.SERIES -> playingSeries?.let { s -> { seriesVm.toggleFavorite(s) } }
+        MainSection.LIVE_TV -> xpFavoriteToggle("channel") ?: previewChannel?.let { ch -> { liveVm.toggleFavorite(ch) } }
+        MainSection.MOVIES -> xpFavoriteToggle("movie") ?: playingMovie?.let { m -> { movieVm.toggleFavorite(m) } }
+        MainSection.SERIES -> xpFavoriteToggle("series") ?: playingSeries?.let { s -> { seriesVm.toggleFavorite(s) } }
         else -> null
     }
     val favActive = when (zapSource) {
-        MainSection.LIVE_TV -> previewChannel?.let { liveFavoriteIds.contains(it.id) } ?: false
-        MainSection.MOVIES -> playingMovie?.let { movieFavoriteIds.contains(it.id) } ?: false
-        MainSection.SERIES -> playingSeries?.let { seriesFavoriteIds.contains(it.id) } ?: false
+        MainSection.LIVE_TV -> movioXpPlayback?.takeIf { it.type.equals("channel", true) }?.favorite
+            ?: previewChannel?.let { liveFavoriteIds.contains(it.id) } ?: false
+        MainSection.MOVIES -> movioXpPlayback?.takeIf { it.type.equals("movie", true) }?.favorite
+            ?: playingMovie?.let { movieFavoriteIds.contains(it.id) } ?: false
+        MainSection.SERIES -> movioXpPlayback?.takeIf { it.type.equals("series", true) }?.favorite
+            ?: playingSeries?.let { seriesFavoriteIds.contains(it.id) } ?: false
         else -> false
     }
     // Tell core which playlist is on screen, so its background catalogue drain steps aside while the
@@ -665,7 +684,11 @@ fun OwnTVShell(
                 type.equals("channel", ignoreCase = true) -> MainSection.LIVE_TV
                 else -> MainSection.MOVIES
             }
-            movioXpPlayback = MovioXpPlayback(contentId, type, title, year, poster)
+            val profileId = activeProfileId ?: -1L
+            movioXpPlayback = MovioXpPlayback(
+                contentId, type, title, year, poster,
+                favorite = XpFavoritesStore.isFavorite(movioContext, profileId, type, contentId),
+            )
             subtitleController.clear()
             player.play(url = url, title = title, year = year, contentKey = "stremio:$type:$contentId")
             if (resumePositionMs > 0L) scope.launch {
@@ -1480,6 +1503,12 @@ fun OwnTVShell(
                         selectedSection == MainSection.LIVE_TV -> tv.own.owntv.features.home.StremioCatalogScreen(
                             onBack = { onSelectSection(MainSection.HOME) },
                             onPlayStream = onPlayMovioXpStream,
+                            localLiveChannels = zapChannels,
+                            onPlayLocalLiveChannel = { id ->
+                                scope.launch {
+                                    if (liveVm.ensurePlayingByIdAsync(id)) openFullscreen(MainSection.LIVE_TV)
+                                }
+                            },
                             initialPage = "live",
                             showBottomNavigation = false,
                             modifier = Modifier.fillMaxSize(),
