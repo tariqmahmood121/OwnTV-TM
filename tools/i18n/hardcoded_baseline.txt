@@ -17,20 +17,15 @@
 1	app/src/main/java/tv/own/owntv/features/customize/CustomizeScreen.kt	hid:${entry.key}
 1	app/src/main/java/tv/own/owntv/features/customize/CustomizeViewModel.kt	Custom
 1	app/src/main/java/tv/own/owntv/features/customize/MoveToCategoryDialog.kt	new
-1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$categoryLabel ▾
-1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	addons
 3	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	community
-2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	description
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	directory:${it.url}
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	durationMs
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https://v3-cinemeta.strem.io/addon_catalog/all/$category.json
-1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	id
 4	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	installed
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	installed:${it.url}
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	logo
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	manifest
-1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	name
 3	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	official
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	positionMs
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	resources

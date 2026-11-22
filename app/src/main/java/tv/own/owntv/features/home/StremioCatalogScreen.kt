@@ -51,6 +51,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1233,6 +1235,7 @@ private fun XpPoster(
     onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier.width(width).onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable(),
@@ -1247,11 +1250,16 @@ private fun XpPoster(
             }
             if (onToggleFavorite != null) {
                 Text(
-                    if (favorite) "♥" else "♡",
+                    stringResource(if (favorite) R.string.moviotv_xp_favorite_on_symbol else R.string.moviotv_xp_favorite_off_symbol),
                     color = if (favorite) Color(0xFFFFD166) else XpText,
                     fontSize = 20.sp,
                     modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
                         .clip(RoundedCornerShape(18.dp)).background(XpBackground.copy(alpha = .8f))
+                        .semantics {
+                            contentDescription = context.getString(
+                                if (favorite) R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite,
+                            )
+                        }
                         .clickable(onClick = onToggleFavorite).focusable().padding(horizontal = 8.dp, vertical = 3.dp),
                 )
             }

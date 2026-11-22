@@ -200,4 +200,6 @@
     <string name="moviotv_xp_all_live_tv">All Live TV</string>
     <string name="moviotv_xp_add_favorite">♡  Add favourite</string>
     <string name="moviotv_xp_remove_favorite">♥  Remove favourite</string>
+    <string name="moviotv_xp_favorite_off_symbol" translatable="false">♡</string>
+    <string name="moviotv_xp_favorite_on_symbol" translatable="false">♥</string>
 </resources>
