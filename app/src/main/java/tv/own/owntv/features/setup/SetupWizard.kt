@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,11 +28,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.R
 import tv.own.owntv.core.brand.AppIcon
@@ -49,6 +52,8 @@ import tv.own.owntv.features.settings.SetupLocalSyncScreen
 import tv.own.owntv.features.settings.StageFieldRow
 import tv.own.owntv.features.settings.StageSettingRow
 import tv.own.owntv.features.settings.SettingHelp
+import tv.own.owntv.features.home.XpCentralConnectionStore
+import tv.own.owntv.features.home.XpCentralAddonSync
 import tv.own.owntv.features.shell.PendingShellRequest
 import tv.own.owntv.ui.components.BrandMark
 import tv.own.owntv.ui.components.BrowseMode
@@ -68,8 +73,11 @@ import tv.own.owntv.ui.theme.StageColors
 import tv.own.owntv.ui.theme.mpx
 import tv.own.owntv.ui.theme.stageAccent
 import tv.own.owntv.ui.theme.stageText
+import tv.own.owntv.ui.theme.LocalMainFontFamily
+import tv.own.owntv.ui.theme.asComposeFamily
+import tv.own.owntv.core.theme.AppFontFamily
 
-private enum class Step { WELCOME, DISPLAY_SIZE, DISCLAIMER, SETUP_CHOICE, SYNC_DEVICE, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE_REMOTE, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP_CHOOSER, IMPORT_BACKUP_REMOTE, IMPORT_BACKUP }
+private enum class Step { CENTRAL_GATE, CENTRAL_ACCOUNT, WELCOME, DISPLAY_SIZE, DISCLAIMER, SETUP_CHOICE, SYNC_DEVICE, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE_REMOTE, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP_CHOOSER, IMPORT_BACKUP_REMOTE, IMPORT_BACKUP }
 
 /**
  * Onboarding for one profile. [firstRun] shows language/welcome/disclaimer; otherwise it
@@ -80,11 +88,14 @@ private enum class Step { WELCOME, DISPLAY_SIZE, DISCLAIMER, SETUP_CHOICE, SYNC_
 @Composable
 fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     val vm: SetupViewModel = koinViewModel()
+    val context = LocalContext.current
+    val savedCentralConnection = remember { XpCentralConnectionStore.read(context) }
     val defaultProfileName = stringResource(R.string.setup_default_profile)
     val defaultIptvName = stringResource(R.string.setup_default_iptv)
     val defaultPlaylistName = stringResource(R.string.setup_name_default_playlist)
     val defaultPortalName = stringResource(R.string.setup_default_portal)
-    var step by rememberSaveable(firstRun) { mutableStateOf(if (firstRun) Step.WELCOME else Step.CREATE_PROFILE) }
+    var step by rememberSaveable(firstRun) { mutableStateOf(if (firstRun) { if (savedCentralConnection == null) Step.CENTRAL_GATE else Step.WELCOME } else Step.CREATE_PROFILE) }
+    var centralRegistering by remember { mutableStateOf(false) }
     val importState by vm.state.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val epgSync by vm.epgSync.collectAsStateWithLifecycle()
@@ -106,8 +117,30 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
     LaunchedEffect(step) { if (step == Step.ADD_CONTENT) existing = runCatching { vm.availableExistingSources() }.getOrDefault(emptyList()) }
 
     val accent = stageAccent.accent
+    CompositionLocalProvider(LocalMainFontFamily provides AppFontFamily.POPPINS.asComposeFamily()) {
     Box(modifier = modifier.fillMaxSize().stageBackground(accent)) {
         when (step) {
+            Step.CENTRAL_GATE -> WizardFrame(
+                step = WizardStep.LANGUAGE,
+                title = stringResource(R.string.moviotv_xp_welcome_title),
+                sub = stringResource(R.string.moviotv_xp_welcome_sub),
+                back = null,
+                next = null,
+            ) {
+                WizardCards(
+                    listOf(
+                        WizardCard(OwnTVIcon.PERSON, stringResource(R.string.moviotv_xp_central_login), stringResource(R.string.moviotv_xp_central_login_line)) { centralRegistering = false; step = Step.CENTRAL_ACCOUNT },
+                        WizardCard(OwnTVIcon.SPARKLE, stringResource(R.string.moviotv_xp_central_register), stringResource(R.string.moviotv_xp_central_register_line)) { centralRegistering = true; step = Step.CENTRAL_ACCOUNT },
+                        WizardCard(OwnTVIcon.PLAY, stringResource(R.string.moviotv_xp_guest), stringResource(R.string.moviotv_xp_guest_line)) { step = Step.WELCOME },
+                    ),
+                    rememberFirstFocus(),
+                )
+            }
+            Step.CENTRAL_ACCOUNT -> CentralAccountStep(
+                registering = centralRegistering,
+                onBack = { step = Step.CENTRAL_GATE },
+                onConnected = { step = Step.WELCOME },
+            )
             Step.WELCOME -> WelcomeStep(onNext = { step = Step.DISPLAY_SIZE })
             // Before the disclaimer, which is the first screen with a paragraph of real text on it:
             // if the interface is too small to read, that is the screen it first hurts on.
@@ -286,6 +319,56 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
             onDismiss = vm::dismissPendingEpg,
             onBackground = { vm.syncEpgInBackground(onDone) }, // enter the app; guide keeps downloading
         )
+    }
+    }
+}
+
+@Composable
+private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConnected: () -> Unit) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val usernameLabel = stringResource(R.string.moviotv_xp_central_username_label)
+    val passwordLabel = stringResource(R.string.moviotv_xp_central_password_label)
+    val valid = username.isNotBlank() && password.isNotBlank() && (!registering || (username.trim().length >= 3 && password.length >= 12))
+    WizardFrame(
+        step = WizardStep.LANGUAGE,
+        title = stringResource(if (registering) R.string.moviotv_xp_central_register else R.string.moviotv_xp_central_login),
+        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_requirements else R.string.moviotv_xp_central_account_help),
+        back = WizardAction(stringResource(R.string.common_back), onBack),
+        next = WizardAction(
+            stringResource(if (registering) R.string.moviotv_xp_central_create_and_continue else R.string.moviotv_xp_central_login),
+            onClick = {
+                if (valid && !busy) {
+                    busy = true
+                    message = null
+                    scope.launch {
+                        val apiBase = context.getString(R.string.moviotv_xp_central_api_default)
+                        runCatching {
+                            if (registering) XpCentralAddonSync.register(apiBase, username, password)
+                            XpCentralAddonSync.signIn(apiBase, username, password)
+                        }.onSuccess { connection ->
+                            XpCentralConnectionStore.write(context, connection)
+                            busy = false
+                            onConnected()
+                        }.onFailure { error ->
+                            message = error.message?.takeIf(String::isNotBlank) ?: context.getString(R.string.moviotv_xp_central_sync_failed)
+                            busy = false
+                        }
+                    }
+                }
+            },
+            enabled = valid && !busy,
+        ),
+        extraLeft = if (busy) listOf(WizardAction(stringResource(R.string.moviotv_xp_central_connecting), {}, enabled = false)) else emptyList(),
+    ) {
+        val fieldHelp = stringResource(R.string.settings_form_field_help)
+        StageFieldRow(OwnTVIcon.PERSON, usernameLabel, username, { username = it; message = null }, SettingHelp(usernameLabel, fieldHelp), modifier = Modifier.focusRequester(rememberFirstFocus()), keyboardType = KeyboardType.Text)
+        StageFieldRow(OwnTVIcon.PENCIL, passwordLabel, password, { password = it; message = null }, SettingHelp(passwordLabel, fieldHelp), password = true)
+        message?.let { Text(it, style = stageText(16, 600), color = StageColors.Warn, modifier = Modifier.padding(top = 10.mpx)) }
     }
 }
 

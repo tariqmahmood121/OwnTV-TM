@@ -499,13 +499,16 @@ internal object XpContinueStore {
         context: Context, profileId: Long, id: String, type: String, name: String, poster: String?, year: String?,
         positionMs: Long, durationMs: Long,
     ) {
-        if (durationMs <= 0L) return
-        val meta = XpMeta(id, type, name, poster, null, year, null, positionMs, durationMs)
-        if (positionMs >= durationMs * .95f) {
+        val previous = read(context, profileId).firstOrNull { it.id == id && it.type == type }
+        val knownDuration = durationMs.takeIf { it > 0L } ?: previous?.durationMs ?: 0L
+        val safePosition = positionMs.coerceAtLeast(0L)
+        if (knownDuration > 0L && safePosition >= knownDuration * .95f) {
+            val meta = XpMeta(id, type, name, poster, null, year, null, safePosition, knownDuration)
             val remaining = read(context, profileId).filterNot { it.id == id && it.type == type }
             write(context, profileId, remaining)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = true)
-        } else if (positionMs > 0L) {
+        } else if (safePosition > 0L) {
+            val meta = XpMeta(id, type, name, poster, null, year, null, safePosition, knownDuration)
             save(context, profileId, meta)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = false)
         }
@@ -764,6 +767,14 @@ fun StremioCatalogScreen(
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
             }
             centralSyncBusy = false
+        }
+    }
+
+    // A Central login/profile can be restored before the user opens Add-ons. Pull its account/profile
+    // add-ons as soon as this catalogue screen is ready, then keep the regular data sync separate.
+    LaunchedEffect(centralConnection, favoritesProfileId, activeProfileName, activeProfile?.isKids) {
+        if (centralConnection != null && favoritesProfileId > 0L && activeProfileName.isNotBlank()) {
+            syncAddonsWithCentral()
         }
     }
 

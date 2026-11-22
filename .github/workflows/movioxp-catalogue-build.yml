@@ -6,6 +6,7 @@ on:
     branches: [MovioXP]
     paths:
       - app/src/main/java/tv/own/owntv/features/home/**
+      - app/src/main/java/tv/own/owntv/features/setup/**
       - app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt
       - app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt
       - app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt

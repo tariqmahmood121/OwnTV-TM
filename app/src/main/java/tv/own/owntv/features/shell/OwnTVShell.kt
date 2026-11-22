@@ -126,6 +126,26 @@ private data class MovioXpPlayback(
     val favorite: Boolean = false,
 )
 
+/** mpv may accept a seek before a newly opened stream has exposed its timeline and silently drop it. */
+private suspend fun seekMovioXpWhenReady(
+    player: OwnTVPlayer,
+    engine: tv.own.owntv.player.MpvPlaybackEngine,
+    contentKey: String,
+    requestedPositionMs: Long,
+) {
+    if (requestedPositionMs <= 0L) return
+    kotlinx.coroutines.delay(350L)
+    val duration = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+        player.currentMeta.first { it?.contentKey == contentKey }
+        player.duration.first { it > 0L }
+    } ?: return
+    // Let mpv finish opening the first packet before seeking; this avoids a seek being reset to zero
+    // when the stream's initial timeline is committed just after metadata appears.
+    kotlinx.coroutines.delay(500L)
+    val safePosition = requestedPositionMs.coerceAtMost((duration - 3_000L).coerceAtLeast(0L))
+    if (safePosition > 0L && player.currentMeta.value?.contentKey == contentKey) engine.seekBy(safePosition)
+}
+
 @Composable
 fun OwnTVShell(
     selectedSection: MainSection,
@@ -320,7 +340,7 @@ fun OwnTVShell(
             xpCandidateIndex = -1
         }
     }
-    LaunchedEffect(currentPlayerMeta?.contentKey, movioXpPlayback?.profileId) {
+    LaunchedEffect(currentPlayerMeta?.contentKey, movioXpPlayback?.profileId, xpCandidateGeneration, xpCandidateIndex) {
         val media = movioXpPlayback ?: return@LaunchedEffect
         val contentKey = currentPlayerMeta?.contentKey ?: return@LaunchedEffect
         if (!contentKey.startsWith("stremio:")) return@LaunchedEffect
@@ -328,7 +348,7 @@ fun OwnTVShell(
         val audioId = xpTrackPreferences.getInt("xp_audio_$key", -1)
         val subtitleId = xpTrackPreferences.getInt("xp_subtitle_$key", -2)
         if (audioId < 0 && subtitleId == -2) return@LaunchedEffect
-        repeat(12) {
+        repeat(60) {
             delay(500L)
             val audioReady = audioId < 0 || player.audioTracks().any { it.mpvId == audioId }
             val subtitleReady = subtitleId == -2 || subtitleId == -1 || player.textTracks().any { it.mpvId == subtitleId }
@@ -342,6 +362,7 @@ fun OwnTVShell(
         val current = movioXpPlayback ?: return@LaunchedEffect
         while (true) {
             delay(5_000L)
+            if (currentPlayerMeta?.contentKey != "stremio:${current.type}:${current.id}") continue
             val position = mpvEngine.position.value
             val duration = mpvEngine.duration.value
             tv.own.owntv.features.home.XpContinueStore.updateProgress(
@@ -739,8 +760,7 @@ fun OwnTVShell(
             subtitleController.clear()
             player.play(url = url, title = title, year = year, contentKey = "stremio:$type:$contentId")
             if (resumePositionMs > 0L) scope.launch {
-                delay(1_500L)
-                mpvEngine.seekBy(resumePositionMs)
+                seekMovioXpWhenReady(player, mpvEngine, "stremio:$type:$contentId", resumePositionMs)
             }
             onSelectSection(target)
             openFullscreen(target)
@@ -782,8 +802,7 @@ fun OwnTVShell(
                 contentKey = xpCandidateContentKey,
             )
             if (resumeAtMs > 0L) scope.launch {
-                delay(1_500L)
-                mpvEngine.seekBy(resumeAtMs)
+                seekMovioXpWhenReady(player, mpvEngine, xpCandidateContentKey, resumeAtMs)
             }
             xpCandidateIndex = nextIndex
             val activeSource = xpCandidateSources.getOrNull(nextIndex)
@@ -825,10 +844,12 @@ fun OwnTVShell(
         movieVm.saveProgressNow()
         seriesVm.saveEpisodeProgressNow()
         wasMovioXp?.let { media ->
-            tv.own.owntv.features.home.XpContinueStore.updateProgress(
-                movioContext, media.profileId, media.id, media.type, media.title, media.poster, media.year,
-                player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
-            )
+            if (currentPlayerMeta?.contentKey == "stremio:${media.type}:${media.id}") {
+                tv.own.owntv.features.home.XpContinueStore.updateProgress(
+                    movioContext, media.profileId, media.id, media.type, media.title, media.poster, media.year,
+                    player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
+                )
+            }
             movioXpPlayback = null
         }
         resumeVideo() // restore mpv `vid=auto` before stop so the next played item isn't left video-less

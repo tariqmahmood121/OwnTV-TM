@@ -253,5 +253,14 @@
     <string name="moviotv_xp_central_register_requirements">Choose a username with at least 3 characters and a password with at least 12 characters.</string>
     <string name="moviotv_xp_central_registration_help">Create an account or log in to Central to sync your add-ons and profile data.</string>
     <string name="moviotv_xp_central_registration_complete">Account created. Log in to enable sync.</string>
+    <string name="moviotv_xp_welcome_title">Welcome to MovioXP</string>
+    <string name="moviotv_xp_welcome_sub">Sign in to your Central account to bring your profile and add-ons with you, or continue as a guest.</string>
+    <string name="moviotv_xp_central_login_line">Sync your profile, add-ons, favourites and watch progress.</string>
+    <string name="moviotv_xp_central_register_line">Create a Central account and sync across your devices.</string>
+    <string name="moviotv_xp_guest">Continue as guest</string>
+    <string name="moviotv_xp_guest_line">Set up this device without signing in.</string>
+    <string name="moviotv_xp_central_create_and_continue">Create account and continue</string>
+    <string name="moviotv_xp_central_connecting">Connecting to Central…</string>
+    <string name="moviotv_xp_central_api_default">https://moviotv.opticalzoo.com/movio/api/index.php</string>
     <string name="moviotv_xp_category_selector">%1$s  ▾</string>
 </resources>
