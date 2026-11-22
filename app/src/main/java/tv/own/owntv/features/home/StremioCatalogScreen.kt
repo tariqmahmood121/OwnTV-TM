@@ -696,49 +696,6 @@ fun StremioCatalogScreen(
         selected = item
     }
 
-    fun installAddon(url: String) {
-        if (addons.any { it.url == url }) {
-            notice = context.getString(R.string.moviotv_xp_addon_already_installed)
-            return
-        }
-        busy = true
-        notice = null
-        scope.launch {
-            runCatching { XpAddonProtocol.loadManifest(url) }
-                .onSuccess { addon ->
-                    if (addons.none { it.url == addon.url }) {
-                        addons.add(addon)
-                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
-                        if (centralConnection != null) syncAddonsWithCentral()
-                    }
-                    notice = null
-                }
-                .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
-            busy = false
-        }
-    }
-
-    DisposableEffect(addonRemoteServer) {
-        onDispose { addonRemoteServer.close() }
-    }
-    LaunchedEffect(addonRemoteServer) {
-        addonRemoteServer.submissions.collect { url ->
-            showAddonRemote = false
-            adding = false
-            installAddon(url)
-        }
-    }
-    LaunchedEffect(showAddonRemote) {
-        if (!showAddonRemote) addonRemoteServer.close()
-    }
-
-    fun removeAddon(addon: XpAddon) {
-        if (addon.builtIn) return
-        addons.remove(addon)
-        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
-        if (centralConnection != null) syncAddonsWithCentral()
-    }
-
     fun syncAddonsWithCentral() {
         if (centralSyncBusy) return
         if (favoritesProfileId <= 0L || activeProfileName.isBlank()) {
@@ -790,6 +747,49 @@ fun StremioCatalogScreen(
             }
             centralSyncBusy = false
         }
+    }
+
+    fun installAddon(url: String) {
+        if (addons.any { it.url == url }) {
+            notice = context.getString(R.string.moviotv_xp_addon_already_installed)
+            return
+        }
+        busy = true
+        notice = null
+        scope.launch {
+            runCatching { XpAddonProtocol.loadManifest(url) }
+                .onSuccess { addon ->
+                    if (addons.none { it.url == addon.url }) {
+                        addons.add(addon)
+                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
+                        if (centralConnection != null) syncAddonsWithCentral()
+                    }
+                    notice = null
+                }
+                .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
+            busy = false
+        }
+    }
+
+    DisposableEffect(addonRemoteServer) {
+        onDispose { addonRemoteServer.close() }
+    }
+    LaunchedEffect(addonRemoteServer) {
+        addonRemoteServer.submissions.collect { url ->
+            showAddonRemote = false
+            adding = false
+            installAddon(url)
+        }
+    }
+    LaunchedEffect(showAddonRemote) {
+        if (!showAddonRemote) addonRemoteServer.close()
+    }
+
+    fun removeAddon(addon: XpAddon) {
+        if (addon.builtIn) return
+        addons.remove(addon)
+        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
+        if (centralConnection != null) syncAddonsWithCentral()
     }
 
     LaunchedEffect(favoritesProfileId) {
