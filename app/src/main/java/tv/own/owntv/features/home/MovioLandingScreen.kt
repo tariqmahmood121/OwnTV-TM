@@ -73,6 +73,7 @@ fun MovioLandingScreen(
     onProviderClick: () -> Unit,
     onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
     onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
+    onOpenAppSettings: (() -> Unit)? = null,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -89,10 +90,11 @@ fun MovioLandingScreen(
 
     if (showStremioCatalogues) {
         StremioCatalogScreen(
-            onBack = { showStremioCatalogues = false },
+            onBack = {},
             onPlayStream = onPlayStream,
             onPlayStreamCandidates = onPlayStreamCandidates,
-            showBottomNavigation = !touchMode,
+            showBottomNavigation = true,
+            onOpenAppSettings = onOpenAppSettings,
             modifier = modifier.fillMaxSize(),
         )
     } else BoxWithConstraints(

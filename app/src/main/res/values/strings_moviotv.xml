@@ -180,7 +180,7 @@
     <string name="moviotv_xp_addon_installed_badge">Installed</string>
     <string name="moviotv_xp_addon_types_unknown">Add-on</string>
     <string name="moviotv_xp_continue_resume">Continue</string>
-    <string name="moviotv_xp_addon_storage_note">Add-ons configured in MovioXP are stored on this device. Central account sync can be added once the Central API has an add-on settings endpoint.</string>
+    <string name="moviotv_xp_addon_storage_note">Add-on URLs are encrypted on this device. Connect to Central to back up this profile’s add-ons to your account.</string>
     <string name="moviotv_xp_library_empty">Titles you start from an add-on will appear here.</string>
     <string name="moviotv_xp_no_search_matches">No matching titles in the installed catalogues.</string>
     <string name="moviotv_xp_search_minimum">Enter at least 2 characters to search all installed add-ons.</string>
@@ -232,4 +232,24 @@
     <string name="moviotv_xp_remote_sent_help">The URL has been sent to your TV. You can close this page.</string>
     <string name="moviotv_xp_remote_try_again">Try again</string>
     <string name="moviotv_xp_remote_enter_code_again">Enter the TV code again</string>
+    <string name="moviotv_xp_central_addons_title">MovioTV Central</string>
+    <string name="moviotv_xp_central_addons_help">Back up this profile’s add-ons to your account and restore its add-ons on another device. Add-on URLs are encrypted on the server.</string>
+    <string name="moviotv_xp_central_api_label">Central API address (HTTPS)</string>
+    <string name="moviotv_xp_central_username_label">Central username</string>
+    <string name="moviotv_xp_central_password_label">Central password</string>
+    <string name="moviotv_xp_central_connect_sync">Connect and sync add-ons</string>
+    <string name="moviotv_xp_central_sync_now">Sync this profile’s add-ons</string>
+    <string name="moviotv_xp_central_disconnect">Disconnect Central account</string>
+    <string name="moviotv_xp_central_connected_as">Connected as %1$s</string>
+    <string name="moviotv_xp_central_syncing">Syncing with Central…</string>
+    <string name="moviotv_xp_central_sync_complete">Synced %1$d add-ons for this profile.</string>
+    <string name="moviotv_xp_central_sync_failed">Could not reach Central. Check the address and connection.</string>
+    <string name="moviotv_xp_central_details_required">Enter the Central API address, username and password.</string>
+    <string name="moviotv_xp_central_profile_required">Select a profile before syncing.</string>
+    <string name="moviotv_xp_central_account_title">MovioTV Central account</string>
+    <string name="moviotv_xp_central_account_help">Sign in to sync this profile’s add-ons with your Central account. Guest browsing remains available without signing in.</string>
+    <string name="moviotv_xp_central_login">Log in to Central</string>
+    <string name="moviotv_xp_central_register">Create Central account</string>
+    <string name="moviotv_xp_central_register_requirements">Choose a username with at least 3 characters and a password with at least 12 characters.</string>
+    <string name="moviotv_xp_central_registration_help">Create an account or log in to Central to sync your add-ons and profile data.</string>
 </resources>
