@@ -108,6 +108,14 @@ class HudSources(
     val onPick: (tv.own.owntv.core.database.entity.ChannelEntity) -> Unit,
 )
 
+/** MovioXP VOD sources, resolved from its installed Stremio add-ons. */
+data class HudStreamSource(val id: String, val title: String, val provider: String)
+class HudStreamSources(
+    val choices: List<HudStreamSource>,
+    val playingId: String,
+    val onPick: (String) -> Unit,
+)
+
 /** The guide's answer for "Go back to…"'s first row; held in a box so "answered: no row" differs from "not answered yet". */
 private class Lookup(val start: tv.own.owntv.core.live.CatchupProgrammeStart?)
 
@@ -225,6 +233,8 @@ fun PlayerHud(
     onToastOk: (() -> Unit)? = null,
     // Live only: the Sources button and its list. Null hides the button.
     sources: HudSources? = null,
+    // MovioXP VOD: same Sources control, with add-on streams for the current movie or episode.
+    streamSources: HudStreamSources? = null,
     modifier: Modifier = Modifier,
 ) {
     // Nothing that ticks is read in this root scope: with the controls hidden it used to recompose
@@ -728,7 +738,7 @@ fun PlayerHud(
                     onOpenJumpBack = if (onJumpBack != null) { { dialog = HudDialog.JUMP_BACK } } else null,
                     onPreviousChannel = onPreviousChannel,
                     onOtherChannels = onOtherChannels, otherChannelsCount = otherChannelsCount,
-                    hasSources = sources != null,
+                    hasSources = sources != null || streamSources != null,
                     showSleepTimer = movioTouchPlayer,
                     compatMode = compatMode, onToggleCompatMode = toggleCompat,
                     vodOnExo = vodOnExo, onToggleVodEngine = toggleVod,
@@ -960,9 +970,11 @@ fun PlayerHud(
             QualityDialog(heights, pick, onSelect = { player.selectVideoQuality(it); dialog = HudDialog.NONE }, onDismiss = { dialog = HudDialog.NONE })
         }
         HudDialog.VOLUME -> VolumeDialog(player, onDismiss = { dialog = HudDialog.NONE })
-        HudDialog.SOURCES -> sources?.let { s ->
-            SourcesDialog(s, onDismiss = { dialog = HudDialog.NONE })
-        } ?: run { dialog = HudDialog.NONE }
+        HudDialog.SOURCES -> when {
+            streamSources != null -> StreamSourcesDialog(streamSources, onDismiss = { dialog = HudDialog.NONE })
+            sources != null -> SourcesDialog(sources, onDismiss = { dialog = HudDialog.NONE })
+            else -> { dialog = HudDialog.NONE; Unit }
+        }
         HudDialog.SLEEP_TIMER -> SleepTimerDialog(
             timer = org.koin.compose.koinInject(),
             programmeEndMs = remember { sleepProgrammeEndMs?.invoke() },

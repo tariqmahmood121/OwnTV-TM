@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -52,7 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -98,11 +100,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-private val XpBackground = Color(0xFF0D0B14)
-private val XpPanel = Color(0xFF191421)
-private val XpAccent = Color(0xFFB994E8)
-private val XpText = Color(0xFFF8F4FC)
-private val XpMuted = Color(0xFFB8ACBF)
+// MovioXP follows the selected Movio theme instead of pinning the interface to purple.
+private val XpBackground: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.background
+private val XpPanel: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.surfaceContainerLow
+private val XpAccent: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.primary
+private val XpText: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.onSurface
+private val XpMuted: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.onSurfaceVariant
 
 private data class XpAddon(
     val url: String,
@@ -144,6 +147,7 @@ internal data class XpMeta(
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
 )
+internal data class XpPlaybackSource(val url: String, val label: String, val provider: String)
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
@@ -505,7 +509,7 @@ fun StremioCatalogScreen(
     onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
     localLiveChannels: List<ChannelEntity> = emptyList(),
     onPlayLocalLiveChannel: (Long) -> Unit = {},
-    onPlayStreamCandidates: ((List<String>, String, String, String?, String, String?, Long) -> Unit)? = null,
+    onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     initialPage: String = "home",
     showBottomNavigation: Boolean = true,
     modifier: Modifier = Modifier,
@@ -530,6 +534,8 @@ fun StremioCatalogScreen(
     val addonRemoteState by addonRemoteServer.state.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<XpMeta?>(null) }
+    var manualSourceSelection by remember { mutableStateOf(false) }
+    var showManualSources by remember { mutableStateOf(false) }
     var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
     var streamsLoading by remember { mutableStateOf(false) }
     var directoryLoading by remember { mutableStateOf(false) }
@@ -652,6 +658,18 @@ fun StremioCatalogScreen(
         XpFavoritesStore.write(context, favoritesProfileId, favoriteTitles)
     }
 
+    fun openItem(item: XpMeta) {
+        manualSourceSelection = false
+        showManualSources = true
+        selected = item
+    }
+
+    fun openDetails(item: XpMeta, showSources: Boolean) {
+        manualSourceSelection = true
+        showManualSources = showSources
+        selected = item
+    }
+
     fun installAddon(url: String) {
         if (addons.any { it.url == url }) {
             notice = context.getString(R.string.moviotv_xp_addon_already_installed)
@@ -748,33 +766,41 @@ fun StremioCatalogScreen(
             streamsLoading = false
         }
     }
-    LaunchedEffect(selected?.id, selected?.type, selectedStreams, streamsLoading, autoSelectSource, preferredAddonUrl) {
+    LaunchedEffect(selected?.id, selected?.type, selectedStreams, streamsLoading, autoSelectSource, preferredAddonUrl, manualSourceSelection) {
         val item = selected ?: return@LaunchedEffect
-        if (!autoSelectSource || streamsLoading || selectedStreams.isEmpty()) return@LaunchedEffect
+        if (manualSourceSelection || !autoSelectSource || streamsLoading || selectedStreams.isEmpty()) return@LaunchedEffect
         val itemKey = "${item.type}:${item.id}"
         if (autoStartedItem == itemKey) return@LaunchedEffect
+        val preferenceKey = "last_source_${favoritesProfileId}_${("stremio:${item.type}:${item.id}").hashCode()}"
+        val lastProvider = playbackPrefs.getString(preferenceKey, null)
         val candidates = selectedStreams.filter { it.url != null }
-            .sortedBy { if (it.addon.url == preferredAddonUrl) 0 else 1 }
+            .sortedWith(
+                compareBy<XpStream> { if (it.addon.name == lastProvider) 0 else 1 }
+                    .thenBy { if (it.addon.url == preferredAddonUrl) 0 else 1 },
+            )
         if (candidates.isEmpty()) return@LaunchedEffect
         autoStartedItem = itemKey
         XpContinueStore.add(context, item)
         continueTitles = XpContinueStore.read(context)
-        val urls = candidates.mapNotNull { it.url }
+        val sources = candidates.mapNotNull { stream -> stream.url?.let { XpPlaybackSource(it, stream.label, stream.addon.name) } }
+        selected = null
+        manualSourceSelection = false
+        showManualSources = false
         if (onPlayStreamCandidates != null) {
-            onPlayStreamCandidates(urls, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
+            onPlayStreamCandidates(sources, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
         } else {
-            onPlayStream(urls.first(), item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
+            onPlayStream(sources.first().url, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
         }
     }
-    LaunchedEffect(selected?.id, selected?.type, streamsLoading, selectedStreams.size, autoSelectSource) {
+    LaunchedEffect(selected?.id, selected?.type, streamsLoading, selectedStreams.size, autoSelectSource, manualSourceSelection, showManualSources) {
         if (selected != null && !streamsLoading) runCatching {
-            if (selectedStreams.isNotEmpty() && !autoSelectSource) firstSourceFocus.requestFocus()
-            else if (selectedStreams.isEmpty()) detailFocus.requestFocus()
+            if (manualSourceSelection && showManualSources && selectedStreams.isNotEmpty()) firstSourceFocus.requestFocus()
+            else if (selectedStreams.isEmpty() || !showManualSources) detailFocus.requestFocus()
         }
     }
     BackHandler(enabled = selected != null || adding || page != initialPage) {
         when {
-            selected != null -> selected = null
+            selected != null -> { selected = null; manualSourceSelection = false; showManualSources = false }
             adding -> adding = false
             else -> page = if (page == "search" && returnPage.isNotBlank()) returnPage else initialPage
         }
@@ -830,6 +856,8 @@ fun StremioCatalogScreen(
                 listOf(
                     "home" to R.string.moviotv_nav_home,
                     "discover" to R.string.moviotv_xp_nav_discover,
+                    "movies" to R.string.moviotv_nav_movies,
+                    "series" to R.string.moviotv_nav_series,
                     "favorites" to R.string.moviotv_xp_more_favorites,
                     "addons" to R.string.moviotv_xp_nav_addons,
                 ).forEach { (key, labelRes) ->
@@ -952,9 +980,11 @@ fun StremioCatalogScreen(
                             item = item,
                             width = width,
                             focusRequester = if (index == 0) firstGridFocus else null,
+                            onLongClick = { openDetails(item, showSources = false) },
+                            onVeryLongClick = { openDetails(item, showSources = true) },
                         ) {
                             val liveChannelId = item.id.removePrefix("own-live:").toLongOrNull()
-                            if (liveChannelId != null) onPlayLocalLiveChannel(liveChannelId) else selected = item
+                            if (liveChannelId != null) onPlayLocalLiveChannel(liveChannelId) else openItem(item)
                         }
                     },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1001,7 +1031,9 @@ fun StremioCatalogScreen(
             if (page == "home" && continueTitles.isNotEmpty()) {
                 Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, top = 2.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title -> XpPoster(title) { selected = title } }
+                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title ->
+                        XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                    }
                 }
             }
             if (page in browsePages) {
@@ -1153,7 +1185,7 @@ fun StremioCatalogScreen(
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
                         item { Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                         items(continueTitles, key = { "library:${it.type}:${it.id}" }) { title ->
-                            XpPoster(title) { selected = title }
+                            XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
                         }
                     }
                 }
@@ -1216,7 +1248,9 @@ fun StremioCatalogScreen(
                                     contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    items(titles, key = { "${it.type}:${it.id}" }) { item -> XpPoster(item) { selected = item } }
+                                    items(titles, key = { "${it.type}:${it.id}" }) { item ->
+                                        XpPoster(item, onLongClick = { openDetails(item, false) }, onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
+                                    }
                                 }
                             }
                         }
@@ -1224,11 +1258,11 @@ fun StremioCatalogScreen(
                 }
             }
             if (showBottomNavigation) Row(
-                Modifier.fillMaxWidth().background(Color(0xFF100D18)).padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().background(XpBackground).padding(horizontal = 18.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                    listOf("home" to R.string.moviotv_nav_home, "discover" to R.string.moviotv_xp_nav_discover, "favorites" to R.string.moviotv_xp_more_favorites, "search" to R.string.moviotv_xp_nav_search, "library" to R.string.moviotv_xp_nav_library, "addons" to R.string.moviotv_xp_nav_addons).forEach { (key, labelRes) ->
+                    listOf("home" to R.string.moviotv_nav_home, "discover" to R.string.moviotv_xp_nav_discover, "movies" to R.string.moviotv_nav_movies, "series" to R.string.moviotv_nav_series, "favorites" to R.string.moviotv_xp_more_favorites, "search" to R.string.moviotv_xp_nav_search, "library" to R.string.moviotv_xp_nav_library, "addons" to R.string.moviotv_xp_nav_addons).forEach { (key, labelRes) ->
                     XpNavigationItem(stringResource(labelRes), selected = page == key) {
                         page = key
                         if (key == "addons") adding = false
@@ -1285,9 +1319,10 @@ fun StremioCatalogScreen(
             }
         }
         selected?.let { item ->
+            Dialog(onDismissRequest = { selected = null; manualSourceSelection = false; showManualSources = false }) {
             Column(
-                Modifier.fillMaxSize().background(XpBackground.copy(alpha = .98f)).verticalScroll(rememberScrollState())
-                    .focusGroup().padding(38.dp),
+                Modifier.fillMaxWidth(0.94f).widthIn(max = 620.dp).heightIn(max = 700.dp).clip(RoundedCornerShape(22.dp))
+                    .background(XpBackground).verticalScroll(rememberScrollState()).focusGroup().padding(28.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(item.name, color = XpText, fontSize = 34.sp, fontWeight = FontWeight.Bold)
@@ -1302,8 +1337,9 @@ fun StremioCatalogScreen(
                     color = XpAccent, fontSize = 17.sp, modifier = Modifier.padding(top = 8.dp),
                 )
                 item.description?.let { Text(it, color = XpMuted, fontSize = 17.sp, modifier = Modifier.padding(top = 16.dp)) }
-                Spacer(Modifier.height(22.dp))
-                Text(stringResource(R.string.moviotv_xp_stream_sources), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                if (showManualSources) Spacer(Modifier.height(22.dp))
+                if (showManualSources) Text(stringResource(R.string.moviotv_xp_stream_sources), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                if (showManualSources) {
                 when {
                     streamsLoading -> Text(stringResource(R.string.moviotv_xp_loading_streams), color = XpMuted, fontSize = 14.sp,
                         modifier = Modifier.padding(top = 8.dp))
@@ -1324,13 +1360,20 @@ fun StremioCatalogScreen(
                                 stream.url?.let { playable ->
                                     XpContinueStore.add(context, item)
                                     continueTitles = XpContinueStore.read(context)
+                                    selected = null
+                                    manualSourceSelection = false
+                                    showManualSources = false
                                     onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
                                 }
                             }
                         }
                     }
                 }
-                XpAction(stringResource(R.string.moviotv_xp_back_to_catalogues), false) { selected = null }
+                }
+                XpAction(stringResource(R.string.moviotv_xp_back_to_catalogues), false) {
+                    selected = null; manualSourceSelection = false; showManualSources = false
+                }
+            }
             }
         }
     }
@@ -1463,15 +1506,43 @@ private fun XpPoster(
     item: XpMeta,
     width: Dp = 142.dp,
     focusRequester: FocusRequester? = null,
+    onLongClick: () -> Unit = {},
+    onVeryLongClick: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    var centerDownAt by remember { mutableStateOf<Long?>(null) }
     Column(
         Modifier.width(width).clip(RoundedCornerShape(12.dp))
             .border(if (focused) 3.dp else 1.dp, if (focused) XpAccent else Color.Transparent, RoundedCornerShape(12.dp))
             .background(if (focused) XpAccent.copy(alpha = .18f) else Color.Transparent)
             .padding(3.dp).then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable(),
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                val keyCode = event.nativeKeyEvent.keyCode
+                val isOk = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                    keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (!isOk) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.action) {
+                    android.view.KeyEvent.ACTION_DOWN -> {
+                        if (centerDownAt == null) centerDownAt = android.os.SystemClock.uptimeMillis()
+                        true
+                    }
+                    android.view.KeyEvent.ACTION_UP -> {
+                        val heldMs = centerDownAt?.let { android.os.SystemClock.uptimeMillis() - it } ?: 0L
+                        centerDownAt = null
+                        when {
+                            heldMs >= 3_000L -> onVeryLongClick()
+                            heldMs >= 2_000L -> onLongClick()
+                            else -> onClick()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .clickable(onClick = onClick).focusable(),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(
@@ -1525,12 +1596,12 @@ private fun XpAddonInfoCard(
             Text("v$version", color = XpMuted, fontSize = 14.sp)
         }
         if (description.isNotBlank()) Text(description, color = XpMuted, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        XpAction(action, disabled, onClick = onAction)
+        XpAction(action, disabled, onAction)
     }
 }
 
 @Composable
-private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
+private fun XpAction(label: String, disabled: Boolean, onClick: () -> Unit, focusRequester: FocusRequester? = null) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))

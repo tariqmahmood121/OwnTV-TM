@@ -368,6 +368,37 @@ internal fun SourcesDialog(sources: HudSources, onDismiss: () -> Unit) {
     }
 }
 
+/** Scrollable source picker for a Stremio movie or episode, with the active source highlighted. */
+@Composable
+internal fun StreamSourcesDialog(sources: HudStreamSources, onDismiss: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    val focusIndex = sources.choices.indexOfFirst { it.id == sources.playingId }.coerceAtLeast(0)
+    LaunchedEffect(Unit) { requestFocusRetrying(focus) }
+    BackHandler { onDismiss() }
+    DialogScaffold(title = stringResource(R.string.player_tool_sources), onDismiss = onDismiss) {
+        items(sources.choices.size) { index ->
+            val choice = sources.choices[index]
+            val playing = choice.id == sources.playingId
+            tv.own.owntv.ui.stage.StagePopupOption(
+                title = choice.title,
+                subtitle = choice.provider.takeIf { it.isNotBlank() },
+                chosen = playing,
+                modifier = if (index == focusIndex) Modifier.focusRequester(focus) else Modifier,
+                leading = { f -> tv.own.owntv.ui.stage.StagePopupRadio(playing, f) },
+                onClick = { onDismiss(); if (!playing) sources.onPick(choice.id) },
+            )
+        }
+        if (sources.choices.size <= 1) item {
+            tv.own.owntv.ui.stage.StagePopupOption(
+                title = stringResource(R.string.player_sources_none),
+                subtitle = sources.choices.firstOrNull()?.provider?.takeIf { it.isNotBlank() },
+                onClick = onDismiss,
+                enabled = false,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun QualityDialog(heights: List<Int>, current: Int?, onSelect: (Int?) -> Unit, onDismiss: () -> Unit) {
     val focus = remember { FocusRequester() }
