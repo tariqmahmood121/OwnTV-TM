@@ -97,6 +97,7 @@ fun MoreScreen(
     onPlayEpisode: (seriesId: Long, episodeId: Long, positionMs: Long) -> Unit,
     onOpenSeries: (Long) -> Unit,
     onPlayMovioXpStream: (String, String, String, String?, String, String?, Long) -> Unit,
+    onPlayMovioXpCandidates: ((List<String>, String, String, String?, String, String?, Long) -> Unit)? = null,
     onChildFocused: () -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     /** Back from Settings: land on the Settings page's first card instead of the rail. */
@@ -238,6 +239,7 @@ fun MoreScreen(
                 MoreItem.XP_FAVORITES -> tv.own.owntv.features.home.StremioCatalogScreen(
                     onBack = backToSheet,
                     onPlayStream = onPlayMovioXpStream,
+                    onPlayStreamCandidates = onPlayMovioXpCandidates,
                     initialPage = "favorites",
                     showBottomNavigation = false,
                     modifier = Modifier.fillMaxSize(),
@@ -245,6 +247,7 @@ fun MoreScreen(
                 MoreItem.XP_ADDONS -> tv.own.owntv.features.home.StremioCatalogScreen(
                     onBack = backToSheet,
                     onPlayStream = onPlayMovioXpStream,
+                    onPlayStreamCandidates = onPlayMovioXpCandidates,
                     initialPage = "addons",
                     showBottomNavigation = false,
                     modifier = Modifier.fillMaxSize(),

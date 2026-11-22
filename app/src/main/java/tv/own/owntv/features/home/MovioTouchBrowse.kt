@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -118,6 +120,20 @@ private fun MovioTouchSearch(value: String, onChange: (String) -> Unit, modifier
     }
 }
 
+@Composable
+private fun MovioBrowseButton(label: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        Modifier.clip(RoundedCornerShape(10.dp))
+            .background(if (focused) purple.copy(alpha = .32f) else Color(0xFF50326D))
+            .border(if (focused) 2.dp else 1.dp, if (focused) purple else Color.Transparent, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+    ) {
+        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium)
+    }
+}
+
 /** Category rail is permanent on unfolded/tablet screens and a drawer on folded phones. */
 @Composable
 fun MovioTouchPosterBrowser(
@@ -147,7 +163,7 @@ fun MovioTouchPosterBrowser(
     }
     BoxWithConstraints(modifier.fillMaxSize().background(panel)) {
         val tablet = maxWidth >= 700.dp && categoryEnabled
-        val categoryWidth = if (tablet) (maxWidth * 0.30f).coerceIn(210.dp, 310.dp) else 0.dp
+        val categoryWidth = if (tablet) (maxWidth * 0.22f).coerceIn(190.dp, 255.dp) else 0.dp
         Row(Modifier.fillMaxSize()) {
             if (tablet) MovioCategoryTextZoom(
                 modifier = Modifier.width(categoryWidth).fillMaxHeight().padding(top = 8.dp),
@@ -156,20 +172,12 @@ fun MovioTouchPosterBrowser(
                 Text(title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (!tablet && categoryEnabled) {
-                        Box(Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF50326D)).clickable(onClick = onCategories)
-                            .padding(horizontal = 12.dp, vertical = 12.dp)) {
-                            Text(stringResource(R.string.moviotv_categories), color = Color.White, fontSize = 13.sp)
-                        }
+                        MovioBrowseButton(stringResource(R.string.moviotv_categories), onCategories)
                         Spacer(Modifier.width(8.dp))
                     }
                     MovioTouchSearch(query, onSearch, Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
-                    Box(Modifier.clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF50326D)).clickable(onClick = onSort)
-                        .padding(horizontal = 12.dp, vertical = 12.dp)) {
-                        Text(stringResource(R.string.moviotv_sort), color = Color.White, fontSize = 13.sp)
-                    }
+                    MovioBrowseButton(stringResource(R.string.moviotv_sort), onSort)
                 }
                 Text(category, color = pale, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))
@@ -195,7 +203,10 @@ fun MovioTouchPosterBrowser(
                                 } while (event.changes.any { it.pressed })
                             }
                         }) {
-                        val columns = ((maxWidth + 12.dp) / (150.dp * posterScale)).toInt().coerceIn(1, 6)
+                        val tvDenseGrid = maxWidth >= 1150.dp
+                        val targetPosterWidth = if (tvDenseGrid) 128.dp else 150.dp
+                        val columns = ((maxWidth + 12.dp) / (targetPosterWidth * posterScale)).toInt()
+                            .coerceIn(1, if (tvDenseGrid) 8 else 6)
                         val posterWidth = (maxWidth - 12.dp * (columns - 1) - 8.dp) / columns
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(columns), state = gridState,
@@ -238,11 +249,7 @@ fun MovioTouchLiveBrowser(
                 Text(stringResource(R.string.moviotv_nav_live_tv), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (!tablet && categoryEnabled) {
-                        Box(Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF50326D)).clickable(onClick = onCategories)
-                            .padding(horizontal = 12.dp, vertical = 12.dp)) {
-                            Text(stringResource(R.string.moviotv_categories), color = Color.White, fontSize = 13.sp)
-                        }
+                        MovioBrowseButton(stringResource(R.string.moviotv_categories), onCategories)
                         Spacer(Modifier.width(8.dp))
                     }
                     MovioTouchSearch(query, onSearch, Modifier.weight(1f))

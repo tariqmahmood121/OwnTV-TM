@@ -221,6 +221,15 @@ fun OwnTVShell(
     var restoreTrendingSearchFocus by remember { mutableStateOf(false) }
     var trendingSearchActive by remember { mutableStateOf(false) }
     val player = koinInject<OwnTVPlayer>()
+    val playerBuffering by player.buffering.collectAsStateWithLifecycle()
+    val playerError by player.error.collectAsStateWithLifecycle()
+    var xpCandidateUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    var xpCandidateIndex by remember { mutableStateOf(-1) }
+    var xpCandidateTitle by remember { mutableStateOf("") }
+    var xpCandidateYear by remember { mutableStateOf<String?>(null) }
+    var xpCandidateContentKey by remember { mutableStateOf("") }
+    var xpCandidateResumePositionMs by remember { mutableStateOf(0L) }
+    var xpCandidateGeneration by remember { mutableStateOf(0) }
     val channelVersions = koinInject<tv.own.owntv.core.live.ChannelVersions>()
     // Docked mini-player size (% of screen width) + position, configurable in Settings and from the
     // mini-player's own controls. Read straight from settings so both entry points stay in sync.
@@ -698,6 +707,47 @@ fun OwnTVShell(
             onSelectSection(target)
             openFullscreen(target)
         }
+    val onPlayMovioXpCandidates: (List<String>, String, String, String?, String, String?, Long) -> Unit =
+        { urls, title, type, year, contentId, poster, resumePositionMs ->
+            val candidates = urls.filter(String::isNotBlank).distinct()
+            if (candidates.isNotEmpty()) {
+                xpCandidateUrls = candidates
+                xpCandidateIndex = 0
+                xpCandidateTitle = title
+                xpCandidateYear = year
+                xpCandidateContentKey = "stremio:$type:$contentId"
+                xpCandidateResumePositionMs = resumePositionMs
+                xpCandidateGeneration += 1
+                onPlayMovioXpStream(candidates.first(), title, type, year, contentId, poster, resumePositionMs)
+            }
+        }
+    LaunchedEffect(xpCandidateGeneration, xpCandidateIndex, playerBuffering, playerError) {
+        if (xpCandidateIndex < 0 || xpCandidateIndex + 1 >= xpCandidateUrls.size) return@LaunchedEffect
+        val alreadyFailed = playerError != null
+        if (alreadyFailed) delay(250L)
+        else if (playerBuffering) delay(3_000L)
+        else return@LaunchedEffect
+        if (playerError != null || playerBuffering) {
+            val nextIndex = xpCandidateIndex + 1
+            player.play(
+                url = xpCandidateUrls[nextIndex],
+                title = xpCandidateTitle,
+                year = xpCandidateYear,
+                contentKey = xpCandidateContentKey,
+            )
+            if (xpCandidateResumePositionMs > 0L) scope.launch {
+                delay(1_500L)
+                mpvEngine.seekBy(xpCandidateResumePositionMs)
+            }
+            xpCandidateIndex = nextIndex
+        }
+    }
+    LaunchedEffect(playerMode) {
+        if (playerMode == PlayerMode.NONE) {
+            xpCandidateUrls = emptyList()
+            xpCandidateIndex = -1
+        }
+    }
     // Restore video output on both engines (no-op unless we were in Audio Mode). mpv `vid=auto` /
     // ExoPlayer surface is re-attached by the surface remount right after.
     val resumeVideo = {
@@ -1394,6 +1444,7 @@ fun OwnTVShell(
                             onPlayEpisode = { seriesId, epId, pos -> scope.launch { if (seriesVm.playFromHomeAsync(seriesId, epId, pos) && !seriesVm.externalPlayerOn.value) openFullscreen(MainSection.SERIES) } },
                             onOpenSeries = { id -> seriesVm.openSeriesById(id); restoreFocus = true; onSelectSection(MainSection.SERIES) },
                             onPlayMovioXpStream = onPlayMovioXpStream,
+                            onPlayMovioXpCandidates = onPlayMovioXpCandidates,
                             onChildFocused = { focusedLayer = ShellLayer.CONTENT },
                             onEntryHook = { moreEntry = it },
                             restoreFocus = restoreFocus,
@@ -1458,6 +1509,7 @@ fun OwnTVShell(
                                 onSelectSection(MainSection.SETTINGS)
                             },
                             onPlayStream = onPlayMovioXpStream,
+                            onPlayStreamCandidates = onPlayMovioXpCandidates,
                             onEntryHook = { homeEntry = it },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1503,6 +1555,7 @@ fun OwnTVShell(
                         selectedSection == MainSection.LIVE_TV -> tv.own.owntv.features.home.StremioCatalogScreen(
                             onBack = { onSelectSection(MainSection.HOME) },
                             onPlayStream = onPlayMovioXpStream,
+                            onPlayStreamCandidates = onPlayMovioXpCandidates,
                             localLiveChannels = zapChannels,
                             onPlayLocalLiveChannel = { id ->
                                 scope.launch {
@@ -1517,6 +1570,7 @@ fun OwnTVShell(
                         selectedSection == MainSection.MOVIES -> tv.own.owntv.features.home.StremioCatalogScreen(
                             onBack = { onSelectSection(MainSection.HOME) },
                             onPlayStream = onPlayMovioXpStream,
+                            onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "movies",
                             showBottomNavigation = false,
                             modifier = Modifier.fillMaxSize(),
@@ -1525,6 +1579,7 @@ fun OwnTVShell(
                         selectedSection == MainSection.SERIES -> tv.own.owntv.features.home.StremioCatalogScreen(
                             onBack = { onSelectSection(MainSection.HOME) },
                             onPlayStream = onPlayMovioXpStream,
+                            onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "series",
                             showBottomNavigation = false,
                             modifier = Modifier.fillMaxSize(),
