@@ -517,7 +517,7 @@ fun StremioCatalogScreen(
     var adding by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var showAddonRemote by remember { mutableStateOf(false) }
-    val addonRemoteServer = remember { XpAddonRemoteServer() }
+    val addonRemoteServer = remember(context) { XpAddonRemoteServer(context) }
     val addonRemoteState by addonRemoteServer.state.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<XpMeta?>(null) }
@@ -908,7 +908,7 @@ fun StremioCatalogScreen(
                             adding = false
                         }
                     }
-                    XpAction("Enter on phone", busy) {
+                    XpAction(stringResource(R.string.moviotv_xp_remote_enter_on_phone), busy) {
                         showAddonRemote = true
                         addonRemoteServer.start()
                     }
@@ -1146,28 +1146,28 @@ fun StremioCatalogScreen(
                     Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(XpBackground).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Add an add-on from your phone", color = XpText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.moviotv_xp_remote_tv_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "Scan the QR code, enter the TV code, then paste the add-on URL on your phone.",
+                        stringResource(R.string.moviotv_xp_remote_tv_instructions),
                         color = XpMuted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
                     )
                     when {
-                        addonRemoteState == null -> Text("Opening the secure local entry page…", color = XpMuted, fontSize = 16.sp)
+                        addonRemoteState == null -> Text(stringResource(R.string.moviotv_xp_remote_opening), color = XpMuted, fontSize = 16.sp)
                         addonRemoteState?.failure != null -> Text(addonRemoteState?.failure.orEmpty(), color = Color(0xFFFFB4AB), fontSize = 16.sp)
                         else -> {
                             val link = addonRemoteState!!
                             link.qr?.let { qr ->
                                 Image(
                                     bitmap = qr.asImageBitmap(),
-                                    contentDescription = "Scan to open add-on entry on your phone",
+                                    contentDescription = context.getString(R.string.moviotv_xp_remote_qr_description),
                                     modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
                                 )
                             }
                             Text(link.url, color = XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
-                            Text("TV code: ${link.pin}", color = XpAccent, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                            Text(stringResource(R.string.moviotv_xp_remote_tv_code, link.pin), color = XpAccent, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         }
                     }
-                    XpAction("Cancel", false) { showAddonRemote = false; addonRemoteServer.close() }
+                    XpAction(stringResource(R.string.moviotv_xp_cancel), false) { showAddonRemote = false; addonRemoteServer.close() }
                 }
             }
         }

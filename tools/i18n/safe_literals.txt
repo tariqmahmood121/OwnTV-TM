@@ -180,6 +180,7 @@
 1	assertion	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	This add-on manifest has no supported resources.
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Use a secure HTTPS add-on URL.
 2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	[]
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}
 11	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	addons
 21	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	all
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	anime
@@ -187,7 +188,7 @@
 3	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	catalog
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	catalog/${Uri.encode(row.catalog.type)}/${Uri.encode(row.catalog.id)}
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	catalogs
-3	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	channel
+4	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	channel
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	continue:${it.type}:${it.id}
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	continue_titles
 6	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	description
@@ -196,6 +197,7 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	extra
 7	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	favorites
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	favorites_profile_
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	favorites_profile_$favoritesProfileId
 6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	genre
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	genre:$it
 6	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	home
@@ -208,15 +210,17 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	isRequired
 3	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library:${it.type}:${it.id}
-5	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	live
+6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	live
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	manifest.json
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	metas
 5	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movie
 10	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movies
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_addons_aes_v1
-3	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_catalogues
+4	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_catalogues
 11	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	name
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	options
+2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	own-live:
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	own-live:${channel.id}
 5	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	poster
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	query
 2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	rating
@@ -233,6 +237,42 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	url
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	v$version
 4	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	year
+7	empty	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	\0
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	"
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&#39;
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&amp;
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&gt;
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&lt;
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&quot;
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	'
+1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/
+1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/install
+1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/unlock
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>$title</title><style> body{margin:0;background:#100d17;color:#f7f1fb;font:18px system-ui,sans-serif;padding:24px}main{max-width:520px;margin:8vh auto;background:#1c1724;border-radius:22px;padding:28px}h1{font-size:28px;margin:0 0 16px}p{color:#c9bdd1;line-height:1.5}label{display:block;margin:24px 0 14px}input{display:block;box-sizing:border-box;width:100%;margin-top:8px;padding:15px;border-radius:12px;border:1px solid #76598d;background:#100d17;color:#fff;font-size:18px}button{width:100%;padding:15px;border:0;border-radius:14px;background:#70438e;color:#fff;font-size:18px;font-weight:700}a{color:#d5b6ed} </style></head><body><main><h1>$title</h1>$content</main></body></html>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<button>${escape(context.getString(R.string.moviotv_xp_remote_add_to_tv))}</button></form>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<button>${escape(context.getString(R.string.moviotv_xp_remote_continue))}</button></form>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<form method='post' action='/install'><input type='hidden' name='pin' value='${escape(code)}'>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_remote_code_label))}<input name='pin' inputmode='numeric' autocomplete='one-time-code' maxlength='6' required autofocus></label>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_remote_url_label))}<input name='url' type='url' inputmode='url' placeholder='${escape(context.getString(R.string.moviotv_xp_remote_url_placeholder))}' required autofocus></label>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_add_catalogue_help))}</p>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_help))}</p><form method='post' action='/unlock'>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_sent_help))}</p>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(message)}</p><p><a href='/'>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_again))}</a></p>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	>
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Content-Length:
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Content-Length: ${body.size} Connection: close Cache-Control: no-store
+1	log	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Could not start add-on phone entry
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	GET
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	HTTP/1.1 200 OK Content-Type: text/html; charset=utf-8
+2	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	POST
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	UTF-8
+1	log	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	XpAddonRemote
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	http
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	https
+2	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	pin
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	url
 1	technical	app/src/main/java/tv/own/owntv/features/live/CatchupJumpDialog.kt	EEEHm
 1	technical	app/src/main/java/tv/own/owntv/features/live/CatchupJumpDialog.kt	Hm
 1	technical	app/src/main/java/tv/own/owntv/features/live/CatchupJumpDialog.kt	exact
@@ -461,6 +501,11 @@
 1	technical	app/src/main/java/tv/own/owntv/features/settings/AccentPopup.kt	4E952A
 1	empty	app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt	\0
 1	technical	app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt	dMMMyyyy
+1	empty	app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt	\0
+1	log	app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt	Backup export failed
+1	log	app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt	MovioXPBackup
+1	log	app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt	Remote backup export failed
+1	regex	app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt	\\s+
 1	empty	app/src/main/java/tv/own/owntv/features/settings/ChNavSettingsScreen.kt	\0
 3	technical	app/src/main/java/tv/own/owntv/features/settings/ChNavSettingsScreen.kt	false
 2	technical	app/src/main/java/tv/own/owntv/features/settings/ChNavSettingsScreen.kt	true
@@ -819,15 +864,16 @@
 2	technical	app/src/main/java/tv/own/owntv/features/setup/SetupWizard.kt	+
 3	technical	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	\0
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	ass
-1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	channel
+3	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	channel
 2	technical	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	enabled_
 1	performance	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	epg-preload
 2	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	layout
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	live
+2	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	movie
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	movies
 1	technical	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	moviotv_smart_back_v79
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	moviotv_ui
-2	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	series
+4	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	series
 1	performance	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	shell-composed
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	srt
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	ssa

@@ -1,5 +1,6 @@
 package tv.own.owntv.features.home
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import tv.own.owntv.R
 import tv.own.owntv.core.companion.CompanionLink
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -25,7 +27,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /** Short-lived LAN form for entering an add-on URL on a phone while browsing on the TV. */
-internal class XpAddonRemoteServer : Closeable {
+internal class XpAddonRemoteServer(private val context: Context) : Closeable {
     data class State(val url: String, val pin: String, val qr: Bitmap?, val failure: String? = null)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -57,7 +59,7 @@ internal class XpAddonRemoteServer : Closeable {
             } catch (error: Exception) {
                 if (scope.isActive && !stopAfterReply) {
                     Log.w(TAG, "Could not start add-on phone entry", error)
-                    _state.value = State("", "", null, error.localizedMessage ?: "Could not open phone entry. Try again.")
+                    _state.value = State("", "", null, context.getString(R.string.moviotv_xp_remote_open_failed))
                 }
             } finally {
                 serverSocket = null
@@ -79,13 +81,13 @@ internal class XpAddonRemoteServer : Closeable {
             val response = when {
                 method == "GET" && request.path == "/" -> pinPage()
                 method == "POST" && request.path == "/unlock" -> {
-                    if (samePin(parameters["pin"].orEmpty())) addonPage(pin) else errorPage("That code did not match. Check the TV and try again.")
+                    if (samePin(parameters["pin"].orEmpty())) addonPage(pin) else errorPage(context.getString(R.string.moviotv_xp_remote_code_mismatch))
                 }
                 method == "POST" && request.path == "/install" -> {
                     val submittedPin = parameters["pin"].orEmpty()
                     val addonUrl = parameters["url"].orEmpty().trim()
-                    if (!samePin(submittedPin)) errorPage("That code did not match. Check the TV and try again.")
-                    else if (!validAddonUrl(addonUrl)) errorPage("Enter a valid add-on URL beginning with http:// or https://.")
+                    if (!samePin(submittedPin)) errorPage(context.getString(R.string.moviotv_xp_remote_code_mismatch))
+                    else if (!validAddonUrl(addonUrl)) errorPage(context.getString(R.string.moviotv_xp_remote_invalid_url))
                     else {
                         pin = ""
                         _state.value = null
@@ -94,7 +96,7 @@ internal class XpAddonRemoteServer : Closeable {
                         successPage()
                     }
                 }
-                else -> errorPage("This link has expired. Reopen phone entry on the TV.")
+                else -> errorPage(context.getString(R.string.moviotv_xp_remote_expired))
             }
             writeResponse(client.getOutputStream(), response)
             if (stopAfterReply) serverSocket?.close()
@@ -112,22 +114,28 @@ internal class XpAddonRemoteServer : Closeable {
     }.getOrDefault(false)
 
     private fun pinPage() = page(
-        "Enter TV code",
-        "<p>Enter the six-digit code shown on your TV.</p><form method='post' action='/unlock'>" +
-            "<label>TV code<input name='pin' inputmode='numeric' autocomplete='one-time-code' maxlength='6' required autofocus></label>" +
-            "<button>Continue</button></form>",
+        context.getString(R.string.moviotv_xp_remote_enter_code_title),
+        "<p>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_help))}</p><form method='post' action='/unlock'>" +
+            "<label>${escape(context.getString(R.string.moviotv_xp_remote_code_label))}<input name='pin' inputmode='numeric' autocomplete='one-time-code' maxlength='6' required autofocus></label>" +
+            "<button>${escape(context.getString(R.string.moviotv_xp_remote_continue))}</button></form>",
     )
 
     private fun addonPage(code: String) = page(
-        "Add catalogue",
-        "<p>Paste the add-on URL. It will be sent to your TV for validation and installation.</p>" +
+        context.getString(R.string.moviotv_xp_remote_add_catalogue_title),
+        "<p>${escape(context.getString(R.string.moviotv_xp_remote_add_catalogue_help))}</p>" +
             "<form method='post' action='/install'><input type='hidden' name='pin' value='${escape(code)}'>" +
-            "<label>Add-on URL<input name='url' type='url' inputmode='url' placeholder='https://…/manifest.json' required autofocus></label>" +
-            "<button>Add to TV</button></form>",
+            "<label>${escape(context.getString(R.string.moviotv_xp_remote_url_label))}<input name='url' type='url' inputmode='url' placeholder='${escape(context.getString(R.string.moviotv_xp_remote_url_placeholder))}' required autofocus></label>" +
+            "<button>${escape(context.getString(R.string.moviotv_xp_remote_add_to_tv))}</button></form>",
     )
 
-    private fun successPage() = page("Sent to TV", "<p>The URL has been sent to your TV. You can close this page.</p>")
-    private fun errorPage(message: String) = page("Try again", "<p>${escape(message)}</p><p><a href='/'>Enter the TV code again</a></p>")
+    private fun successPage() = page(
+        context.getString(R.string.moviotv_xp_remote_sent_title),
+        "<p>${escape(context.getString(R.string.moviotv_xp_remote_sent_help))}</p>",
+    )
+    private fun errorPage(message: String) = page(
+        context.getString(R.string.moviotv_xp_remote_try_again),
+        "<p>${escape(message)}</p><p><a href='/'>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_again))}</a></p>",
+    )
 
     private fun page(title: String, content: String): ByteArray = ("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>$title</title><style>
         body{margin:0;background:#100d17;color:#f7f1fb;font:18px system-ui,sans-serif;padding:24px}main{max-width:520px;margin:8vh auto;background:#1c1724;border-radius:22px;padding:28px}h1{font-size:28px;margin:0 0 16px}p{color:#c9bdd1;line-height:1.5}label{display:block;margin:24px 0 14px}input{display:block;box-sizing:border-box;width:100%;margin-top:8px;padding:15px;border-radius:12px;border:1px solid #76598d;background:#100d17;color:#fff;font-size:18px}button{width:100%;padding:15px;border:0;border-radius:14px;background:#70438e;color:#fff;font-size:18px;font-weight:700}a{color:#d5b6ed}

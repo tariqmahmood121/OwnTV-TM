@@ -202,4 +202,27 @@
     <string name="moviotv_xp_remove_favorite">♥  Remove favourite</string>
     <string name="moviotv_xp_favorite_off_symbol" translatable="false">♡</string>
     <string name="moviotv_xp_favorite_on_symbol" translatable="false">♥</string>
+    <string name="moviotv_xp_remote_enter_on_phone">Enter on phone</string>
+    <string name="moviotv_xp_remote_tv_title">Add an add-on from your phone</string>
+    <string name="moviotv_xp_remote_tv_instructions">Scan the QR code, enter the TV code, then paste the add-on URL on your phone.</string>
+    <string name="moviotv_xp_remote_opening">Opening the secure local entry page…</string>
+    <string name="moviotv_xp_remote_qr_description">Scan to open add-on entry on your phone</string>
+    <string name="moviotv_xp_remote_tv_code">TV code: %1$s</string>
+    <string name="moviotv_xp_remote_open_failed">Could not open phone entry. Try again.</string>
+    <string name="moviotv_xp_remote_code_mismatch">That code did not match. Check the TV and try again.</string>
+    <string name="moviotv_xp_remote_invalid_url">Enter a valid add-on URL beginning with http:// or https://.</string>
+    <string name="moviotv_xp_remote_expired">This link has expired. Reopen phone entry on the TV.</string>
+    <string name="moviotv_xp_remote_enter_code_title">Enter TV code</string>
+    <string name="moviotv_xp_remote_enter_code_help">Enter the six-digit code shown on your TV.</string>
+    <string name="moviotv_xp_remote_code_label">TV code</string>
+    <string name="moviotv_xp_remote_continue">Continue</string>
+    <string name="moviotv_xp_remote_add_catalogue_title">Add catalogue</string>
+    <string name="moviotv_xp_remote_add_catalogue_help">Paste the add-on URL. It will be sent to your TV for validation and installation.</string>
+    <string name="moviotv_xp_remote_url_label">Add-on URL</string>
+    <string name="moviotv_xp_remote_url_placeholder">https://…/manifest.json</string>
+    <string name="moviotv_xp_remote_add_to_tv">Add to TV</string>
+    <string name="moviotv_xp_remote_sent_title">Sent to TV</string>
+    <string name="moviotv_xp_remote_sent_help">The URL has been sent to your TV. You can close this page.</string>
+    <string name="moviotv_xp_remote_try_again">Try again</string>
+    <string name="moviotv_xp_remote_enter_code_again">Enter the TV code again</string>
 </resources>
