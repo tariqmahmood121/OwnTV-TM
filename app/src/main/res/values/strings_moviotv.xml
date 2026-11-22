@@ -263,6 +263,12 @@
     <string name="moviotv_xp_central_connecting">Connecting to Central…</string>
     <string name="moviotv_xp_central_api_default">https://moviotv.opticalzoo.com/movio/api/index.php</string>
     <string name="moviotv_xp_central_login_expired">Central login has expired; sign in again.</string>
+    <string name="moviotv_xp_crash_report_title">MovioXP crash report</string>
+    <string name="moviotv_xp_crash_report_explanation">A previous launch crashed. This saved report can help us identify the cause without clearing your app data.</string>
+    <string name="moviotv_xp_crash_copy">Copy crash report</string>
+    <string name="moviotv_xp_crash_retry">Try opening MovioXP</string>
+    <string name="moviotv_xp_crash_privacy">Check for private details such as service URLs or keys before sharing this report.</string>
+    <string name="moviotv_xp_crash_copied">Crash report copied</string>
     <string name="moviotv_xp_choose_central_profile">Choose your profile</string>
     <string name="moviotv_xp_choose_central_profile_sub">Your Central profiles are already saved. Select one to continue.</string>
     <string name="moviotv_xp_loading_profiles">Loading your Central profiles…</string>

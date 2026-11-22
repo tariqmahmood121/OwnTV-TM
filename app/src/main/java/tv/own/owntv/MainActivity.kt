@@ -56,6 +56,9 @@ import tv.own.owntv.core.theme.UiZoom
 open class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "OwnTVHome"
+        // This is intentionally process-local: after another fatal crash the next launch shows the
+        // stored report again. Never persist the bypass across process deaths.
+        private var skipCrashReportOnce = false
 
         /** Bounded wait for the startup database probe (see [probeDatabase]). */
         private const val DB_PROBE_TIMEOUT_MS = 5_000L
@@ -243,6 +246,33 @@ open class MainActivity : ComponentActivity() {
             return
         }
         Perf.stamp("db-probed") // main thread was blocked here: everything above is pre-composition
+        // The core crash recorder wrote the previous fatal stack trace to app-private storage.
+        // Show it before composing the potentially failing home screen. This enables phone-only
+        // diagnosis without uninstalling the app or erasing Central credentials.
+        val bypassCrashReport = skipCrashReportOnce
+        skipCrashReportOnce = false
+        val savedCrash = tv.own.owntv.core.util.CrashRecorder.read(this)
+        if (!bypassCrashReport && !savedCrash.isNullOrBlank()) {
+            contentReady = true
+            startupSettled = true
+            setContent {
+                tv.own.owntv.features.recovery.StartupCrashReportScreen(
+                    report = savedCrash,
+                    onCopy = {
+                        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                            getString(R.string.moviotv_xp_crash_report_title), savedCrash,
+                        ))
+                        android.widget.Toast.makeText(this, R.string.moviotv_xp_crash_copied, android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onContinue = {
+                        skipCrashReportOnce = true
+                        recreate()
+                    },
+                )
+            }
+            return
+        }
         setContent {
             // First composition pass — splits "process start → Compose is running" from
             // "Compose is running → the destination's data arrived".
