@@ -307,6 +307,9 @@ fun OwnTVShell(
         }
     }
     val mpvEngine = remember(player) { tv.own.owntv.player.MpvPlaybackEngine(player) }
+    val xpTrackPreferences = remember(movioContext) {
+        movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
+    }
     var movioXpPlayback by remember { mutableStateOf<MovioXpPlayback?>(null) }
     LaunchedEffect(currentPlayerMeta?.contentKey) {
         val key = currentPlayerMeta?.contentKey
@@ -315,6 +318,24 @@ fun OwnTVShell(
             xpCandidateSources = emptyList()
             xpCandidateUrls = emptyList()
             xpCandidateIndex = -1
+        }
+    }
+    LaunchedEffect(currentPlayerMeta?.contentKey, movioXpPlayback?.profileId) {
+        val media = movioXpPlayback ?: return@LaunchedEffect
+        val contentKey = currentPlayerMeta?.contentKey ?: return@LaunchedEffect
+        if (!contentKey.startsWith("stremio:")) return@LaunchedEffect
+        val key = "${media.profileId}_${contentKey.hashCode()}"
+        val audioId = xpTrackPreferences.getInt("xp_audio_$key", -1)
+        val subtitleId = xpTrackPreferences.getInt("xp_subtitle_$key", -2)
+        if (audioId < 0 && subtitleId == -2) return@LaunchedEffect
+        repeat(12) {
+            delay(500L)
+            val audioReady = audioId < 0 || player.audioTracks().any { it.mpvId == audioId }
+            val subtitleReady = subtitleId == -2 || subtitleId == -1 || player.textTracks().any { it.mpvId == subtitleId }
+            if (audioId >= 0 && audioReady) player.selectAudio(audioId)
+            if (subtitleId == -1) player.disableSubtitles()
+            else if (subtitleId >= 0 && subtitleReady) player.selectSubtitle(subtitleId)
+            if ((audioId < 0 || audioReady) && (subtitleId == -2 || subtitleReady)) return@LaunchedEffect
         }
     }
     LaunchedEffect(movioXpPlayback) {
@@ -796,11 +817,19 @@ fun OwnTVShell(
     // Every other mode change (the mini player opening, the player closing) reaches Live TV here.
     LaunchedEffect(playerMode) { liveVm.onPlayerMode(mini = playerMode == PlayerMode.MINI, open = playerMode != PlayerMode.NONE) }
     val exitPlayer = {
+        val wasMovioXp = movioXpPlayback
         // Flush the resume position BEFORE the stream is torn down — stop() drops the loaded item's
         // identity, after which neither view model can tell the position was theirs. Both calls are
         // no-ops unless the player is on that section's item.
         movieVm.saveProgressNow()
         seriesVm.saveEpisodeProgressNow()
+        wasMovioXp?.let { media ->
+            tv.own.owntv.features.home.XpContinueStore.updateProgress(
+                movioContext, media.profileId, media.id, media.type, media.title, media.poster, media.year,
+                player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
+            )
+            movioXpPlayback = null
+        }
         resumeVideo() // restore mpv `vid=auto` before stop so the next played item isn't left video-less
         playerMode = PlayerMode.NONE
         showChannelList = false
@@ -808,6 +837,7 @@ fun OwnTVShell(
         liveVm.hideCategoryBrowser()
         liveVm.onFullscreenExited() // no longer full-screen on ExoPlayer → let the preview re-take the engine
         player.stop()
+        if (wasMovioXp != null) onSelectSection(MainSection.HOME)
         subtitleController.clear() // leaving the player drops the OpenSubtitles item context
         if (selectedSection != MainSection.LIVE_TV) liveVm.clearLiveOnExo()
         // Closing back into a guide: it focuses the channel that was playing (zapped-to included).
@@ -2077,6 +2107,12 @@ fun OwnTVShell(
                     onSelectLocalSubtitle = if (!isLiveStream && !isLiveChannel && subtitleContext != null) {
                         { showLocalSubPicker = true }
                     } else null,
+                    onAudioTrackSelected = movioXpPlayback?.let { media -> { trackId ->
+                        xpTrackPreferences.edit().putInt("xp_audio_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId).apply()
+                    } },
+                    onSubtitleTrackSelected = movioXpPlayback?.let { media -> { trackId ->
+                        xpTrackPreferences.edit().putInt("xp_subtitle_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId ?: -1).apply()
+                    } },
                     // In-stream favorite toggle for the current channel/movie/series.
                     favorite = favActive,
                     onToggleFavorite = favToggle,

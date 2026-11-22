@@ -46,6 +46,8 @@ import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -148,6 +150,7 @@ fun MovioTouchPosterBrowser(
     onSort: () -> Unit,
     itemCount: Int,
     gridState: LazyGridState,
+    categoryFocusRequester: FocusRequester? = null,
     emptyText: String,
     poster: @Composable (Int, Dp) -> Unit,
     modifier: Modifier = Modifier,
@@ -216,7 +219,16 @@ fun MovioTouchPosterBrowser(
                             contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 32.dp),
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(itemCount) { index -> poster(index, posterWidth) }
+                            items(itemCount) { index ->
+                                Box(Modifier.onPreviewKeyEvent { event ->
+                                    if (tablet && index % columns == 0 && categoryFocusRequester != null &&
+                                        event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+                                        runCatching { categoryFocusRequester.requestFocus() }
+                                        true
+                                    } else false
+                                }) { poster(index, posterWidth) }
+                            }
                         }
                     }
                 }

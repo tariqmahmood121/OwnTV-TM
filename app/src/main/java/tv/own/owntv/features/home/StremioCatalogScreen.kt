@@ -107,6 +107,7 @@ import javax.crypto.spec.GCMParameterSpec
 private val XpBackground: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.background
 private val XpPanel: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.surfaceContainerLow
 private val XpAccent: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.primary
+private val XpFocus = Color(0xFFFF78C8)
 private val XpText: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.onSurface
 private val XpMuted: Color @Composable get() = tv.own.owntv.ui.theme.OwnTVTheme.colors.onSurfaceVariant
 
@@ -591,6 +592,8 @@ fun StremioCatalogScreen(
     val firstSourceFocus = remember { FocusRequester() }
     val detailFocus = remember { FocusRequester() }
     val firstGridFocus = remember { FocusRequester() }
+    val categoryRailFocus = remember { FocusRequester() }
+    val bottomNavigationFocus = remember { FocusRequester() }
 
     DisposableEffect(context, favoritesProfileId) {
         val preferences = context.getSharedPreferences("movioxp_catalogues", Context.MODE_PRIVATE)
@@ -900,7 +903,15 @@ fun StremioCatalogScreen(
         directoryLoading = false
     }
 
-    Box(modifier.fillMaxSize().background(XpBackground)) {
+    Box(
+        modifier.fillMaxSize().background(XpBackground).onPreviewKeyEvent { event ->
+            if (showBottomNavigation && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+                runCatching { bottomNavigationFocus.requestFocus() }
+                true
+            } else false
+        },
+    ) {
         Column(Modifier.fillMaxSize()) {
             if (showBottomNavigation) Row(
                 Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
@@ -940,8 +951,8 @@ fun StremioCatalogScreen(
                 }
                 Box(
                     Modifier.size(56.dp).clip(RoundedCornerShape(18.dp))
-                        .background(if (accountIconFocused) XpAccent.copy(alpha = .3f) else XpPanel)
-                        .border(if (accountIconFocused) 2.dp else 1.dp, if (accountIconFocused) XpAccent else Color(0xFF3A3144), RoundedCornerShape(18.dp))
+                        .background(if (accountIconFocused) XpFocus.copy(alpha = .3f) else XpPanel)
+                        .border(if (accountIconFocused) 3.dp else 1.dp, if (accountIconFocused) XpFocus else Color(0xFF3A3144), RoundedCornerShape(18.dp))
                         .clickable { page = "central" }
                         .onFocusChanged { accountIconFocused = it.isFocused }
                         .focusable(),
@@ -960,6 +971,9 @@ fun StremioCatalogScreen(
                     Text(stringResource(when (page) { "movies" -> R.string.moviotv_nav_movies; "series" -> R.string.moviotv_nav_series; "live" -> R.string.moviotv_nav_live_tv; "search" -> R.string.moviotv_xp_nav_search; "library" -> R.string.moviotv_xp_nav_library; "addons" -> R.string.moviotv_xp_nav_addons; "settings" -> R.string.moviotv_xp_nav_settings; "home" -> R.string.moviotv_nav_home; else -> R.string.moviotv_xp_nav_discover }), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
                 if (page != "settings") XpAction(stringResource(R.string.moviotv_xp_nav_settings), false) { page = "settings"; adding = false }
+                if (showBottomNavigation) XpAction(stringResource(R.string.moviotv_nav_more), false) {
+                    runCatching { bottomNavigationFocus.requestFocus() }
+                }
                 if (page != "addons") XpAction(
                     stringResource(if (page in browsePages) R.string.moviotv_xp_remote_enter_on_phone else R.string.moviotv_xp_nav_addons), false,
                 ) {
@@ -1097,12 +1111,15 @@ fun StremioCatalogScreen(
                             genres = if (page == "favorites") emptyList() else genreOptions,
                             selected = discoveryGenre,
                             allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
+                            focusRequester = categoryRailFocus,
+                            rightFocusRequester = firstGridFocus,
                             onSelect = { discoveryGenre = it; genrePickerOpen = false },
                         )
                     },
                     onSort = { reverseTitleSort = !reverseTitleSort },
                     itemCount = sectionTitles.size,
                     gridState = gridState,
+                    categoryFocusRequester = categoryRailFocus,
                     emptyText = stringResource(if (busy || rows.any { loadingRows[rowKey(it)] == true }) R.string.moviotv_xp_loading_catalogue else R.string.moviotv_xp_no_titles),
                     poster = { index, width ->
                         val item = sectionTitles[index]
@@ -1157,14 +1174,6 @@ fun StremioCatalogScreen(
             }
             notice?.let {
                 Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp, modifier = Modifier.padding(horizontal = 34.dp, vertical = 4.dp))
-            }
-            if (page == "home" && continueTitles.isNotEmpty()) {
-                Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, top = 2.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title ->
-                        XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
-                    }
-                }
             }
             if (page in browsePages) {
                 // The add-on catalogue rows are rendered as the MovioXP poster grid above.
@@ -1484,7 +1493,7 @@ fun StremioCatalogScreen(
                         }
                     }
                 }
-            } else if (rows.isEmpty()) {
+            } else if (rows.isEmpty() && page != "home") {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.moviotv_xp_empty_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
@@ -1498,6 +1507,25 @@ fun StremioCatalogScreen(
                     contentPadding = PaddingValues(bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    if (page == "home" && continueTitles.isNotEmpty()) {
+                        item(key = "xp-continue-watching") {
+                            Column {
+                                Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 24.dp, top = 2.dp))
+                                LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title ->
+                                        XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (page == "home" && rows.isEmpty()) {
+                        item(key = "xp-home-empty") {
+                            Text(stringResource(R.string.moviotv_xp_empty_description), color = XpMuted, fontSize = 16.sp,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp))
+                        }
+                    }
                     items(rows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
                         val titles = metas[key].orEmpty()
@@ -1542,7 +1570,8 @@ fun StremioCatalogScreen(
                         Triple("addons", R.string.moviotv_xp_nav_addons, OwnTVIcon.ADD),
                         Triple("app_settings", R.string.moviotv_xp_nav_settings, OwnTVIcon.GEAR),
                     ).forEach { (key, labelRes, icon) ->
-                        XpNavigationItem(stringResource(labelRes), icon, selected = page == key) {
+                        XpNavigationItem(stringResource(labelRes), icon, selected = page == key,
+                            focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
                             if (key == "app_settings" && onOpenAppSettings != null) onOpenAppSettings()
                             else page = if (key == "app_settings") "settings" else key
                             if (key == "addons") adding = false
@@ -1562,6 +1591,8 @@ fun StremioCatalogScreen(
                         genres = genreOptions,
                         selected = discoveryGenre,
                         allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
+                        focusRequester = categoryRailFocus,
+                        rightFocusRequester = firstGridFocus,
                         onSelect = { discoveryGenre = it; genrePickerOpen = false },
                     )
                 }
@@ -1660,20 +1691,27 @@ fun StremioCatalogScreen(
 }
 
 @Composable
-private fun RowScope.XpNavigationItem(label: String, icon: OwnTVIcon = OwnTVIcon.TILES, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.XpNavigationItem(
+    label: String,
+    icon: OwnTVIcon = OwnTVIcon.TILES,
+    selected: Boolean,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier.weight(1f).padding(horizontal = 2.dp).clip(RoundedCornerShape(12.dp))
-            .background(if (focused || selected) XpAccent.copy(alpha = if (focused) .32f else .20f) else Color.Transparent)
-            .border(if (focused) 2.dp else 1.dp, if (focused) XpAccent else Color.Transparent, RoundedCornerShape(12.dp))
+            .background(if (focused || selected) (if (focused) XpFocus else XpAccent).copy(alpha = if (focused) .32f else .20f) else Color.Transparent)
+            .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
             .padding(horizontal = 5.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        DrawOwnTVIcon(icon, if (selected || focused) XpAccent else XpMuted, Modifier.size(23.dp))
+        DrawOwnTVIcon(icon, if (focused) XpFocus else if (selected) XpAccent else XpMuted, Modifier.size(23.dp))
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (selected || focused) XpText else XpMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        Text(label, color = if (focused) XpFocus else if (selected) XpText else XpMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1752,32 +1790,43 @@ private fun XpGenreRail(
     genres: List<String>,
     selected: String,
     allLabel: String,
+    focusRequester: FocusRequester,
+    rightFocusRequester: FocusRequester,
     onSelect: (String) -> Unit,
 ) {
     Column(modifier.background(XpPanel).padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(stringResource(R.string.moviotv_categories), color = XpMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item(key = "all") { XpGenreRow(allLabel, selected == "all") { onSelect("all") } }
+            item(key = "all") { XpGenreRow(allLabel, selected == "all", focusRequester, rightFocusRequester) { onSelect("all") } }
             items(genres.distinct().sorted(), key = { "genre:$it" }) { genre ->
-                XpGenreRow(genre, selected.equals(genre, true)) { onSelect(genre) }
+                XpGenreRow(genre, selected.equals(genre, true), null, rightFocusRequester) { onSelect(genre) }
             }
         }
     }
 }
 
 @Composable
-private fun XpGenreRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRequester?, rightFocusRequester: FocusRequester, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Text(
         label,
-        color = if (selected || focused) XpText else XpMuted,
+        color = if (focused) XpFocus else if (selected) XpText else XpMuted,
         fontSize = 15.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(if (selected || focused) XpAccent.copy(alpha = .22f) else Color.Transparent)
+            .background(if (selected || focused) (if (focused) XpFocus else XpAccent).copy(alpha = .22f) else Color.Transparent)
+            .border(if (focused) 2.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(10.dp))
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onPreviewKeyEvent { event ->
+                if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                    event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    runCatching { rightFocusRequester.requestFocus() }
+                    true
+                } else false
+            }
             .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
             .padding(horizontal = 10.dp, vertical = 10.dp),
     )
@@ -1796,8 +1845,8 @@ private fun XpPoster(
     var centerDownAt by remember { mutableStateOf<Long?>(null) }
     Column(
         Modifier.width(width).clip(RoundedCornerShape(12.dp))
-            .border(if (focused) 3.dp else 1.dp, if (focused) XpAccent else Color.Transparent, RoundedCornerShape(12.dp))
-            .background(if (focused) XpAccent.copy(alpha = .18f) else Color.Transparent)
+            .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
+            .background(if (focused) XpFocus.copy(alpha = .22f) else Color.Transparent)
             .padding(3.dp).then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .onPreviewKeyEvent { event ->
@@ -1846,7 +1895,7 @@ private fun XpPoster(
                 }
             }
         }
-        Text(item.name, color = XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
+        Text(item.name, color = if (focused) XpFocus else XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1887,8 +1936,8 @@ private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequ
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))
-            .background(if (focused) XpAccent.copy(alpha = .26f) else XpPanel)
-            .border(if (focused) 2.dp else 1.dp, if (focused) XpAccent else Color(0xFF3A3144), RoundedCornerShape(22.dp))
+            .background(if (focused) XpFocus.copy(alpha = .28f) else XpPanel)
+            .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color(0xFF3A3144), RoundedCornerShape(22.dp))
             .heightIn(min = 56.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .clickable(enabled = !disabled, onClick = onClick)
@@ -1896,7 +1945,7 @@ private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequ
             .padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = if (disabled) XpMuted else XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (disabled) XpMuted else if (focused) XpFocus else XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

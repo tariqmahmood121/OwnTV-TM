@@ -200,6 +200,8 @@ fun PlayerHud(
     onSearchSubtitles: (() -> Unit)? = null,
     // Movie/episode only: pick a local subtitle file — no account needed, same gating.
     onSelectLocalSubtitle: (() -> Unit)? = null,
+    onAudioTrackSelected: ((Int) -> Unit)? = null,
+    onSubtitleTrackSelected: ((Int?) -> Unit)? = null,
     // Favorite toggle for the CURRENT item (live channel / movie / series). Null hides the button
     // (no item context). [favorite] = current state — fills the star teal when true.
     favorite: Boolean = false,
@@ -927,7 +929,7 @@ fun PlayerHud(
             }
             TrackDialog(
                 stringResource(R.string.player_audio_track), audioTracks,
-                onSelect = { player.selectAudio(it.mpvId); dialog = HudDialog.NONE }, onOff = null,
+                onSelect = { player.selectAudio(it.mpvId); onAudioTrackSelected?.invoke(it.mpvId); dialog = HudDialog.NONE }, onOff = null,
                 onDismiss = { dialog = HudDialog.NONE },
                 // A/V-sync nudge wherever the engine can actually shift audio: mpv, VOD *and* live (a live
                 // stream can arrive with the provider's own drift baked in), on mpv and ExoPlayer alike.
@@ -949,8 +951,8 @@ fun PlayerHud(
             val subDelay by player.subDelayMs.collectAsStateWithLifecycle()
             TrackDialog(
                 stringResource(R.string.player_subtitles), subTracks,
-                onSelect = { player.selectSubtitle(it.mpvId); dialog = HudDialog.NONE },
-                onOff = { player.disableSubtitles(); dialog = HudDialog.NONE },
+                onSelect = { player.selectSubtitle(it.mpvId); onSubtitleTrackSelected?.invoke(it.mpvId); dialog = HudDialog.NONE },
+                onOff = { player.disableSubtitles(); onSubtitleTrackSelected?.invoke(null); dialog = HudDialog.NONE },
                 onDismiss = { dialog = HudDialog.NONE },
                 onSearchSubtitles = onSearchSubtitles?.let { open -> { dialog = HudDialog.NONE; open() } },
                 onSelectLocalSubtitle = onSelectLocalSubtitle?.let { open -> { dialog = HudDialog.NONE; open() } },
