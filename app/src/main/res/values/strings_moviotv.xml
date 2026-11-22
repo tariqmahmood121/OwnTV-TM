@@ -252,4 +252,6 @@
     <string name="moviotv_xp_central_register">Create Central account</string>
     <string name="moviotv_xp_central_register_requirements">Choose a username with at least 3 characters and a password with at least 12 characters.</string>
     <string name="moviotv_xp_central_registration_help">Create an account or log in to Central to sync your add-ons and profile data.</string>
+    <string name="moviotv_xp_central_registration_complete">Account created. Log in to enable sync.</string>
+    <string name="moviotv_xp_category_selector">%1$s  ▾</string>
 </resources>

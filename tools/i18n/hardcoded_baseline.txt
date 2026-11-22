@@ -17,7 +17,6 @@
 1	app/src/main/java/tv/own/owntv/features/customize/CustomizeScreen.kt	hid:${entry.key}
 1	app/src/main/java/tv/own/owntv/features/customize/CustomizeViewModel.kt	Custom
 1	app/src/main/java/tv/own/owntv/features/customize/MoveToCategoryDialog.kt	new
-1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$categoryLabel ▾
 3	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	community
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	directory:${it.url}
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	durationMs
@@ -30,8 +29,6 @@
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	positionMs
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	resources
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	transportUrl
-2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	types
-2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	version
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	·
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	—
 8	app/src/main/java/tv/own/owntv/features/settings/DnsSettingsScreen.kt	\0

@@ -98,7 +98,7 @@ internal object XpCentralAddonSync {
     suspend fun register(rawApiBase: String, username: String, password: String): String = withContext(Dispatchers.IO) {
         val base = normalizeApiBase(rawApiBase)
         val response = request(base, "register", null, "POST", JSONObject().put("username", username.trim()).put("password", password))
-        response.optString("message").ifBlank { "Account created. Log in to enable sync." }
+        response.optString("message")
     }
 
     suspend fun signOut(connection: XpCentralConnection) = withContext(Dispatchers.IO) {
@@ -114,7 +114,7 @@ internal object XpCentralAddonSync {
         isChild: Boolean,
         localAddons: List<XpCentralAddon>,
     ): List<String> = withContext(Dispatchers.IO) {
-        require(localProfileId > 0) { "Select a local profile before syncing." }
+        require(localProfileId > 0)
         val centralProfileId = ensureProfile(context, connection, localProfileId, localProfileName, isChild)
 
         val accountAddons = request(connection.apiBase, "addons", connection.token).optJSONArray("addons") ?: JSONArray()
@@ -148,7 +148,7 @@ internal object XpCentralAddonSync {
             }
         }
         val ids = mergedUrls.mapNotNull(knownIds::get)
-        if (ids.size != mergedUrls.size) throw IllegalStateException("An assigned add-on is missing from the account library.")
+        if (ids.size != mergedUrls.size) throw IllegalStateException()
         val addonIds = JSONArray().apply { ids.forEach(::put) }
         request(connection.apiBase, profilePath, connection.token, "PUT", JSONObject().put("addon_ids", addonIds))
         mergedUrls.toList()
@@ -180,7 +180,7 @@ internal object XpCentralAddonSync {
         }
         if (match == 0L) {
             match = request(connection.apiBase, "profiles", connection.token, "POST",
-                JSONObject().put("name", name.ifBlank { "Profile" }).put("is_child", isChild)).getLong("id")
+                JSONObject().put("name", name.ifBlank { context.getString(tv.own.owntv.R.string.moviotv_profile_fallback) }).put("is_child", isChild)).getLong("id")
         }
         prefs.edit().putLong(mapKey, match).apply()
         return match
@@ -202,9 +202,7 @@ internal object XpCentralAddonSync {
         client.newCall(builder.build()).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
-            if (!response.isSuccessful) throw IllegalStateException(
-                json.optString("error").ifBlank { "Central request failed (HTTP ${response.code})." }
-            )
+            if (!response.isSuccessful) throw IllegalStateException(json.optString("error"))
             return json
         }
     }
@@ -212,9 +210,7 @@ internal object XpCentralAddonSync {
     private fun normalizeApiBase(raw: String): String {
         val entered = raw.trim().trimEnd('/')
         val uri = URI(entered)
-        require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank()) {
-            "Enter the HTTPS address of your MovioTV Central API."
-        }
+        require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank())
         val path = uri.path.orEmpty().trimEnd('/')
         val origin = "${uri.scheme}://${uri.rawAuthority}"
         return when {

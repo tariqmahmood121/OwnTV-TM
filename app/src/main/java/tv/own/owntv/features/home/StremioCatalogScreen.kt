@@ -785,10 +785,8 @@ fun StremioCatalogScreen(
                         .onSuccess { loaded -> if (addons.none { it.url == loaded.url }) addons.add(loaded) }
                 }
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_complete, mergedUrls.size)
-            }.onFailure { error ->
-                centralSyncMessage = if (error is IllegalStateException && !error.message.isNullOrBlank()) {
-                    error.message
-                } else context.getString(R.string.moviotv_xp_central_sync_failed)
+            }.onFailure {
+                centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
             }
             centralSyncBusy = false
         }
@@ -1179,7 +1177,7 @@ fun StremioCatalogScreen(
                             "installed" -> stringResource(R.string.moviotv_xp_addon_installed)
                             else -> stringResource(R.string.moviotv_xp_addon_community)
                         }
-                        XpAction("$categoryLabel  ▾", false) { categoryMenuExpanded = true }
+                        XpAction(stringResource(R.string.moviotv_xp_category_selector, categoryLabel), false) { categoryMenuExpanded = true }
                         if (categoryMenuExpanded) {
                             Column(
                                 Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(14.dp))
@@ -1320,8 +1318,8 @@ fun StremioCatalogScreen(
                                 centralSyncMessage = null
                                 scope.launch {
                                     runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess { centralSyncMessage = it }
-                                        .onFailure { centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed) }
+                                        .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
+                                        .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
                                     centralSyncBusy = false
                                 }
                             }
@@ -1425,8 +1423,8 @@ fun StremioCatalogScreen(
                                 centralSyncBusy = true
                                 scope.launch {
                                     runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess { centralSyncMessage = it }
-                                        .onFailure { centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed) }
+                                        .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
+                                        .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
                                     centralSyncBusy = false
                                 }
                             }
