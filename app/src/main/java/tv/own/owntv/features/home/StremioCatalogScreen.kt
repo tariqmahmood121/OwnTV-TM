@@ -1596,7 +1596,7 @@ private fun XpAddonInfoCard(
             Text("v$version", color = XpMuted, fontSize = 14.sp)
         }
         if (description.isNotBlank()) Text(description, color = XpMuted, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        XpAction(action, disabled, onAction)
+        XpAction(action, disabled, onClick = onAction)
     }
 }
 

@@ -52,6 +52,7 @@ import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.BuildConfig
 import tv.own.owntv.R
 import tv.own.owntv.features.profiles.PinPrompt
+import tv.own.owntv.features.home.XpPlaybackSource
 import tv.own.owntv.features.settings.BackupScreen
 import tv.own.owntv.features.settings.DeveloperScreen
 import tv.own.owntv.features.settings.LocalSyncScreen
@@ -97,7 +98,7 @@ fun MoreScreen(
     onPlayEpisode: (seriesId: Long, episodeId: Long, positionMs: Long) -> Unit,
     onOpenSeries: (Long) -> Unit,
     onPlayMovioXpStream: (String, String, String, String?, String, String?, Long) -> Unit,
-    onPlayMovioXpCandidates: ((List<String>, String, String, String?, String, String?, Long) -> Unit)? = null,
+    onPlayMovioXpCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     onChildFocused: () -> Unit,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     /** Back from Settings: land on the Settings page's first card instead of the rail. */
