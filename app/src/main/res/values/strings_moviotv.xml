@@ -262,6 +262,7 @@
     <string name="moviotv_xp_central_create_and_continue">Create account and continue</string>
     <string name="moviotv_xp_central_connecting">Connecting to Central…</string>
     <string name="moviotv_xp_central_api_default">https://moviotv.opticalzoo.com/movio/api/index.php</string>
+    <string name="moviotv_xp_central_login_expired">Central login has expired; sign in again.</string>
     <string name="moviotv_xp_choose_central_profile">Choose your profile</string>
     <string name="moviotv_xp_choose_central_profile_sub">Your Central profiles are already saved. Select one to continue.</string>
     <string name="moviotv_xp_loading_profiles">Loading your Central profiles…</string>

@@ -134,7 +134,7 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
             vm.clearSetupError()
             try {
                 val connection = XpCentralConnectionStore.read(context)
-                    ?: error("Central login has expired; sign in again")
+                    ?: error(context.getString(R.string.moviotv_xp_central_login_expired))
                 val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token)
                 }
