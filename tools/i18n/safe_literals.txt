@@ -137,7 +137,7 @@
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/manifest.json
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/stremio/v1
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}
-22	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
+23	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	&
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${hit.meta.type}:${hit.meta.id}
@@ -1836,13 +1836,14 @@
 
 # MovioXP v1.0.74: source identity, legacy About assets and collapsible settings.
 1	empty	app/src/main/java/tv/own/owntv/features/home/XpSettingsSections.kt	\0
-3	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
+4	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	$PREFIX${source.identity}:${source.provider}
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	%02x
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	SHA-256
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	last_source_${profileId}_${contentKey.hashCode()}
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	movioxp_playback
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	v2:
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	v3:
 1	empty	app/src/main/java/tv/own/owntv/features/settings/MovioAboutScreen.kt	\0
 1	file-path	app/src/main/java/tv/own/owntv/features/settings/MovioAboutScreen.kt	movioxp_licences/gpl-3.0.txt
 3	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	movioxp_playback
