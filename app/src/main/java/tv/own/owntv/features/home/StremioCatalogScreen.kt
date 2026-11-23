@@ -580,6 +580,10 @@ fun StremioCatalogScreen(
     var addonFilter by remember { mutableStateOf("") }
     val browsePages = setOf("movies", "series", "live", "favorites")
     var page by remember(initialPage) { mutableStateOf(initialPage) }
+    // Independent, small accordion state for the redesigned MovioXP Settings.
+    var expandedSettingsGroup by remember { mutableStateOf<Int?>(null) }
+    var showPreferredAddons by remember { mutableStateOf(false) }
+    var showXpAbout by remember { mutableStateOf(false) }
     var returnPage by remember(initialPage) { mutableStateOf(initialPage) }
     var searchText by remember { mutableStateOf("") }
     var discoveryType by remember { mutableStateOf("all") }
@@ -1465,134 +1469,158 @@ fun StremioCatalogScreen(
             } else if (page == "settings") {
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                        .padding(horizontal = if (compactPhone) 18.dp else 34.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .padding(horizontal = if (compactPhone) 14.dp else 28.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(stringResource(R.string.moviotv_xp_appearance_heading), color = XpText,
-                        fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text(stringResource(R.string.moviotv_xp_appearance_hint), color = XpMuted,
-                        fontSize = 14.sp)
-                    XpAction(stringResource(R.string.moviotv_xp_settings_colours), false) {
-                        if (onOpenSettingsGroup != null) {
-                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
-                        } else onOpenAppSettings?.invoke()
-                    }
-                    XpAction(stringResource(R.string.moviotv_xp_settings_fonts), false) {
-                        if (onOpenSettingsGroup != null) {
-                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
-                        } else onOpenAppSettings?.invoke()
-                    }
-                    XpAction(stringResource(R.string.moviotv_xp_settings_gui), false) {
-                        if (onOpenSettingsGroup != null) {
-                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.LAYOUT.ordinal)
-                        } else onOpenAppSettings?.invoke()
-                    }
-                    XpAction(stringResource(R.string.moviotv_xp_settings_all), false) {
-                        onOpenAppSettings?.invoke()
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(stringResource(R.string.moviotv_xp_auto_select_source), color = XpText, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                    XpAction(
-                        label = stringResource(if (autoSelectSource) R.string.moviotv_xp_source_auto_enabled else R.string.moviotv_xp_source_auto_disabled),
-                        disabled = false,
+                    Text(stringResource(R.string.moviotv_xp_nav_settings), color = XpText,
+                        fontSize = if (compactPhone) 24.sp else 27.sp, fontWeight = FontWeight.Bold)
+                    XpSettingsAccordion(
+                        title = stringResource(R.string.moviotv_xp_settings_display_heading),
+                        summary = stringResource(R.string.moviotv_xp_settings_display_summary),
+                        expanded = expandedSettingsGroup == 0,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 0) null else 0 },
                     ) {
-                        autoSelectSource = !autoSelectSource
-                        playbackPrefs.edit().putBoolean("auto_select_source", autoSelectSource).apply()
-                        XpCentralDataSync.markSetting(context, favoritesProfileId, "auto_select_source", autoSelectSource)
-                    }
-                    Text(stringResource(R.string.moviotv_xp_preferred_addon), color = XpText, fontSize = 21.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 12.dp))
-                    XpAction(
-                        label = stringResource(R.string.moviotv_xp_any_addon),
-                        disabled = false,
-                    ) {
-                        preferredAddonUrl = ""
-                        playbackPrefs.edit().putString("preferred_addon", "").apply()
-                        XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", "")
-                    }
-                    addons.forEach { addon ->
-                        XpAction(
-                            label = if (preferredAddonUrl == addon.url) stringResource(R.string.moviotv_xp_preferred_addon_option, addon.name) else addon.name,
-                            disabled = false,
-                        ) {
-                            preferredAddonUrl = addon.url
-                            playbackPrefs.edit().putString("preferred_addon", addon.url).apply()
-                            XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", addon.url)
+                        XpAppearanceOptions(onMore = {
+                            onOpenSettingsGroup?.invoke(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
+                                ?: onOpenAppSettings?.invoke()
+                        })
+                        XpSettingsOption(stringResource(R.string.moviotv_xp_settings_display_layout_more)) {
+                            onOpenSettingsGroup?.invoke(tv.own.owntv.features.shell.components.SettingsGroup.LAYOUT.ordinal)
+                                ?: onOpenAppSettings?.invoke()
                         }
                     }
-
-                    Text(
-                        stringResource(R.string.moviotv_xp_central_addons_title),
-                        color = XpText, fontSize = 21.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 22.dp),
-                    )
-                    Text(
-                        stringResource(R.string.moviotv_xp_central_addons_help),
-                        color = XpMuted, fontSize = 14.sp,
-                    )
-                    if (centralConnection == null) {
-                        XpCentralField(
-                            value = centralApiBase,
-                            label = stringResource(R.string.moviotv_xp_central_api_label),
-                            onValueChange = { centralApiBase = it },
-                        )
-                        XpCentralField(
-                            value = centralUsername,
-                            label = stringResource(R.string.moviotv_xp_central_username_label),
-                            onValueChange = { centralUsername = it },
-                        )
-                        XpCentralField(
-                            value = centralPassword,
-                            label = stringResource(R.string.moviotv_xp_central_password_label),
-                            onValueChange = { centralPassword = it },
-                            password = true,
-                        )
-                    } else {
-                        Text(
-                            stringResource(R.string.moviotv_xp_central_connected_as, centralConnection?.username.orEmpty()),
-                            color = XpAccent, fontSize = 15.sp,
-                        )
-                    }
-                    XpAction(
-                        label = stringResource(if (centralConnection == null) R.string.moviotv_xp_central_connect_sync else R.string.moviotv_xp_central_sync_now),
-                        disabled = centralSyncBusy,
-                    ) { syncAddonsWithCentral() }
-                    if (centralConnection == null) {
-                        XpAction(label = stringResource(R.string.moviotv_xp_central_register), disabled = centralSyncBusy) {
-                            if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-                            } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
-                            } else {
-                                centralSyncBusy = true
-                                scope.launch {
-                                    runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
-                                        .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
-                                    centralSyncBusy = false
+                    XpSettingsAccordion(
+                        title = stringResource(R.string.moviotv_xp_settings_playback_heading),
+                        summary = stringResource(R.string.moviotv_xp_settings_playback_summary),
+                        expanded = expandedSettingsGroup == 1,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 1) null else 1 },
+                    ) {
+                        XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_auto_select_source))
+                        XpSettingsOption(
+                            title = stringResource(if (autoSelectSource)
+                                R.string.moviotv_xp_source_auto_enabled else R.string.moviotv_xp_source_auto_disabled),
+                            selected = autoSelectSource,
+                        ) {
+                            autoSelectSource = !autoSelectSource
+                            playbackPrefs.edit().putBoolean("auto_select_source", autoSelectSource).apply()
+                            XpCentralDataSync.markSetting(context, favoritesProfileId, "auto_select_source", autoSelectSource)
+                        }
+                        XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_preferred_addon))
+                        val chosenAddon = addons.firstOrNull { it.url == preferredAddonUrl }?.name
+                        XpSettingsOption(
+                            stringResource(R.string.moviotv_xp_settings_chosen_addon,
+                                chosenAddon ?: stringResource(R.string.moviotv_xp_any_addon)),
+                            selected = showPreferredAddons,
+                        ) { showPreferredAddons = !showPreferredAddons }
+                        if (showPreferredAddons) {
+                            XpSettingsOption(stringResource(R.string.moviotv_xp_any_addon),
+                                selected = preferredAddonUrl.isBlank()) {
+                                preferredAddonUrl = ""
+                                playbackPrefs.edit().putString("preferred_addon", "").apply()
+                                XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", "")
+                                showPreferredAddons = false
+                            }
+                            addons.forEach { addon ->
+                                XpSettingsOption(addon.name, selected = preferredAddonUrl == addon.url) {
+                                    preferredAddonUrl = addon.url
+                                    playbackPrefs.edit().putString("preferred_addon", addon.url).apply()
+                                    XpCentralDataSync.markSetting(context, favoritesProfileId, "preferred_addon", addon.url)
+                                    showPreferredAddons = false
                                 }
                             }
                         }
+                        Text(stringResource(R.string.moviotv_xp_settings_resume_hint),
+                            color = XpMuted, fontSize = 13.sp)
                     }
-                    centralSyncMessage?.let { Text(it, color = XpAccent, fontSize = 14.sp) }
-                    if (centralConnection != null) {
-                        XpAction(
-                            label = stringResource(R.string.moviotv_xp_central_disconnect),
-                            disabled = centralSyncBusy,
-                        ) {
-                            val oldConnection = centralConnection
-                            scope.launch {
-                                runCatching { oldConnection?.let { XpCentralAddonSync.signOut(it) } }
-                                XpCentralConnectionStore.clear(context)
-                                centralConnection = null
-                                centralPassword = ""
-                                centralSyncMessage = null
+                    XpSettingsAccordion(
+                        title = stringResource(R.string.moviotv_xp_settings_account_heading),
+                        summary = stringResource(R.string.moviotv_xp_settings_account_summary),
+                        expanded = expandedSettingsGroup == 2,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 2) null else 2 },
+                    ) {
+                        if (centralConnection == null) {
+                            Text(stringResource(R.string.moviotv_xp_central_addons_help),
+                                color = XpMuted, fontSize = 13.sp)
+                            XpCentralField(
+                                value = centralApiBase,
+                                label = stringResource(R.string.moviotv_xp_central_api_label),
+                                onValueChange = { centralApiBase = it },
+                            )
+                            XpCentralField(
+                                value = centralUsername,
+                                label = stringResource(R.string.moviotv_xp_central_username_label),
+                                onValueChange = { centralUsername = it },
+                            )
+                            XpCentralField(
+                                value = centralPassword,
+                                label = stringResource(R.string.moviotv_xp_central_password_label),
+                                onValueChange = { centralPassword = it },
+                                password = true,
+                            )
+                        } else {
+                            Text(stringResource(R.string.moviotv_xp_central_connected_as,
+                                centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 15.sp)
+                        }
+                        XpSettingsOption(
+                            title = stringResource(if (centralConnection == null)
+                                R.string.moviotv_xp_central_connect_sync else R.string.moviotv_xp_central_sync_now),
+                            enabled = !centralSyncBusy,
+                        ) { syncAddonsWithCentral() }
+                        if (centralConnection == null) {
+                            XpSettingsOption(stringResource(R.string.moviotv_xp_central_register),
+                                enabled = !centralSyncBusy) {
+                                if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
+                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
+                                } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
+                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
+                                } else {
+                                    centralSyncBusy = true
+                                    scope.launch {
+                                        runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
+                                            .onSuccess { centralSyncMessage = it.ifBlank {
+                                                context.getString(R.string.moviotv_xp_central_registration_complete)
+                                            } }
+                                            .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
+                                        centralSyncBusy = false
+                                    }
+                                }
                             }
                         }
+                        if (centralConnection != null) {
+                            XpSettingsOption(stringResource(R.string.moviotv_xp_central_disconnect),
+                                enabled = !centralSyncBusy) {
+                                val oldConnection = centralConnection
+                                scope.launch {
+                                    runCatching { oldConnection?.let { XpCentralAddonSync.signOut(it) } }
+                                    XpCentralConnectionStore.clear(context)
+                                    centralConnection = null
+                                    centralPassword = ""
+                                    centralSyncMessage = null
+                                }
+                            }
+                        }
+                        if (centralSyncBusy) Text(stringResource(R.string.moviotv_xp_central_syncing),
+                            color = XpMuted, fontSize = 13.sp)
+                        centralSyncMessage?.let { Text(it, color = XpAccent, fontSize = 13.sp) }
                     }
-                    if (centralSyncBusy) Text(stringResource(R.string.moviotv_xp_central_syncing), color = XpMuted, fontSize = 14.sp)
-                    centralSyncMessage?.let { Text(it, color = XpAccent, fontSize = 14.sp) }
+                    XpSettingsAccordion(
+                        title = stringResource(R.string.moviotv_xp_settings_advanced_heading),
+                        summary = stringResource(R.string.moviotv_xp_settings_advanced_summary),
+                        expanded = expandedSettingsGroup == 3,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 3) null else 3 },
+                    ) {
+                        XpSettingsOption(stringResource(R.string.moviotv_xp_settings_all)) {
+                            onOpenAppSettings?.invoke()
+                        }
+                        Text(stringResource(R.string.moviotv_xp_settings_advanced_hint),
+                            color = XpMuted, fontSize = 13.sp)
+                    }
+                    XpSettingsOption(stringResource(R.string.moviotv_xp_about_heading)) {
+                        showXpAbout = true
+                    }
+                    Spacer(Modifier.height(10.dp))
                 }
+                if (showXpAbout) XpAboutDialog(onDismiss = { showXpAbout = false })
             } else if (page == "library") {
                 if (continueTitles.isEmpty()) {
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
