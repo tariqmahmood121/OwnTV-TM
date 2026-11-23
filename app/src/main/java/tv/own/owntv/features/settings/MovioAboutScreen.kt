@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -29,9 +34,11 @@ import tv.own.owntv.ui.theme.stageAccent
 import tv.own.owntv.ui.theme.stageText
 
 @Composable
-fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovioXp: Boolean = false) {
     BackHandler(onBack = onBack)
     val accent = stageAccent.accent
+    val context = LocalContext.current
+    var showLegal by remember { mutableStateOf(false) }
     Column(
         modifier.fillMaxSize().background(LocalStagePalette.current.page)
             .verticalScroll(rememberScrollState()).padding(32.dp),
@@ -51,12 +58,27 @@ fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         Text(stringResource(R.string.moviotv_oak_studios), style = stageText(38, 800), color = accent)
         Text(stringResource(R.string.moviotv_about_studio_subtitle), style = stageText(16, 600), color = StageColors.Muted)
         Spacer(Modifier.height(8.dp))
-        Text(stringResource(R.string.moviotv_app_name), style = stageText(28, 700), color = StageColors.Text)
+        Text(stringResource(if (forMovioXp) R.string.moviotv_xp_title else R.string.moviotv_app_name),
+            style = stageText(28, 700), color = StageColors.Text)
         Text(stringResource(R.string.moviotv_about_version, BuildConfig.VERSION_NAME), style = stageText(17, 500), color = StageColors.Muted)
         Text(stringResource(R.string.moviotv_about_developed), style = stageText(18, 600), color = StageColors.Text)
         Text(stringResource(R.string.moviotv_about_created), style = stageText(18, 500), color = StageColors.Text)
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.moviotv_about_licence), style = stageText(15, 400), color = StageColors.Muted)
+        // Oak Studios is our identity. Preserve the original MovioTV About design, and move
+        // upstream GPL attribution into the legal view instead of the main studio description.
+        StageButton(stringResource(R.string.moviotv_xp_about_licences), onClick = { showLegal = !showLegal })
+        if (showLegal) {
+            Text(stringResource(R.string.moviotv_xp_about_attribution),
+                style = stageText(15, 500), color = StageColors.Text)
+            Text(stringResource(R.string.moviotv_xp_about_source),
+                style = stageText(13, 400), color = StageColors.Muted)
+            Text(stringResource(R.string.moviotv_xp_about_font_licences),
+                style = stageText(13, 400), color = StageColors.Muted)
+            val licence = remember(context) { runCatching {
+                context.assets.open("movioxp_licences/gpl-3.0.txt").bufferedReader().use { it.readText() }
+            }.getOrDefault("") }
+            Text(licence, style = stageText(11, 400), color = StageColors.Muted)
+        }
         StageButton(stringResource(R.string.common_back), onClick = onBack)
     }
 }
