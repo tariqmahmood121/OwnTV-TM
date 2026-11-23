@@ -430,7 +430,7 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
         compactOnPhone = true,
         back = WizardAction(stringResource(R.string.common_back), onBack),
         next = WizardAction(
-            stringResource(if (registering) R.string.moviotv_xp_central_create_short else R.string.moviotv_xp_central_login_short),
+            stringResource(if (busy) R.string.moviotv_xp_central_connecting else if (registering) R.string.moviotv_xp_central_create_short else R.string.moviotv_xp_central_login_short),
             onClick = {
                 if (valid && !busy) {
                     busy = true
@@ -453,7 +453,8 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
             },
             enabled = valid && !busy,
         ),
-        extraLeft = if (busy) listOf(WizardAction(stringResource(R.string.moviotv_xp_central_connecting), {}, enabled = false)) else emptyList(),
+        // Keep only Back and the prominent submit button so narrow phones never overflow.
+        extraLeft = emptyList(),
     ) {
         CentralCredentialField(
             label = usernameLabel,
