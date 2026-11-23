@@ -134,16 +134,20 @@ private suspend fun seekMovioXpWhenReady(
     requestedPositionMs: Long,
 ) {
     if (requestedPositionMs <= 0L) return
-    kotlinx.coroutines.delay(350L)
-    val duration = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+    // OwnTVPlayer.play(startPositionMs=...) performs the primary seek when the stream opens.
+    // Only retry if the engine genuinely landed before the saved playhead. seekBy is RELATIVE,
+    // never absolute: sending the entire requested position as a delta causes overshooting.
+    val duration = kotlinx.coroutines.withTimeoutOrNull(35_000L) {
         player.currentMeta.first { it?.contentKey == contentKey }
         player.duration.first { it > 0L }
     } ?: return
-    // Let mpv finish opening the first packet before seeking; this avoids a seek being reset to zero
-    // when the stream's initial timeline is committed just after metadata appears.
-    kotlinx.coroutines.delay(500L)
-    val safePosition = requestedPositionMs.coerceAtMost((duration - 3_000L).coerceAtLeast(0L))
-    if (safePosition > 0L && player.currentMeta.value?.contentKey == contentKey) engine.seekBy(safePosition)
+    kotlinx.coroutines.delay(1_500L)
+    if (player.currentMeta.value?.contentKey != contentKey) return
+    val target = requestedPositionMs.coerceAtMost((duration - 3_000L).coerceAtLeast(0L))
+    val actual = player.position.value.coerceAtLeast(0L)
+    if (target > 0L && actual + 8_000L < target) {
+        engine.seekBy(target - actual)
+    }
 }
 
 @Composable
@@ -363,8 +367,9 @@ fun OwnTVShell(
         while (true) {
             delay(5_000L)
             if (currentPlayerMeta?.contentKey != "stremio:${current.type}:${current.id}") continue
-            val position = mpvEngine.position.value
-            val duration = mpvEngine.duration.value
+            // Shared player state follows whichever engine is active, including Exo fallbacks.
+            val position = player.position.value
+            val duration = player.duration.value
             tv.own.owntv.features.home.XpContinueStore.updateProgress(
                 movioContext,
                 current.profileId,
@@ -758,9 +763,18 @@ fun OwnTVShell(
                 favorite = XpFavoritesStore.isFavorite(movioContext, profileId, type, contentId),
             )
             subtitleController.clear()
-            player.play(url = url, title = title, year = year, contentKey = "stremio:$type:$contentId")
-            if (resumePositionMs > 0L) scope.launch {
-                seekMovioXpWhenReady(player, mpvEngine, "stremio:$type:$contentId", resumePositionMs)
+            val contentKey = "stremio:$type:$contentId"
+            val latestSaved = tv.own.owntv.features.home.XpContinueStore.read(movioContext, profileId)
+                .firstOrNull { it.id == contentId && it.type == type }?.positionMs ?: 0L
+            val startAt = resumePositionMs.takeIf { it > 0L } ?: latestSaved
+            // OwnTV's engine already supports startPositionMs. Using it here avoids the
+            // asynchronous "open at zero, seek later" race that dropped MovioXP resumes.
+            player.play(
+                url = url, title = title, year = year,
+                contentKey = contentKey, startPositionMs = startAt,
+            )
+            if (startAt > 0L) scope.launch {
+                seekMovioXpWhenReady(player, mpvEngine, contentKey, startAt)
             }
             onSelectSection(target)
             openFullscreen(target)
@@ -780,6 +794,10 @@ fun OwnTVShell(
                 val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
                 movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
                     .edit().putString(sourceKey, candidates.first().provider).apply()
+                // Store provider preference on Central as well as the local device.
+                tv.own.owntv.features.home.XpCentralDataSync.markSetting(
+                    movioContext, activeProfileId ?: -1L, sourceKey, candidates.first().provider,
+                )
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
@@ -793,13 +811,14 @@ fun OwnTVShell(
             val nextIndex = xpCandidateIndex + 1
             // Failover can happen after playback has already started. Carry the live playhead to the
             // next stream; the stable Stremio content key also lets the player retain track choices.
-            val resumeAtMs = player.position.value.coerceAtLeast(0L)
+            val resumeAtMs = player.position.value.takeIf { it > 0L } ?: xpCandidateResumePositionMs
             xpCandidateResumePositionMs = resumeAtMs
             player.play(
                 url = xpCandidateUrls[nextIndex],
                 title = xpCandidateTitle,
                 year = xpCandidateYear,
                 contentKey = xpCandidateContentKey,
+                startPositionMs = resumeAtMs,
             )
             if (resumeAtMs > 0L) scope.launch {
                 seekMovioXpWhenReady(player, mpvEngine, xpCandidateContentKey, resumeAtMs)
