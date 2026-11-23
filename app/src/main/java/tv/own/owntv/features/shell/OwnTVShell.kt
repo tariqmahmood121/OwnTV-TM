@@ -1664,7 +1664,7 @@ fun OwnTVShell(
                                 }
                             },
                             initialPage = "live",
-                            showBottomNavigation = true,
+                            showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1674,7 +1674,7 @@ fun OwnTVShell(
                             onPlayStream = onPlayMovioXpStream,
                             onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "movies",
-                            showBottomNavigation = true,
+                            showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1684,7 +1684,7 @@ fun OwnTVShell(
                             onPlayStream = onPlayMovioXpStream,
                             onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "series",
-                            showBottomNavigation = true,
+                            showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
