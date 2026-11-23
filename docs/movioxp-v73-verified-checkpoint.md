@@ -81,3 +81,18 @@ Development branch: `feature/movioxp-v74-build`; stable 1.0.73 remains unchanged
 4. Movie B-source selection -> Back -> reopen: source B and previous position restored. Test same-provider multiple sources and fallback.
 5. Seek, pause, Back: within a few seconds query Central `GET /sync?profile_id=<id>` and confirm latest title + timeline; test audio/subtitle preferences and reinstall add-on on another device.
 6. Offline saves must remain local for later upload. Confirm profile isolation when switching accounts.
+
+## Source preference bug confirmed on 1.0.77 — fix prepared for next build
+
+**User report 23 November 2026:** Select source B during a movie, press Back, reopen the movie. Resume time is correct, but source A (first/default) plays.
+
+**Confirmed root cause:** `OwnTVShell.onPlayMovioXpCandidates` was writing `candidates.first()` to the per-profile preference on every automatic start, even though the viewer had not selected it. The buffering failover code also wrote the next automatic candidate. Both paths could overwrite the viewer's saved source. Additionally, the v1.0.77 source hash used a dynamic add-on detail string, so it could change between lookups.
+
+**Code changes on `fix/movioxp-v78-source-persistence`:**
+- Save the preferred stream **only** on explicit manual selection (player HUD and details' manual source picker), never on automatic start/fallback.
+- Assign source identities using a hashed **add-on URL + stream label**, excluding volatile add-on details; retain compatibility with stored `v2:` preferences when details still match.
+- Continue sorting playable candidates by saved source identity with provider-level fallback; don't save expiring/signed stream URLs.
+- Tests in `XpSourcePreferenceTest.kt` cover multiple sources from one add-on, stable identity across dynamic detail changes, legacy preferences and missing-source fallback.
+- Existing resume/progress and Central source preference persistence remain unchanged.
+
+**Acceptance test still required on Android 17:** Play title, choose B, press Back and reopen; verify B plays at same saved position; test another movie, a second source within the same add-on, temporarily unavailable sources, restart, and cross-device sync. **Not yet compiled or phone-tested on this branch; do not call it fixed in a released APK.** Preserve `stable/movioxp-v1.0.73` as the proven fallback.
