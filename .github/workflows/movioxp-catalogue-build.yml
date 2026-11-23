@@ -3,13 +3,15 @@ name: MovioXP Catalogue APK
 on:
   workflow_dispatch:
   push:
-    branches: [MovioXP, fix/movioxp-verifyerror-agp941, fix/movioxp-verifyerror-shell-split]
+    branches: [MovioXP, fix/movioxp-verifyerror-agp941, fix/movioxp-verifyerror-shell-split, fix/movioxp-ui-cleanup-68]
     paths:
       - app/src/main/java/tv/own/owntv/features/home/**
       - app/src/main/java/tv/own/owntv/features/setup/**
       - app/src/main/java/tv/own/owntv/features/settings/BackupScreen.kt
       - app/src/main/java/tv/own/owntv/features/settings/BackupViewModel.kt
       - app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt
+      - app/src/main/java/tv/own/owntv/features/setup/WizardFrame.kt
+      - app/src/main/java/tv/own/owntv/features/home/MovioLandingScreen.kt
       - app/src/main/res/values/strings_moviotv.xml
       - tools/i18n/safe_literals.txt
       - app/build.gradle.kts
