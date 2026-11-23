@@ -709,7 +709,7 @@ fun OwnTVShell(
                 xpCandidateContentKey = "stremio:$type:$contentId"
                 xpCandidateResumePositionMs = resumePositionMs
                 xpCandidateGeneration += 1
-                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first().provider)
+                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first())
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
@@ -738,7 +738,7 @@ fun OwnTVShell(
             xpCandidateIndex = nextIndex
             val activeSource = xpCandidateSources.getOrNull(nextIndex)
             if (activeSource != null) {
-                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, activeSource.provider)
+                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, activeSource)
             }
         }
     }
@@ -2130,10 +2130,7 @@ fun OwnTVShell(
                                     val position = player.position.value.coerceAtLeast(0L)
                                     xpCandidateIndex = index
                                     xpCandidateResumePositionMs = position
-                                    val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
-                                    movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
-                                        .edit().putString(sourceKey, source.provider).apply()
-                                    tv.own.owntv.features.home.XpCentralDataSync.markSetting(movioContext, media.profileId, sourceKey, source.provider)
+                                    storeMovioXpSource(movioContext, media.profileId, xpCandidateContentKey, source)
                                     onPlayMovioXpStream(
                                         source.url, media.title, media.type, media.year, media.id, media.poster, position,
                                     )
