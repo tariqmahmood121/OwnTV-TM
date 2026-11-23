@@ -39,6 +39,8 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 import tv.own.owntv.core.util.Perf
 import tv.own.owntv.core.launcher.LauncherDeepLink
 import tv.own.owntv.features.profiles.ProfileGate
+import tv.own.owntv.features.home.XpCentralConnectionStore
+import tv.own.owntv.features.home.XpCentralProfileScope
 import tv.own.owntv.features.profiles.ProfileGateSessionViewModel
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import tv.own.owntv.features.setup.Onboarding
@@ -211,6 +213,7 @@ open class MainActivity : ComponentActivity() {
         // postSplashScreenTheme (Theme.OwnTV), so the activity ends up in the same theme as before.
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        XpCentralProfileScope.initialize(this)
         tv.own.owntv.features.pip.PictureInPictureWindow.attach(this, get())
         // The window only pauses the activity, so onStop's relock never runs while it is open: going into
         // it is leaving the app, and a channel from a category the PIN opened stops there too.
@@ -380,8 +383,23 @@ open class MainActivity : ComponentActivity() {
 
             val profilesVm: ProfilesViewModel = koinViewModel()
             val profileState by profilesVm.profileState.collectAsStateWithLifecycle()
-            val profiles = (profileState as? tv.own.owntv.features.profiles.ProfileLoadState.Loaded)?.profiles.orEmpty()
+            val localProfiles = (profileState as? tv.own.owntv.features.profiles.ProfileLoadState.Loaded)?.profiles.orEmpty()
             val profilesLoaded = profileState is tv.own.owntv.features.profiles.ProfileLoadState.Loaded
+            val centralAccountId by XpCentralProfileScope.accountId.collectAsStateWithLifecycle()
+            val centralMembershipRevision by XpCentralProfileScope.revision.collectAsStateWithLifecycle()
+            // All previous account profiles remain in Room. Only an account's verified Central
+            // members are visible when signed in; a stale local V10 cannot enter another account.
+            val profiles = if (centralAccountId == null) localProfiles else {
+                val ids = XpCentralProfileScope.allowedLocalIds(this@MainActivity, centralAccountId!!)
+                localProfiles.filter { it.id in ids }
+            }
+            LaunchedEffect(centralAccountId, profilesLoaded) {
+                val conn = XpCentralConnectionStore.read(this@MainActivity)
+                if (profilesLoaded && conn != null && conn.accountId == centralAccountId) {
+                    runCatching { XpCentralProfileScope.refresh(this@MainActivity, conn, profilesVm) }
+                        .onFailure { Log.w(TAG, "Central profile membership refresh failed: ${it.javaClass.simpleName}") }
+                }
+            }
             // Activity-scoped gate/session state: configuration-only retention through the Activity's
             // ViewModelStore. Survives recreation (font scale, dark mode, a script-family language
             // switch) but is cleared on process death — an authentication result must never be restored
@@ -414,7 +432,7 @@ open class MainActivity : ComponentActivity() {
             val gateRequired = shouldShowProfileGate || switchProfileRequested
             val authenticatedForActiveProfile = loadedProfileId != null &&
                 authenticatedProfileId == loadedProfileId
-            val shellReady = tv.own.owntv.features.profiles.shellMayCompose(
+            val shellReady = activeProfileKnown && tv.own.owntv.features.profiles.shellMayCompose(
                 profileState = profileState,
                 activeProfileId = loadedProfileId,
                 authenticatedProfileId = authenticatedProfileId,
@@ -528,6 +546,13 @@ open class MainActivity : ComponentActivity() {
                                 firstRun = false,
                                 onDone = { profileId -> gateSession.completeAddingProfile(profileId) },
                                 onCancel = { gateSession.cancelAddingProfile() },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            // Cloud profiles come only from Central. Never create an unrelated
+                            // local profile through onboarding while a cloud account is selected.
+                            centralAccountId != null && !activeProfileKnown -> ProfileGate(
+                                onEnter = { profileId -> gateSession.authenticateProfile(profileId) },
+                                onAddProfile = {},
                                 modifier = Modifier.fillMaxSize(),
                             )
                             // First run (no profile yet) → full onboarding.
