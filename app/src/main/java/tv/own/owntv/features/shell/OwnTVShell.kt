@@ -351,15 +351,26 @@ fun OwnTVShell(
         val key = "${media.profileId}_${contentKey.hashCode()}"
         val audioId = xpTrackPreferences.getInt("xp_audio_$key", -1)
         val subtitleId = xpTrackPreferences.getInt("xp_subtitle_$key", -2)
-        if (audioId < 0 && subtitleId == -2) return@LaunchedEffect
+        val audioLang = xpTrackPreferences.getString("xp_audio_lang_$key", null)?.takeIf(String::isNotBlank)
+        val subtitleLang = xpTrackPreferences.getString("xp_subtitle_lang_$key", null)?.takeIf(String::isNotBlank)
+        if (audioId < 0 && audioLang == null && subtitleId == -2 && subtitleLang == null) return@LaunchedEffect
         repeat(60) {
             delay(500L)
-            val audioReady = audioId < 0 || player.audioTracks().any { it.mpvId == audioId }
-            val subtitleReady = subtitleId == -2 || subtitleId == -1 || player.textTracks().any { it.mpvId == subtitleId }
-            if (audioId >= 0 && audioReady) player.selectAudio(audioId)
+            val audioTracks = player.audioTracks()
+            val subtitleTracks = player.textTracks()
+            // mpv track IDs change across provider sources. Match saved language first.
+            val audioMatch = audioLang?.let { lang -> audioTracks.firstOrNull { it.lang.equals(lang, true) } }
+                ?: if (audioLang == null) audioTracks.firstOrNull { it.mpvId == audioId } else null
+            val subtitleMatch = subtitleLang?.let { lang -> subtitleTracks.firstOrNull { it.lang.equals(lang, true) } }
+                ?: if (subtitleLang == null) subtitleTracks.firstOrNull { it.mpvId == subtitleId } else null
+            audioMatch?.let { player.selectAudio(it.mpvId) }
             if (subtitleId == -1) player.disableSubtitles()
-            else if (subtitleId >= 0 && subtitleReady) player.selectSubtitle(subtitleId)
-            if ((audioId < 0 || audioReady) && (subtitleId == -2 || subtitleReady)) return@LaunchedEffect
+            else subtitleMatch?.let { player.selectSubtitle(it.mpvId) }
+            val audioReady = audioId < 0 && audioLang == null || audioMatch != null ||
+                (audioLang != null && audioTracks.isNotEmpty())
+            val subtitleReady = subtitleId == -2 && subtitleLang == null || subtitleId == -1 ||
+                subtitleMatch != null || (subtitleLang != null && subtitleTracks.isNotEmpty())
+            if (audioReady && subtitleReady) return@LaunchedEffect
         }
     }
     LaunchedEffect(movioXpPlayback) {
@@ -2161,15 +2172,27 @@ fun OwnTVShell(
                         { showLocalSubPicker = true }
                     } else null,
                     onAudioTrackSelected = movioXpPlayback?.let { media -> { trackId ->
-                        xpTrackPreferences.edit().putInt("xp_audio_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId).apply()
+                        val suffix = "${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}"
+                        val lang = player.audioTracks().firstOrNull { it.mpvId == trackId }?.lang.orEmpty()
+                        xpTrackPreferences.edit().putInt("xp_audio_$suffix", trackId)
+                            .putString("xp_audio_lang_$suffix", lang).apply()
                         tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_audio_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId,
+                            movioContext, media.profileId, "xp_audio_$suffix", trackId,
+                        )
+                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
+                            movioContext, media.profileId, "xp_audio_lang_$suffix", lang,
                         )
                     } },
                     onSubtitleTrackSelected = movioXpPlayback?.let { media -> { trackId ->
-                        xpTrackPreferences.edit().putInt("xp_subtitle_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId ?: -1).apply()
+                        val suffix = "${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}"
+                        val lang = trackId?.let { picked -> player.textTracks().firstOrNull { it.mpvId == picked }?.lang }.orEmpty()
+                        xpTrackPreferences.edit().putInt("xp_subtitle_$suffix", trackId ?: -1)
+                            .putString("xp_subtitle_lang_$suffix", lang).apply()
                         tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_subtitle_${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}", trackId ?: -1,
+                            movioContext, media.profileId, "xp_subtitle_$suffix", trackId ?: -1,
+                        )
+                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
+                            movioContext, media.profileId, "xp_subtitle_lang_$suffix", lang,
                         )
                     } },
                     // In-stream favorite toggle for the current channel/movie/series.
