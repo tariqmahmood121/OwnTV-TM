@@ -543,6 +543,7 @@ fun StremioCatalogScreen(
     initialPage: String = "home",
     showBottomNavigation: Boolean = true,
     onOpenAppSettings: (() -> Unit)? = null,
+    onOpenSettingsGroup: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1464,9 +1465,32 @@ fun StremioCatalogScreen(
             } else if (page == "settings") {
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                        .padding(horizontal = 34.dp, vertical = 12.dp),
+                        .padding(horizontal = if (compactPhone) 18.dp else 34.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    Text(stringResource(R.string.moviotv_xp_appearance_heading), color = XpText,
+                        fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.moviotv_xp_appearance_hint), color = XpMuted,
+                        fontSize = 14.sp)
+                    XpAction(stringResource(R.string.moviotv_xp_settings_colours), false) {
+                        if (onOpenSettingsGroup != null) {
+                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
+                        } else onOpenAppSettings?.invoke()
+                    }
+                    XpAction(stringResource(R.string.moviotv_xp_settings_fonts), false) {
+                        if (onOpenSettingsGroup != null) {
+                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
+                        } else onOpenAppSettings?.invoke()
+                    }
+                    XpAction(stringResource(R.string.moviotv_xp_settings_gui), false) {
+                        if (onOpenSettingsGroup != null) {
+                            onOpenSettingsGroup(tv.own.owntv.features.shell.components.SettingsGroup.LAYOUT.ordinal)
+                        } else onOpenAppSettings?.invoke()
+                    }
+                    XpAction(stringResource(R.string.moviotv_xp_settings_all), false) {
+                        onOpenAppSettings?.invoke()
+                    }
+                    Spacer(Modifier.height(6.dp))
                     Text(stringResource(R.string.moviotv_xp_auto_select_source), color = XpText, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     XpAction(
                         label = stringResource(if (autoSelectSource) R.string.moviotv_xp_source_auto_enabled else R.string.moviotv_xp_source_auto_disabled),
@@ -1682,10 +1706,9 @@ fun StremioCatalogScreen(
                         Triple("addons", R.string.moviotv_xp_nav_addons, OwnTVIcon.ADD),
                         Triple("app_settings", R.string.moviotv_xp_nav_settings, OwnTVIcon.GEAR),
                     ).forEach { (key, labelRes, icon) ->
-                        XpNavigationItem(stringResource(labelRes), icon, selected = page == key,
+                        XpNavigationItem(stringResource(labelRes), icon, selected = page == (if (key == "app_settings") "settings" else key),
                             compact = compactPhone, focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
-                            if (key == "app_settings" && onOpenAppSettings != null) onOpenAppSettings()
-                            else page = if (key == "app_settings") "settings" else key
+                            page = if (key == "app_settings") "settings" else key
                             if (key == "addons") adding = false
                     }
                 }
