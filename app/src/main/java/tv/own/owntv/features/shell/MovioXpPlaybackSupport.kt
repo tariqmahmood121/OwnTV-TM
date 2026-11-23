@@ -1,0 +1,180 @@
+package tv.own.owntv.features.shell
+
+import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import tv.own.owntv.features.home.XpCentralDataSync
+import tv.own.owntv.features.home.XpContinueStore
+import tv.own.owntv.features.home.XpFavoritesStore
+import tv.own.owntv.player.MpvPlaybackEngine
+import tv.own.owntv.player.OwnTVPlayer
+
+/**
+ * Keep MovioXP bookkeeping outside OwnTVShell's Compose-generated method.
+ * Huge Compose shell methods can compile, but fail ART's verifier on Android 17.
+ */
+internal data class MovioXpPlayback(
+    val id: String,
+    val type: String,
+    val title: String,
+    val year: String?,
+    val poster: String?,
+    val profileId: Long,
+    val favorite: Boolean = false,
+)
+
+internal fun movioXpContentKey(media: MovioXpPlayback): String =
+    "stremio:${media.type}:${media.id}"
+
+internal suspend fun seekMovioXpWhenReady(
+    player: OwnTVPlayer,
+    engine: MpvPlaybackEngine,
+    contentKey: String,
+    requestedPositionMs: Long,
+) {
+    if (requestedPositionMs <= 0L) return
+    val duration = withTimeoutOrNull(35_000L) {
+        player.currentMeta.first { it?.contentKey == contentKey }
+        player.duration.first { it > 0L }
+    } ?: return
+    delay(1_500L)
+    if (player.currentMeta.value?.contentKey != contentKey) return
+    val target = requestedPositionMs.coerceAtMost((duration - 3_000L).coerceAtLeast(0L))
+    val actual = player.position.value.coerceAtLeast(0L)
+    // mpv seekBy is RELATIVE. Do not use the desired absolute playhead as the delta.
+    if (target > 0L && actual + 8_000L < target) engine.seekBy(target - actual)
+}
+
+@Composable
+internal fun MovioXpPlaybackEffects(
+    context: Context,
+    player: OwnTVPlayer,
+    contentKey: String?,
+    playback: MovioXpPlayback?,
+    candidateGeneration: Int,
+    candidateIndex: Int,
+) {
+    val preferences = remember(context) {
+        context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+    }
+    LaunchedEffect(contentKey, playback?.profileId, candidateGeneration, candidateIndex) {
+        val media = playback ?: return@LaunchedEffect
+        if (contentKey != movioXpContentKey(media)) return@LaunchedEffect
+        val key = "${media.profileId}_${contentKey.hashCode()}"
+        val audioId = preferences.getInt("xp_audio_$key", -1)
+        val subtitleId = preferences.getInt("xp_subtitle_$key", -2)
+        val audioLang = preferences.getString("xp_audio_lang_$key", null)?.takeIf(String::isNotBlank)
+        val subtitleLang = preferences.getString("xp_subtitle_lang_$key", null)?.takeIf(String::isNotBlank)
+        if (audioId < 0 && audioLang == null && subtitleId == -2 && subtitleLang == null) return@LaunchedEffect
+        repeat(60) {
+            delay(500L)
+            if (player.currentMeta.value?.contentKey != contentKey) return@LaunchedEffect
+            val audioTracks = player.audioTracks()
+            val subtitleTracks = player.textTracks()
+            val audioMatch = audioLang?.let { lang -> audioTracks.firstOrNull { it.lang.equals(lang, true) } }
+                ?: if (audioLang == null) audioTracks.firstOrNull { it.mpvId == audioId } else null
+            val subtitleMatch = subtitleLang?.let { lang -> subtitleTracks.firstOrNull { it.lang.equals(lang, true) } }
+                ?: if (subtitleLang == null) subtitleTracks.firstOrNull { it.mpvId == subtitleId } else null
+            audioMatch?.let { player.selectAudio(it.mpvId) }
+            if (subtitleId == -1) player.disableSubtitles()
+            else subtitleMatch?.let { player.selectSubtitle(it.mpvId) }
+            val audioReady = (audioId < 0 && audioLang == null) || audioMatch != null ||
+                (audioLang != null && audioTracks.isNotEmpty())
+            val subtitleReady = (subtitleId == -2 && subtitleLang == null) || subtitleId == -1 ||
+                subtitleMatch != null || (subtitleLang != null && subtitleTracks.isNotEmpty())
+            if (audioReady && subtitleReady) return@LaunchedEffect
+        }
+    }
+    LaunchedEffect(playback) {
+        val media = playback ?: return@LaunchedEffect
+        while (true) {
+            delay(5_000L)
+            if (player.currentMeta.value?.contentKey != movioXpContentKey(media)) continue
+            XpContinueStore.updateProgress(
+                context, media.profileId, media.id, media.type, media.title,
+                media.poster, media.year, player.position.value, player.duration.value,
+            )
+        }
+    }
+}
+
+/** Both resume and content identity belong to the playback service, not the Compose tree. */
+internal fun startMovioXpStream(
+    context: Context,
+    player: OwnTVPlayer,
+    engine: MpvPlaybackEngine,
+    scope: CoroutineScope,
+    profileId: Long,
+    url: String,
+    title: String,
+    type: String,
+    year: String?,
+    id: String,
+    poster: String?,
+    requestedResume: Long,
+): MovioXpPlayback {
+    val media = MovioXpPlayback(
+        id, type, title, year, poster, profileId,
+        favorite = XpFavoritesStore.isFavorite(context, profileId, type, id),
+    )
+    val latestSaved = XpContinueStore.read(context, profileId)
+        .firstOrNull { it.id == id && it.type == type }?.positionMs ?: 0L
+    val startAt = requestedResume.takeIf { it > 0L } ?: latestSaved
+    val key = movioXpContentKey(media)
+    player.play(
+        url = url, title = title, year = year,
+        contentKey = key, startPositionMs = startAt,
+    )
+    if (startAt > 0L) scope.launch { seekMovioXpWhenReady(player, engine, key, startAt) }
+    return media
+}
+
+internal fun storeMovioXpSource(
+    context: Context, profileId: Long, contentKey: String, provider: String,
+) {
+    val sourceKey = "last_source_${profileId}_${contentKey.hashCode()}"
+    context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+        .edit().putString(sourceKey, provider).apply()
+    XpCentralDataSync.markSetting(context, profileId, sourceKey, provider)
+}
+
+internal fun saveMovioXpAudioPreference(
+    context: Context, player: OwnTVPlayer, media: MovioXpPlayback, id: Int,
+) {
+    val suffix = "${media.profileId}_${movioXpContentKey(media).hashCode()}"
+    val language = player.audioTracks().firstOrNull { it.mpvId == id }?.lang.orEmpty()
+    val idKey = "xp_audio_$suffix"
+    val langKey = "xp_audio_lang_$suffix"
+    context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+        .edit().putInt(idKey, id).putString(langKey, language).apply()
+    XpCentralDataSync.markSetting(context, media.profileId, idKey, id)
+    XpCentralDataSync.markSetting(context, media.profileId, langKey, language)
+}
+
+internal fun saveMovioXpSubtitlePreference(
+    context: Context, player: OwnTVPlayer, media: MovioXpPlayback, id: Int?,
+) {
+    val suffix = "${media.profileId}_${movioXpContentKey(media).hashCode()}"
+    val language = id?.let { track -> player.textTracks().firstOrNull { it.mpvId == track }?.lang }.orEmpty()
+    val idKey = "xp_subtitle_$suffix"
+    val langKey = "xp_subtitle_lang_$suffix"
+    context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+        .edit().putInt(idKey, id ?: -1).putString(langKey, language).apply()
+    XpCentralDataSync.markSetting(context, media.profileId, idKey, id ?: -1)
+    XpCentralDataSync.markSetting(context, media.profileId, langKey, language)
+}
+
+internal fun flushMovioXpProgress(context: Context, player: OwnTVPlayer, media: MovioXpPlayback) {
+    if (player.currentMeta.value?.contentKey != movioXpContentKey(media)) return
+    XpContinueStore.updateProgress(
+        context, media.profileId, media.id, media.type, media.title,
+        media.poster, media.year,
+        player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
+    )
+}
