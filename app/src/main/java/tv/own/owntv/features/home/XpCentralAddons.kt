@@ -60,11 +60,13 @@ internal object XpCentralConnectionStore {
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(plain), Base64.NO_WRAP)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(VALUE, encoded).apply()
+        XpCentralProfileScope.bind(connection.accountId)
     }
 
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(VALUE).apply()
-        context.getSharedPreferences("movioxp_central_profiles", Context.MODE_PRIVATE).edit().clear().apply()
+        // Keep old account mappings and all local profile data; logout only ends access.
+        XpCentralProfileScope.unbind()
     }
 
     private fun key(): SecretKey {
@@ -105,7 +107,10 @@ internal object XpCentralAddonSync {
         request(connection.apiBase, "logout", connection.token, "POST", JSONObject())
     }
 
-    /** Merge this local profile's add-ons with its Central profile, then return the merged URL list. */
+    /**
+     * Central is authoritative on login and refresh. Never upload cached add-ons or rewrite an
+     * entire assignment list during a background sync: that resurrected disabled Comet entries.
+     */
     suspend fun syncProfile(
         context: Context,
         connection: XpCentralConnection,
@@ -114,46 +119,60 @@ internal object XpCentralAddonSync {
         isChild: Boolean,
         localAddons: List<XpCentralAddon>,
     ): List<String> = withContext(Dispatchers.IO) {
-        require(localProfileId > 0)
-        val centralProfileId = ensureProfile(context, connection, localProfileId, localProfileName, isChild)
-
-        val accountAddons = request(connection.apiBase, "addons", connection.token).optJSONArray("addons") ?: JSONArray()
-        val knownIds = linkedMapOf<String, Long>()
-        for (i in 0 until accountAddons.length()) {
-            val item = accountAddons.optJSONObject(i) ?: continue
-            item.optString("url").takeIf(String::isNotBlank)?.let { knownIds[it] = item.optLong("id") }
-        }
-        localAddons.distinctBy { it.url }.forEach { addon ->
-            if (addon.url !in knownIds) {
-                val result = request(connection.apiBase, "addons", connection.token, "POST",
-                    JSONObject().put("url", addon.url).put("label", addon.label).put("manifest", addon.manifest))
-                knownIds[addon.url] = result.getLong("id")
+        val centralId = ensureProfile(context, connection, localProfileId, localProfileName, isChild)
+        val remote = request(connection.apiBase, "profiles/$centralId/addons", connection.token)
+            .getJSONArray("addons")
+        buildList {
+            for (index in 0 until remote.length()) {
+                remote.optJSONObject(index)?.optString("url")
+                    ?.takeIf(String::isNotBlank)?.let(::add)
             }
-        }
-
-        val profilePath = "profiles/$centralProfileId/addons"
-        val assigned = request(connection.apiBase, profilePath, connection.token).optJSONArray("addons") ?: JSONArray()
-        val mergedUrls = linkedSetOf<String>()
-        for (i in 0 until assigned.length()) assigned.optJSONObject(i)?.optString("url")
-            ?.takeIf(String::isNotBlank)?.let(mergedUrls::add)
-        localAddons.forEach { mergedUrls.add(it.url) }
-
-        // Every assigned add-on must also exist in the account library. Remote-only profile add-ons
-        // will normally already be present there; refresh the account map once if a legacy response omits one.
-        if (mergedUrls.any { it !in knownIds }) {
-            val refreshed = request(connection.apiBase, "addons", connection.token).optJSONArray("addons") ?: JSONArray()
-            for (i in 0 until refreshed.length()) {
-                val item = refreshed.optJSONObject(i) ?: continue
-                item.optString("url").takeIf(String::isNotBlank)?.let { knownIds[it] = item.optLong("id") }
-            }
-        }
-        val ids = mergedUrls.mapNotNull(knownIds::get)
-        if (ids.size != mergedUrls.size) throw IllegalStateException()
-        val addonIds = JSONArray().apply { ids.forEach(::put) }
-        request(connection.apiBase, profilePath, connection.token, "PUT", JSONObject().put("addon_ids", addonIds))
-        mergedUrls.toList()
+        }.distinct()
     }
 
+    /** An explicit user install is the only path that may POST a configured manifest to Central. */
+    suspend fun installForProfile(
+        context: Context,
+        connection: XpCentralConnection,
+        localProfileId: Long,
+        addon: XpCentralAddon,
+    ) = withContext(Dispatchers.IO) {
+        val cloudId = ensureProfile(context, connection, localProfileId, "", false)
+        val created = request(connection.apiBase, "addons", connection.token, "POST",
+            JSONObject().put("url", addon.url).put("label", addon.label).put("manifest", addon.manifest))
+        val newId = created.getLong("id")
+        val path = "profiles/$cloudId/addons"
+        val old = request(connection.apiBase, path, connection.token).getJSONArray("addons")
+        val ids = linkedSetOf<Long>()
+        for (index in 0 until old.length()) {
+            old.optJSONObject(index)?.optLong("id")?.takeIf { it > 0L }?.let(ids::add)
+        }
+        ids += newId
+        request(connection.apiBase, path, connection.token, "PUT",
+            JSONObject().put("addon_ids", JSONArray().apply { ids.forEach(::put) }))
+    }
+
+    /** Remove only this profile's link, not the account library or other profiles' settings. */
+    suspend fun unlinkForProfile(
+        context: Context,
+        connection: XpCentralConnection,
+        localProfileId: Long,
+        url: String,
+    ) = withContext(Dispatchers.IO) {
+        val cloudId = ensureProfile(context, connection, localProfileId, "", false)
+        val path = "profiles/$cloudId/addons"
+        val old = request(connection.apiBase, path, connection.token).getJSONArray("addons")
+        val ids = JSONArray()
+        for (index in 0 until old.length()) {
+            val entry = old.optJSONObject(index) ?: continue
+            if (entry.optString("url") != url && entry.optLong("id") > 0) {
+                ids.put(entry.getLong("id"))
+            }
+        }
+        request(connection.apiBase, path, connection.token, "PUT", JSONObject().put("addon_ids", ids))
+    }
+
+    /** Fail closed. Background synchronization must NEVER create a Central profile or match by name. */
     internal fun ensureProfile(
         context: Context,
         connection: XpCentralConnection,
@@ -161,29 +180,15 @@ internal object XpCentralAddonSync {
         name: String,
         isChild: Boolean,
     ): Long {
-        val prefs = context.getSharedPreferences("movioxp_central_profiles", Context.MODE_PRIVATE)
-        val mapKey = "${connection.accountId}:$localProfileId"
-        val mapped = prefs.getLong(mapKey, 0L)
-        val response = request(connection.apiBase, "profiles", connection.token)
-        val profiles = response.optJSONArray("profiles") ?: JSONArray()
-        for (i in 0 until profiles.length()) {
-            val profile = profiles.optJSONObject(i) ?: continue
-            if (profile.optLong("id") == mapped && mapped > 0L) return mapped
+        require(localProfileId > 0)
+        val remoteId = XpCentralProfileScope.remoteIdFor(context, connection.accountId, localProfileId)
+            ?: throw IllegalStateException("Central profile is not linked to this account")
+        val remote = request(connection.apiBase, "profiles", connection.token)
+            .getJSONArray("profiles")
+        for (index in 0 until remote.length()) {
+            if (remote.optJSONObject(index)?.optLong("id") == remoteId) return remoteId
         }
-        var match = 0L
-        for (i in 0 until profiles.length()) {
-            val profile = profiles.optJSONObject(i) ?: continue
-            if (profile.optString("name").equals(name, true) && profile.optBoolean("is_child") == isChild) {
-                match = profile.optLong("id")
-                break
-            }
-        }
-        if (match == 0L) {
-            match = request(connection.apiBase, "profiles", connection.token, "POST",
-                JSONObject().put("name", name.ifBlank { context.getString(tv.own.owntv.R.string.moviotv_profile_fallback) }).put("is_child", isChild)).getLong("id")
-        }
-        prefs.edit().putLong(mapKey, match).apply()
-        return match
+        throw IllegalStateException("Central profile is no longer available for this account")
     }
 
     internal fun request(
