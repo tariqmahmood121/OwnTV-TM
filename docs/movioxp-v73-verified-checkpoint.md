@@ -46,3 +46,18 @@ The original MovioTV agreement is to update the Central profile **when playback 
 **Validation:** Play movie on phone, pause and seek several times, stop; verify `GET /sync?profile_id=<id>` returns the latest `resume` record before 90 seconds. Restart same movie on the same device and on TV with same Central profile. Also test offline/reconnect replay of dirty data and finished movie deletion. Central server and multi-device behavior remains unverified until tested.
 
 **Protected branch:** `stable/movioxp-v1.0.73`. Target: `feature/movioxp-v74-next`.
+
+## Next build UX: compact modern Settings information architecture (23 Nov 2026)
+
+The current MovioXP Settings screen is overly spacious, especially on a narrow phone; the original MovioTV advanced settings page has tiny clipped labels and the obsolete navigation bar. Keep a single **Settings** heading, with **four collapsible sections, all closed by default**. Make each accordion row compact, touch/remote focusable and a full-width tap target; opening one should not require travelling through an enormous scroll page:
+
+1. **Display & Layout** — themes, accent colours, backgrounds, fonts, text sizing, poster size, UI zoom, menu/navigation layout, focus borders, animations.
+2. **Playback & Sources** — automatic source selection, preferred add-on, remembered per-movie source, resume, preferred audio and subtitles. Keep only the controls actually implemented and functioning in the current release.
+3. **Account & Sync** — Central sign-in/status, current account/profile, sync status, manual Sync Now, disconnect and profile data; show the authenticated profile clearly.
+4. **Advanced** — diagnostics and complete legacy MovioTV settings. Any legacy screen reached here must be responsive and must not reinstate the duplicate bottom phone navigation.
+
+The existing **Add-ons** tab remains the primary place for installing, editing, removing and viewing add-ons. Do not duplicate its installation interface under Settings.
+
+All controls must be **functional**, not decorative. Theme/accent are connected via `OwnTVTheme.colors` and SettingsViewModel, while global font choice and scale pass through `MainActivity` and its `LocalDensity`/typography providers. Note that MovioXP catalogue UI still has some hardcoded font sizes/colours, so audit those: adopting theme typography/color tokens throughout is necessary to guarantee global consistency. The XP Settings screen should use genuine state values and persist changes, not just launch inaccessible legacy screens. Use smaller typography on phones and avoid multiline oversized pill buttons.
+
+Keep the tested 1.0.73 source untouched; implement on `feature/movioxp-v74-next` and test phone/TV focus, navigation, theme/font changes, and player functionality. Avoid large additions to the fragile `OwnTVShell` method; prefer a standalone composable.
