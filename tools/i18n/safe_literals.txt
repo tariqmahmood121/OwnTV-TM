@@ -137,7 +137,7 @@
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/manifest.json
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/stremio/v1
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}
-21	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
+22	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	&
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${hit.meta.type}:${hit.meta.id}
@@ -192,7 +192,6 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	idPrefixes
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	imdbRating
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	isRequired
-1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	last_source_${favoritesProfileId}_${("stremio:${item.type}:${item.id}").hashCode()}
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Legacy /stremio/v1 add-ons are not supported in this first catalogue build.
 3	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library:${it.type}:${it.id}
@@ -1122,12 +1121,10 @@
 3	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	channel
 2	technical	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	enabled_
 1	performance	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	epg-preload
-1	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}
 2	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	layout
 2	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	movie
 1	technical	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	moviotv_smart_back_v79
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	moviotv_ui
-1	preference-key	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	movioxp_playback
 3	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	series
 1	performance	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	shell-composed
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt	srt
@@ -1822,13 +1819,11 @@
 4	preference-key	app/src/main/java/tv/own/owntv/features/home/XpCentralDataSync.kt	xp_subtitle_lang_${profileId}_
 # MovioXP verifier fix: technical keys now owned by compact playback and routing helpers.
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	stremio:${media.type}:${media.id}
-4	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	movioxp_playback
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	${media.profileId}_${contentKey.hashCode()}
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_audio_$key
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_subtitle_$key
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_audio_lang_$key
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_subtitle_lang_$key
-1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	last_source_${profileId}_${contentKey.hashCode()}
 2	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	${media.profileId}_${movioXpContentKey(media).hashCode()}
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_audio_$suffix
 1	preference-key	app/src/main/java/tv/own/owntv/features/shell/MovioXpPlaybackSupport.kt	xp_audio_lang_$suffix
@@ -1838,3 +1833,15 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/MovioXpSectionRoute.kt	movies
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/MovioXpSectionRoute.kt	series
 1	protocol	app/src/main/java/tv/own/owntv/features/shell/MovioXpSectionRoute.kt	home
+
+# MovioXP v1.0.74: source identity, legacy About assets and collapsible settings.
+1	empty	app/src/main/java/tv/own/owntv/features/home/XpSettingsSections.kt	\0
+3	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	$PREFIX${source.identity}:${source.provider}
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	%02x
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	SHA-256
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	last_source_${profileId}_${contentKey.hashCode()}
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	movioxp_playback
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	v2:
+1	empty	app/src/main/java/tv/own/owntv/features/settings/MovioAboutScreen.kt	\0
+1	file-path	app/src/main/java/tv/own/owntv/features/settings/MovioAboutScreen.kt	movioxp_licences/gpl-3.0.txt
