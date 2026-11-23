@@ -128,6 +128,7 @@
     <string name="moviotv_xp_refresh">Refresh</string>
     <string name="moviotv_xp_cancel">Cancel</string>
     <string name="moviotv_xp_add_catalogue">Add catalogue</string>
+    <string name="moviotv_xp_addon_url_button">Add add-on URL</string>
     <string name="moviotv_xp_back">Back</string>
     <string name="moviotv_xp_addon_url_hint">HTTPS add-on URL or /manifest.json URL</string>
     <string name="moviotv_xp_install">Install</string>
@@ -235,6 +236,14 @@
     <string name="moviotv_xp_central_addons_title">MovioTV Central</string>
     <string name="moviotv_xp_central_addons_help">Back up this profile’s add-ons to your account and restore its add-ons on another device. Add-on URLs are encrypted on the server.</string>
     <string name="moviotv_xp_central_api_label">Central API address (HTTPS)</string>
+    <string name="moviotv_xp_central_login_short">Log in</string>
+    <string name="moviotv_xp_central_create_short">Create account</string>
+    <string name="moviotv_xp_central_login_short_help">Sign in to sync your add-ons across devices. You can browse without signing in.</string>
+    <string name="moviotv_xp_central_register_short_help">Make an account to keep your add-ons in sync across devices.</string>
+    <string name="moviotv_xp_central_username_hint">Enter username</string>
+    <string name="moviotv_xp_central_password_hint">Enter password</string>
+    <string name="moviotv_xp_central_show_password">Show</string>
+    <string name="moviotv_xp_central_hide_password">Hide</string>
     <string name="moviotv_xp_central_username_label">Central username</string>
     <string name="moviotv_xp_central_password_label">Central password</string>
     <string name="moviotv_xp_central_connect_sync">Connect and sync add-ons</string>
