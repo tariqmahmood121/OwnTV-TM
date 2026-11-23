@@ -709,11 +709,7 @@ fun OwnTVShell(
                 xpCandidateContentKey = "stremio:$type:$contentId"
                 xpCandidateResumePositionMs = resumePositionMs
                 xpCandidateGeneration += 1
-                // Auto-play must never overwrite a source explicitly chosen in a prior session.
-                // The candidates are already ordered with the saved user preference first.
-                if (candidates.first().userSelected) {
-                    storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first())
-                }
+                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first())
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
@@ -2132,7 +2128,7 @@ fun OwnTVShell(
                                     val position = player.position.value.coerceAtLeast(0L)
                                     xpCandidateIndex = index
                                     xpCandidateResumePositionMs = position
-                                    storeMovioXpSource(movioContext, media.profileId, xpCandidateContentKey, source)
+                                    storeMovioXpSource(movioContext, media.profileId, xpCandidateContentKey, source, explicitChoice = true)
                                     onPlayMovioXpStream(
                                         source.url, media.title, media.type, media.year, media.id, media.poster, position,
                                     )
