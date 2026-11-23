@@ -377,9 +377,10 @@ private object XpAddonStore {
     fun read(context: Context, profileId: Long? = null): List<String> = runCatching {
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val profileKey = profileId?.let { "encrypted_urls_profile_$it" }
-        val encoded = (profileKey?.let { preferences.getString(it, null) } ?:
-            preferences.getString(LEGACY_VALUE, null))
-            ?: return emptyList()
+        // Never feed the unscoped legacy cache into a different account's profile.
+        val encoded = if (profileKey == null) preferences.getString(LEGACY_VALUE, null)
+            else preferences.getString(profileKey, null)
+        if (encoded == null) return emptyList()
         val payload = Base64.decode(encoded, Base64.NO_WRAP)
         require(payload.size > 12)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -774,10 +775,9 @@ fun StremioCatalogScreen(
                     context, connection, localProfileId, localProfileName, childProfile, localAddons,
                 )
             }.onSuccess { mergedUrls ->
-                // An installation may have completed while this network request was in flight.
-                // Keep that URL locally and upload it in the queued follow-up sync.
-                val latestLocal = addons.filterNot { it.builtIn }.map { it.url }
-                val allUrls = (mergedUrls + latestLocal).distinct()
+                // Central is authoritative on refresh: do not restore a disabled/removed
+                // add-on from the previous device cache (e.g. Comet).
+                val allUrls = mergedUrls.distinct()
                 XpAddonStore.write(context, allUrls, localProfileId)
                 val builtIn = addons.firstOrNull { it.builtIn }
                 addons.clear()
@@ -839,9 +839,18 @@ fun StremioCatalogScreen(
                     if (addons.none { it.url == addon.url }) {
                         addons.add(addon)
                         XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
-                        if (centralConnection != null) {
+                        centralConnection?.let { conn ->
                             centralSyncMessage = context.getString(R.string.moviotv_xp_central_saving_profile)
-                            syncAddonsWithCentral()
+                            runCatching {
+                                XpCentralAddonSync.installForProfile(
+                                    context, conn, favoritesProfileId,
+                                    XpCentralAddon(addon.url, addon.name,
+                                        JSONObject().put("id", addon.id).put("name", addon.name)
+                                            .put("version", addon.version).put("description", addon.description)
+                                            .put("types", JSONArray(addon.types))),
+                                )
+                            }.onSuccess { syncAddonsWithCentral() }
+                                .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
                         }
                     }
                     notice = null
@@ -871,7 +880,14 @@ fun StremioCatalogScreen(
         if (addon.builtIn) return
         addons.remove(addon)
         XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
-        if (centralConnection != null) syncAddonsWithCentral()
+        centralConnection?.let { connection ->
+            scope.launch {
+                runCatching {
+                    XpCentralAddonSync.unlinkForProfile(context, connection, favoritesProfileId, addon.url)
+                }.onSuccess { syncAddonsWithCentral() }
+                    .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
+            }
+        }
     }
 
     LaunchedEffect(favoritesProfileId) {
