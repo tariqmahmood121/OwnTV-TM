@@ -347,7 +347,7 @@ fun OwnTVShell(
     LaunchedEffect(currentPlayerMeta?.contentKey, movioXpPlayback?.profileId, xpCandidateGeneration, xpCandidateIndex) {
         val media = movioXpPlayback ?: return@LaunchedEffect
         val contentKey = currentPlayerMeta?.contentKey ?: return@LaunchedEffect
-        if (!contentKey.startsWith("stremio:")) return@LaunchedEffect
+        if (contentKey != "stremio:${media.type}:${media.id}") return@LaunchedEffect
         val key = "${media.profileId}_${contentKey.hashCode()}"
         val audioId = xpTrackPreferences.getInt("xp_audio_$key", -1)
         val subtitleId = xpTrackPreferences.getInt("xp_subtitle_$key", -2)
@@ -377,7 +377,7 @@ fun OwnTVShell(
         val current = movioXpPlayback ?: return@LaunchedEffect
         while (true) {
             delay(5_000L)
-            if (currentPlayerMeta?.contentKey != "stremio:${current.type}:${current.id}") continue
+            if (player.currentMeta.value?.contentKey != "stremio:${current.type}:${current.id}") continue
             // Shared player state follows whichever engine is active, including Exo fallbacks.
             val position = player.position.value
             val duration = player.duration.value
@@ -1641,6 +1641,11 @@ fun OwnTVShell(
                                 restoreFocus = false
                                 onSelectSection(MainSection.SETTINGS)
                             },
+                            onOpenSettingsGroup = { group ->
+                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
+                                restoreFocus = false
+                                onSelectSection(MainSection.SETTINGS)
+                            },
                             onEntryHook = { homeEntry = it },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1696,6 +1701,10 @@ fun OwnTVShell(
                             initialPage = "live",
                             showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
+                            onOpenSettingsGroup = { group ->
+                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
+                                onSelectSection(MainSection.SETTINGS)
+                            },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1706,6 +1715,10 @@ fun OwnTVShell(
                             initialPage = "movies",
                             showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
+                            onOpenSettingsGroup = { group ->
+                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
+                                onSelectSection(MainSection.SETTINGS)
+                            },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1716,6 +1729,10 @@ fun OwnTVShell(
                             initialPage = "series",
                             showBottomNavigation = movioTouch,
                             onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
+                            onOpenSettingsGroup = { group ->
+                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
+                                onSelectSection(MainSection.SETTINGS)
+                            },
                             modifier = Modifier.fillMaxSize(),
                         )
 
