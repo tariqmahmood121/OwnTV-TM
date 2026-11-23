@@ -800,8 +800,13 @@ fun StremioCatalogScreen(
     }
 
     LaunchedEffect(centralConnection, favoritesProfileId, activeProfileName, activeProfile?.isKids) {
-        val connection = centralConnection ?: return@LaunchedEffect
+        val connection = centralConnection
+        if (connection == null) {
+            XpCentralEventSync.clear()
+            return@LaunchedEffect
+        }
         if (favoritesProfileId <= 0L || activeProfileName.isBlank()) return@LaunchedEffect
+        XpCentralEventSync.bind(connection, favoritesProfileId, activeProfileName, activeProfile?.isKids == true)
         while (true) {
             runCatching {
                 XpCentralDataSync.sync(context, connection, favoritesProfileId, activeProfileName, activeProfile?.isKids == true)
