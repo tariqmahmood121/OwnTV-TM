@@ -1,6 +1,10 @@
 package tv.own.owntv.features.home
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -8,6 +12,7 @@ import org.json.JSONObject
 internal object XpCentralDataSync {
     private const val DIRTY_PREFS = "movioxp_central_dirty"
     private const val STATE_PREFS = "movioxp_central_state"
+    private val syncMutex = Mutex()
 
     fun markFavorite(context: Context, localProfileId: Long, item: XpMeta, deleted: Boolean) =
         mark(context, localProfileId, "favorite", titleKey(item.type, item.id), itemJson(item).put("deleted", deleted))
@@ -27,7 +32,9 @@ internal object XpCentralDataSync {
             .putString(dirtyKey(profileId, type, key), payload.toString()).apply()
     }
 
-    suspend fun sync(context: Context, connection: XpCentralConnection, localProfileId: Long, profileName: String, isChild: Boolean) {
+    suspend fun sync(context: Context, connection: XpCentralConnection, localProfileId: Long, profileName: String, isChild: Boolean) =
+        withContext(Dispatchers.IO) {
+            syncMutex.withLock {
         val centralProfileId = XpCentralAddonSync.ensureProfile(context, connection, localProfileId, profileName, isChild)
         val state = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
         val ownerKey = "owner_$localProfileId"
@@ -71,13 +78,23 @@ internal object XpCentralDataSync {
             val saved = XpCentralAddonSync.request(connection.apiBase, "sync", connection.token, "PUT", body)
             val result = saved.optJSONObject("record") ?: saved
             remote[id] = Record(entry.type, entry.key, entry.payload, result.optInt("version", (current?.version ?: 0) + 1))
-            dirtyPrefs.edit().remove(dirtyKey(localProfileId, entry.type, entry.key)).apply()
+            // A newer playhead/track choice can arrive during the HTTP request. Do not
+            // remove or overwrite that still-pending local update.
+            val pendingKey = dirtyKey(localProfileId, entry.type, entry.key)
+            if (dirtyPrefs.getString(pendingKey, null) == entry.payload.toString()) {
+                dirtyPrefs.edit().remove(pendingKey).apply()
+            }
         }
 
-        // Apply Central to clean records. Explicit local edits are uploaded first and retained.
-        remote.values.forEach { applyRemote(context, localProfileId, it) }
+        // Clean remote records can be applied. Pending local changes win until uploaded.
+        remote.values.forEach { record ->
+            if (!dirtyPrefs.contains(dirtyKey(localProfileId, record.type, record.key))) {
+                applyRemote(context, localProfileId, record)
+            }
+        }
         state.edit().putString(ownerKey, owner).putBoolean(seedKey, true).apply()
-    }
+            }
+        }
 
     private fun clearLocalProfile(context: Context, profileId: Long) {
         XpFavoritesStore.write(context, profileId, emptyList())
@@ -86,7 +103,8 @@ internal object XpCentralDataSync {
         val editor = prefs.edit().remove("auto_select_source").remove("preferred_addon")
         prefs.all.keys.filter {
             it.startsWith("last_source_${profileId}_") ||
-                it.startsWith("xp_audio_${profileId}_") || it.startsWith("xp_subtitle_${profileId}_")
+                it.startsWith("xp_audio_${profileId}_") || it.startsWith("xp_subtitle_${profileId}_") ||
+                it.startsWith("xp_audio_lang_${profileId}_") || it.startsWith("xp_subtitle_lang_${profileId}_")
         }.forEach(editor::remove)
         editor.apply()
         val dirty = context.getSharedPreferences(DIRTY_PREFS, Context.MODE_PRIVATE)
@@ -160,6 +178,8 @@ internal object XpCentralDataSync {
         key.startsWith("last_source_${profileId}_") -> "last_source:" + key.removePrefix("last_source_${profileId}_")
         key.startsWith("xp_audio_${profileId}_") -> "audio:" + key.removePrefix("xp_audio_${profileId}_")
         key.startsWith("xp_subtitle_${profileId}_") -> "subtitle:" + key.removePrefix("xp_subtitle_${profileId}_")
+        key.startsWith("xp_audio_lang_${profileId}_") -> "audio_lang:" + key.removePrefix("xp_audio_lang_${profileId}_")
+        key.startsWith("xp_subtitle_lang_${profileId}_") -> "subtitle_lang:" + key.removePrefix("xp_subtitle_lang_${profileId}_")
         else -> null
     }
 
@@ -168,6 +188,8 @@ internal object XpCentralDataSync {
         key.startsWith("last_source:") -> "last_source_${profileId}_" + key.removePrefix("last_source:")
         key.startsWith("audio:") -> "xp_audio_${profileId}_" + key.removePrefix("audio:")
         key.startsWith("subtitle:") -> "xp_subtitle_${profileId}_" + key.removePrefix("subtitle:")
+        key.startsWith("audio_lang:") -> "xp_audio_lang_${profileId}_" + key.removePrefix("audio_lang:")
+        key.startsWith("subtitle_lang:") -> "xp_subtitle_lang_${profileId}_" + key.removePrefix("subtitle_lang:")
         else -> null
     }
 
