@@ -1405,6 +1405,9 @@ fun OwnTVShell(
                 }
             },
     ) {
+      // Split the giant Compose slot into separate composable methods. Kotlin/DEX formerly
+      // emitted a single multi-thousand-line OwnTVShell, rejected by ART VerifyError on API 37.
+      val browseUi: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
       // Browse UI — hidden while the player is fullscreen (stays visible behind the docked mini-player).
       if (playerMode != PlayerMode.FULLSCREEN) {
         Column(
@@ -1856,6 +1859,8 @@ fun OwnTVShell(
           tv.own.owntv.features.shell.components.SyncStatusPill(modifier = Modifier.align(Alignment.BottomCenter))
       }
 
+      }
+      val multiviewUi: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
       // Player surface — hoisted so it persists across fullscreen <-> mini (same call site = the
       // SurfaceView isn't recreated when docking/expanding, so playback never blips). NOT composed in
       // AUDIO mode: there's no video surface — audio plays and the top-bar now-playing bar drives it.
@@ -1933,6 +1938,8 @@ fun OwnTVShell(
           }
       }
 
+      }
+      val playerUi: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
       if (multiview == null && (playerMode == PlayerMode.FULLSCREEN || playerMode == PlayerMode.MINI)) {
         val isFull = playerMode == PlayerMode.FULLSCREEN
         Box(
@@ -2384,6 +2391,8 @@ fun OwnTVShell(
         }
       }
 
+      }
+      val dialogsUi: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
     // The Settings PIN before a long-press change, when the Settings lock asks for it.
     tv.own.owntv.features.settings.lock.MenuChangeGateHost()
     if (showExit) {
@@ -2506,6 +2515,11 @@ fun OwnTVShell(
                 )
             }
         }
+      }
+      browseUi()
+      multiviewUi()
+      playerUi()
+      dialogsUi()
     }
     }
 }
