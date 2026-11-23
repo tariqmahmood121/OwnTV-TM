@@ -3,7 +3,7 @@ name: MovioXP Catalogue APK
 on:
   workflow_dispatch:
   push:
-    branches: [MovioXP]
+    branches: [MovioXP, fix/movioxp-verifyerror-agp941]
     paths:
       - app/src/main/java/tv/own/owntv/features/home/**
       - app/src/main/java/tv/own/owntv/features/setup/**
@@ -13,6 +13,7 @@ on:
       - app/src/main/res/values/strings_moviotv.xml
       - tools/i18n/safe_literals.txt
       - app/build.gradle.kts
+      - gradle/libs.versions.toml
       - .github/workflows/movioxp-catalogue-build.yml
 
 permissions:
