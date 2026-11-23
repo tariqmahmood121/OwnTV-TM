@@ -151,7 +151,15 @@ internal data class XpMeta(
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
 )
-data class XpPlaybackSource(val url: String, val label: String, val provider: String, val identity: String = "")
+data class XpPlaybackSource(
+    val url: String,
+    val label: String,
+    val provider: String,
+    val identity: String = "",
+    // No more confusing auto-play/automatic failover with an explicit selection by the viewer.
+    val userSelected: Boolean = false,
+    val legacyIdentity: String = "",
+)
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
@@ -934,7 +942,8 @@ fun StremioCatalogScreen(
             stream.url?.let { url ->
                 XpPlaybackSource(
                     url, stream.label, stream.addon.name,
-                    XpSourcePreference.identity(stream.addon.url, stream.label, stream.detail),
+                    XpSourcePreference.identity(stream.addon.url, stream.label),
+                    legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail),
                 )
             }
         }.sortedWith(
@@ -1851,7 +1860,9 @@ fun StremioCatalogScreen(
                                     if (onPlayStreamCandidates != null) {
                                         onPlayStreamCandidates(
                                             listOf(XpPlaybackSource(playable, stream.label, stream.addon.name,
-                                                XpSourcePreference.identity(stream.addon.url, stream.label, stream.detail))),
+                                                XpSourcePreference.identity(stream.addon.url, stream.label),
+                                                userSelected = true,
+                                                legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail))),
                                             item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs,
                                         )
                                     } else {
