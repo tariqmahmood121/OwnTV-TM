@@ -1461,7 +1461,7 @@ fun OwnTVShell(
           } else null
           Box(Modifier.weight(1f).fillMaxWidth()
                .then(if (movioTouch) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier)) {
-          Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch) 70.dp else 0.dp)) {
+          Row(modifier = Modifier.fillMaxSize().padding(bottom = if (movioTouch && selectedSection !in setOf(MainSection.HOME, MainSection.MOVIES, MainSection.SERIES, MainSection.LIVE_TV)) 70.dp else 0.dp)) {
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -1664,7 +1664,8 @@ fun OwnTVShell(
                                 }
                             },
                             initialPage = "live",
-                            showBottomNavigation = false,
+                            showBottomNavigation = true,
+                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1673,7 +1674,8 @@ fun OwnTVShell(
                             onPlayStream = onPlayMovioXpStream,
                             onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "movies",
-                            showBottomNavigation = false,
+                            showBottomNavigation = true,
+                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1682,7 +1684,8 @@ fun OwnTVShell(
                             onPlayStream = onPlayMovioXpStream,
                             onPlayStreamCandidates = onPlayMovioXpCandidates,
                             initialPage = "series",
-                            showBottomNavigation = false,
+                            showBottomNavigation = true,
+                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -1833,7 +1836,9 @@ fun OwnTVShell(
                 nowPlaying = nowPlayingRail,
                 onNowPlaying = enterNowPlaying,
             )
-            if (movioTouch && playerMode != PlayerMode.FULLSCREEN && !inPip && multiview == null) {
+            // The XP catalogue draws its own Home / Discover / Library / Add-ons / Settings tabs.
+            // Never layer a second legacy Home / Live / Movies / Series / More bar over it.
+            if (movioTouch && selectedSection !in setOf(MainSection.HOME, MainSection.MOVIES, MainSection.SERIES, MainSection.LIVE_TV) && playerMode != PlayerMode.FULLSCREEN && !inPip && multiview == null) {
                 tv.own.owntv.features.home.MovioTouchBottomNav(
                     selected = selectedSection,
                     visible = visibleSections,
