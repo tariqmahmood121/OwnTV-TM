@@ -1581,7 +1581,10 @@ fun OwnTVShell(
                             modifier = Modifier.fillMaxSize(),
                         )
 
-                        selectedSection == MainSection.LIVE_TV -> tv.own.owntv.features.home.StremioCatalogScreen(
+                        selectedSection == MainSection.LIVE_TV ||
+                            selectedSection == MainSection.MOVIES ||
+                            selectedSection == MainSection.SERIES -> MovioXpSectionRoute(
+                            section = selectedSection,
                             onBack = { onSelectSection(MainSection.HOME) },
                             onPlayStream = onPlayMovioXpStream,
                             onPlayStreamCandidates = onPlayMovioXpCandidates,
@@ -1591,37 +1594,11 @@ fun OwnTVShell(
                                     if (liveVm.ensurePlayingByIdAsync(id)) openFullscreen(MainSection.LIVE_TV)
                                 }
                             },
-                            initialPage = "live",
                             showBottomNavigation = movioTouch,
-                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
-                            onOpenSettingsGroup = { group ->
-                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
+                            onOpenAppSettings = {
+                                settingsStart = null
                                 onSelectSection(MainSection.SETTINGS)
                             },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-
-                        selectedSection == MainSection.MOVIES -> tv.own.owntv.features.home.StremioCatalogScreen(
-                            onBack = { onSelectSection(MainSection.HOME) },
-                            onPlayStream = onPlayMovioXpStream,
-                            onPlayStreamCandidates = onPlayMovioXpCandidates,
-                            initialPage = "movies",
-                            showBottomNavigation = movioTouch,
-                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
-                            onOpenSettingsGroup = { group ->
-                                settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
-                                onSelectSection(MainSection.SETTINGS)
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-
-                        selectedSection == MainSection.SERIES -> tv.own.owntv.features.home.StremioCatalogScreen(
-                            onBack = { onSelectSection(MainSection.HOME) },
-                            onPlayStream = onPlayMovioXpStream,
-                            onPlayStreamCandidates = onPlayMovioXpCandidates,
-                            initialPage = "series",
-                            showBottomNavigation = movioTouch,
-                            onOpenAppSettings = { settingsStart = null; onSelectSection(MainSection.SETTINGS) },
                             onOpenSettingsGroup = { group ->
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(group, false)
                                 onSelectSection(MainSection.SETTINGS)
