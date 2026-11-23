@@ -136,12 +136,9 @@ internal fun startMovioXpStream(
 }
 
 internal fun storeMovioXpSource(
-    context: Context, profileId: Long, contentKey: String, provider: String,
+    context: Context, profileId: Long, contentKey: String, source: tv.own.owntv.features.home.XpPlaybackSource,
 ) {
-    val sourceKey = "last_source_${profileId}_${contentKey.hashCode()}"
-    context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
-        .edit().putString(sourceKey, provider).apply()
-    XpCentralDataSync.markSetting(context, profileId, sourceKey, provider)
+    tv.own.owntv.features.home.XpSourcePreference.store(context, profileId, contentKey, source)
 }
 
 internal fun saveMovioXpAudioPreference(
