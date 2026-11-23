@@ -47,12 +47,12 @@ jobs:
           VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
           chmod +x ./gradlew
-          ./gradlew :app:assembleStandardDebug --stacktrace
+          ./gradlew :app:assembleStandardDebug -PdiagnosticBuild=true --stacktrace
 
       - name: Upload MovioXP APK
         uses: actions/upload-artifact@v7
         with:
-          name: MovioXP-v1.0.${{ github.run_number }}-debug-apk
+          name: MovioXP-Diagnostic-v1.0.${{ github.run_number }}-debug-apk
           path: app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error
           retention-days: 14
