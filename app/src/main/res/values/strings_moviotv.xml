@@ -222,7 +222,10 @@
     <string name="moviotv_xp_search_minimum">Enter at least 2 characters to search all installed add-ons.</string>
     <string name="moviotv_xp_searching_addons">Searching all searchable installed add-ons…</string>
     <string name="moviotv_xp_search_unsupported">None of the installed add-ons advertises search support.</string>
-    <string name="moviotv_xp_search_partial">Some add-on catalogues could not be searched (%1$d failed).</string>
+    <plurals name="moviotv_xp_search_partial">
+        <item quantity="one">Some add-on catalogues could not be searched (%1$d failed).</item>
+        <item quantity="other">Some add-on catalogues could not be searched (%1$d failed).</item>
+    </plurals>
     <string name="moviotv_xp_filter_type">Type</string>
     <string name="moviotv_xp_filter_catalog">Catalogue</string>
     <string name="moviotv_xp_filter_genre">Genre</string>
@@ -286,7 +289,10 @@
     <string name="moviotv_xp_central_disconnect">Disconnect Central account</string>
     <string name="moviotv_xp_central_connected_as">Connected as %1$s</string>
     <string name="moviotv_xp_central_syncing">Syncing with Central…</string>
-    <string name="moviotv_xp_central_sync_complete">Synced %1$d add-ons for this profile.</string>
+    <plurals name="moviotv_xp_central_sync_complete">
+        <item quantity="one">Synced %1$d add-on for this profile.</item>
+        <item quantity="other">Synced %1$d add-ons for this profile.</item>
+    </plurals>
     <string name="moviotv_xp_central_sync_failed">Could not reach Central. Check the address and connection.</string>
     <string name="moviotv_xp_central_details_required">Enter the Central API address, username and password.</string>
     <string name="moviotv_xp_central_profile_required">Select a profile before syncing.</string>
