@@ -542,6 +542,7 @@ fun StremioCatalogScreen(
     onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     initialPage: String = "home",
     showBottomNavigation: Boolean = true,
+    diagnosticFocusEnabled: Boolean = true,
     onOpenAppSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -686,7 +687,7 @@ fun StremioCatalogScreen(
         .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedBy { meta -> meta.name.lowercase() } }
     val gridState = rememberLazyGridState()
     LaunchedEffect(page, sectionTitles.size) {
-        if (page in browsePages && sectionTitles.isNotEmpty()) {
+        if (diagnosticFocusEnabled && page in browsePages && sectionTitles.isNotEmpty()) {
             gridState.scrollToItem(0)
             delay(120)
             runCatching { firstGridFocus.requestFocus() }
@@ -919,7 +920,7 @@ fun StremioCatalogScreen(
         }
     }
     LaunchedEffect(selected?.id, selected?.type, streamsLoading, selectedStreams.size, autoSelectSource, manualSourceSelection, showManualSources) {
-        if (selected != null && !streamsLoading) runCatching {
+        if (diagnosticFocusEnabled && selected != null && !streamsLoading) runCatching {
             if (manualSourceSelection && showManualSources && selectedStreams.isNotEmpty()) firstSourceFocus.requestFocus()
             else if (selectedStreams.isEmpty() || !showManualSources) detailFocus.requestFocus()
         }
