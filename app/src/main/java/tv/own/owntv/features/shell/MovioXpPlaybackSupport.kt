@@ -93,13 +93,65 @@ internal fun MovioXpPlaybackEffects(
     }
     LaunchedEffect(playback) {
         val media = playback ?: return@LaunchedEffect
-        while (true) {
-            delay(5_000L)
-            if (player.currentMeta.value?.contentKey != movioXpContentKey(media)) continue
+        val key = movioXpContentKey(media)
+        var observedAt = android.os.SystemClock.elapsedRealtime()
+        var observedPosition = -1L
+        var wasPlaying = false
+        var lastLocalSaveAt = observedAt
+        var pendingSeekUntil = 0L
+        var completed = false
+
+        fun saveProgress(upload: Boolean) {
+            if (player.currentMeta.value?.contentKey != key) return
+            val duration = player.duration.value
+            val position = player.position.value
+            if (position <= 0L || duration <= 0L) return
             XpContinueStore.updateProgress(
                 context, media.profileId, media.id, media.type, media.title,
-                media.poster, media.year, player.position.value, player.duration.value,
+                media.poster, media.year, position, duration,
             )
+            if (upload) tv.own.owntv.features.home.XpCentralEventSync.request(context, media.profileId)
+        }
+
+        while (true) {
+            delay(500L)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (player.currentMeta.value?.contentKey != key) {
+                observedPosition = -1L
+                wasPlaying = false
+                observedAt = now
+                continue
+            }
+            val position = player.position.value.coerceAtLeast(0L)
+            val duration = player.duration.value
+            val playing = player.isPlaying.value
+            if (observedPosition >= 0L && duration > 0L && position > 0L) {
+                val elapsed = (now - observedAt).coerceAtLeast(0L)
+                val expectedAdvance = if (wasPlaying) elapsed else 0L
+                val unexpectedJump = kotlin.math.abs(position - observedPosition - expectedAdvance)
+                // A jump substantially beyond normal playback represents a manual seek.
+                // Reset this 3-second deadline on every further scrub.
+                if (unexpectedJump > 4_500L) pendingSeekUntil = now + 3_000L
+                if (wasPlaying && !playing) {
+                    saveProgress(upload = true)
+                    pendingSeekUntil = 0L
+                }
+                if (pendingSeekUntil > 0L && now >= pendingSeekUntil) {
+                    saveProgress(upload = true)
+                    pendingSeekUntil = 0L
+                }
+            }
+            if (!completed && duration > 0L && position >= duration * 95L / 100L) {
+                saveProgress(upload = true)
+                completed = true
+            }
+            if (now - lastLocalSaveAt >= 5_000L) {
+                saveProgress(upload = false)
+                lastLocalSaveAt = now
+            }
+            observedPosition = position
+            observedAt = now
+            wasPlaying = playing
         }
     }
 }
@@ -174,4 +226,5 @@ internal fun flushMovioXpProgress(context: Context, player: OwnTVPlayer, media: 
         media.poster, media.year,
         player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
     )
+    tv.own.owntv.features.home.XpCentralEventSync.request(context, media.profileId)
 }
