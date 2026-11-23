@@ -61,3 +61,23 @@ The existing **Add-ons** tab remains the primary place for installing, editing, 
 All controls must be **functional**, not decorative. Theme/accent are connected via `OwnTVTheme.colors` and SettingsViewModel, while global font choice and scale pass through `MainActivity` and its `LocalDensity`/typography providers. Note that MovioXP catalogue UI still has some hardcoded font sizes/colours, so audit those: adopting theme typography/color tokens throughout is necessary to guarantee global consistency. The XP Settings screen should use genuine state values and persist changes, not just launch inaccessible legacy screens. Use smaller typography on phones and avoid multiline oversized pill buttons.
 
 Keep the tested 1.0.73 source untouched; implement on `feature/movioxp-v74-next` and test phone/TV focus, navigation, theme/font changes, and player functionality. Avoid large additions to the fragile `OwnTVShell` method; prefer a standalone composable.
+
+## MovioXP next APK implementation checkpoint — 23 November 2026
+
+Development branch: `feature/movioxp-v74-build`; stable 1.0.73 remains unchanged.
+- MovioXP Settings redesigned with one Settings heading and four independently foldable groups (closed by default): Display & Layout, Playback & Sources, Account & Sync, Advanced. The Add-ons tab remains the installation hub.
+- New `XpSettingsSections.kt` provides real theme, accent-colour, font-family, font-size and screen zoom changes through `SettingsViewModel`/`ShellViewModel` and shared theme state. Original advanced appearance screens remain available for specialist controls.
+- About: **keep Oak Studios and the original oak-tree MovioTV design and creator wording** (the owner is Oak Studios). XP app name in About; upstream OwnTV GPLv3 attribution and full licence text remain available under Open-source licences, not as the primary About description.
+- Source-choice fix: `XpSourcePreference` stores a stable, nonsecret hash of the add-on URL + stream name/details, not only the provider name, and orders candidates on reopen so the selected exact source is tried first. A fallback still works; preserve resume position.
+- Event sync: `XpCentralEventSync` binds only the current authenticated account/profile, coalesces and uploads events off the main thread, and retains dirty local records for the existing 90-second fallback if HTTP fails. `MovioXpPlaybackEffects` captures every 5 seconds locally, and requests Central upload on pause, stop, completed play or 3 seconds after a seek settles. Source, audio, subtitle and setting changes request an immediate upload as well.
+- Cloud verification is **pending**; successful local playback does not prove that the server accepted or replicated the records. Test phone -> TV on the same cloud account/profile.
+- The new build must be tested on Android 17 for ART VerifyError and on phone and TV for responsiveness; don't promote until confirmed.
+- Original `OwnTVShell` verifier repair remains in place, with source and progress logic kept outside the shell when possible.
+
+### Device smoke test
+1. Phone launch (Android 17), Central sign-in and source/add-on browsing.
+2. Settings: all groups initially closed; test theme, accent, font and zoom changes; confirm visible effect on XP pages and navigation focus/Back.
+3. About: Oak Studios tree and creator details visible; MovioXP version visible; GPL and attribution under licences only.
+4. Movie B-source selection -> Back -> reopen: source B and previous position restored. Test same-provider multiple sources and fallback.
+5. Seek, pause, Back: within a few seconds query Central `GET /sync?profile_id=<id>` and confirm latest title + timeline; test audio/subtitle preferences and reinstall add-on on another device.
+6. Offline saves must remain local for later upload. Confirm profile isolation when switching accounts.
