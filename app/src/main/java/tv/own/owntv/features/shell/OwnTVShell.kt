@@ -116,40 +116,6 @@ internal enum class PlayerMode { NONE, FULLSCREEN, MINI, AUDIO }
  * The MD3 shell: a fixed navigation panel (Layer 1) plus the active destination. Settings is a
  * single-pane sectioned screen; browse sections keep the Folder Rail → Content → Preview layout.
  */
-private data class MovioXpPlayback(
-    val id: String,
-    val type: String,
-    val title: String,
-    val year: String?,
-    val poster: String?,
-    val profileId: Long,
-    val favorite: Boolean = false,
-)
-
-/** mpv may accept a seek before a newly opened stream has exposed its timeline and silently drop it. */
-private suspend fun seekMovioXpWhenReady(
-    player: OwnTVPlayer,
-    engine: tv.own.owntv.player.MpvPlaybackEngine,
-    contentKey: String,
-    requestedPositionMs: Long,
-) {
-    if (requestedPositionMs <= 0L) return
-    // OwnTVPlayer.play(startPositionMs=...) performs the primary seek when the stream opens.
-    // Only retry if the engine genuinely landed before the saved playhead. seekBy is RELATIVE,
-    // never absolute: sending the entire requested position as a delta causes overshooting.
-    val duration = kotlinx.coroutines.withTimeoutOrNull(35_000L) {
-        player.currentMeta.first { it?.contentKey == contentKey }
-        player.duration.first { it > 0L }
-    } ?: return
-    kotlinx.coroutines.delay(1_500L)
-    if (player.currentMeta.value?.contentKey != contentKey) return
-    val target = requestedPositionMs.coerceAtMost((duration - 3_000L).coerceAtLeast(0L))
-    val actual = player.position.value.coerceAtLeast(0L)
-    if (target > 0L && actual + 8_000L < target) {
-        engine.seekBy(target - actual)
-    }
-}
-
 @Composable
 fun OwnTVShell(
     selectedSection: MainSection,
@@ -331,9 +297,6 @@ fun OwnTVShell(
         }
     }
     val mpvEngine = remember(player) { tv.own.owntv.player.MpvPlaybackEngine(player) }
-    val xpTrackPreferences = remember(movioContext) {
-        movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
-    }
     var movioXpPlayback by remember { mutableStateOf<MovioXpPlayback?>(null) }
     LaunchedEffect(currentPlayerMeta?.contentKey) {
         val key = currentPlayerMeta?.contentKey
@@ -344,56 +307,14 @@ fun OwnTVShell(
             xpCandidateIndex = -1
         }
     }
-    LaunchedEffect(currentPlayerMeta?.contentKey, movioXpPlayback?.profileId, xpCandidateGeneration, xpCandidateIndex) {
-        val media = movioXpPlayback ?: return@LaunchedEffect
-        val contentKey = currentPlayerMeta?.contentKey ?: return@LaunchedEffect
-        if (contentKey != "stremio:${media.type}:${media.id}") return@LaunchedEffect
-        val key = "${media.profileId}_${contentKey.hashCode()}"
-        val audioId = xpTrackPreferences.getInt("xp_audio_$key", -1)
-        val subtitleId = xpTrackPreferences.getInt("xp_subtitle_$key", -2)
-        val audioLang = xpTrackPreferences.getString("xp_audio_lang_$key", null)?.takeIf(String::isNotBlank)
-        val subtitleLang = xpTrackPreferences.getString("xp_subtitle_lang_$key", null)?.takeIf(String::isNotBlank)
-        if (audioId < 0 && audioLang == null && subtitleId == -2 && subtitleLang == null) return@LaunchedEffect
-        repeat(60) {
-            delay(500L)
-            val audioTracks = player.audioTracks()
-            val subtitleTracks = player.textTracks()
-            // mpv track IDs change across provider sources. Match saved language first.
-            val audioMatch = audioLang?.let { lang -> audioTracks.firstOrNull { it.lang.equals(lang, true) } }
-                ?: if (audioLang == null) audioTracks.firstOrNull { it.mpvId == audioId } else null
-            val subtitleMatch = subtitleLang?.let { lang -> subtitleTracks.firstOrNull { it.lang.equals(lang, true) } }
-                ?: if (subtitleLang == null) subtitleTracks.firstOrNull { it.mpvId == subtitleId } else null
-            audioMatch?.let { player.selectAudio(it.mpvId) }
-            if (subtitleId == -1) player.disableSubtitles()
-            else subtitleMatch?.let { player.selectSubtitle(it.mpvId) }
-            val audioReady = audioId < 0 && audioLang == null || audioMatch != null ||
-                (audioLang != null && audioTracks.isNotEmpty())
-            val subtitleReady = subtitleId == -2 && subtitleLang == null || subtitleId == -1 ||
-                subtitleMatch != null || (subtitleLang != null && subtitleTracks.isNotEmpty())
-            if (audioReady && subtitleReady) return@LaunchedEffect
-        }
-    }
-    LaunchedEffect(movioXpPlayback) {
-        val current = movioXpPlayback ?: return@LaunchedEffect
-        while (true) {
-            delay(5_000L)
-            if (player.currentMeta.value?.contentKey != "stremio:${current.type}:${current.id}") continue
-            // Shared player state follows whichever engine is active, including Exo fallbacks.
-            val position = player.position.value
-            val duration = player.duration.value
-            tv.own.owntv.features.home.XpContinueStore.updateProgress(
-                movioContext,
-                current.profileId,
-                current.id,
-                current.type,
-                current.title,
-                current.poster,
-                current.year,
-                position,
-                duration,
-            )
-        }
-    }
+    MovioXpPlaybackEffects(
+        context = movioContext,
+        player = player,
+        contentKey = currentPlayerMeta?.contentKey,
+        playback = movioXpPlayback,
+        candidateGeneration = xpCandidateGeneration,
+        candidateIndex = xpCandidateIndex,
+    )
     // Audio focus + MediaSession. This is the only place that knows which engine currently owns
     // the speaker, so it hands that engine over and takes it back when the player closes.
     val playbackSession = koinInject<tv.own.owntv.player.PlaybackSession>()
@@ -768,25 +689,11 @@ fun OwnTVShell(
                 else -> MainSection.MOVIES
             }
             val profileId = activeProfileId ?: -1L
-            movioXpPlayback = MovioXpPlayback(
-                contentId, type, title, year, poster,
-                profileId = profileId,
-                favorite = XpFavoritesStore.isFavorite(movioContext, profileId, type, contentId),
-            )
             subtitleController.clear()
-            val contentKey = "stremio:$type:$contentId"
-            val latestSaved = tv.own.owntv.features.home.XpContinueStore.read(movioContext, profileId)
-                .firstOrNull { it.id == contentId && it.type == type }?.positionMs ?: 0L
-            val startAt = resumePositionMs.takeIf { it > 0L } ?: latestSaved
-            // OwnTV's engine already supports startPositionMs. Using it here avoids the
-            // asynchronous "open at zero, seek later" race that dropped MovioXP resumes.
-            player.play(
-                url = url, title = title, year = year,
-                contentKey = contentKey, startPositionMs = startAt,
+            movioXpPlayback = startMovioXpStream(
+                movioContext, player, mpvEngine, scope,
+                profileId, url, title, type, year, contentId, poster, resumePositionMs,
             )
-            if (startAt > 0L) scope.launch {
-                seekMovioXpWhenReady(player, mpvEngine, contentKey, startAt)
-            }
             onSelectSection(target)
             openFullscreen(target)
         }
@@ -802,13 +709,7 @@ fun OwnTVShell(
                 xpCandidateContentKey = "stremio:$type:$contentId"
                 xpCandidateResumePositionMs = resumePositionMs
                 xpCandidateGeneration += 1
-                val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
-                movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
-                    .edit().putString(sourceKey, candidates.first().provider).apply()
-                // Store provider preference on Central as well as the local device.
-                tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                    movioContext, activeProfileId ?: -1L, sourceKey, candidates.first().provider,
-                )
+                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first().provider)
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
@@ -837,10 +738,7 @@ fun OwnTVShell(
             xpCandidateIndex = nextIndex
             val activeSource = xpCandidateSources.getOrNull(nextIndex)
             if (activeSource != null) {
-                val sourceKey = "last_source_${activeProfileId ?: -1L}_${xpCandidateContentKey.hashCode()}"
-                movioContext.getSharedPreferences("movioxp_playback", android.content.Context.MODE_PRIVATE)
-                    .edit().putString(sourceKey, activeSource.provider).apply()
-                tv.own.owntv.features.home.XpCentralDataSync.markSetting(movioContext, activeProfileId ?: -1L, sourceKey, activeSource.provider)
+                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, activeSource.provider)
             }
         }
     }
@@ -874,12 +772,7 @@ fun OwnTVShell(
         movieVm.saveProgressNow()
         seriesVm.saveEpisodeProgressNow()
         wasMovioXp?.let { media ->
-            if (currentPlayerMeta?.contentKey == "stremio:${media.type}:${media.id}") {
-                tv.own.owntv.features.home.XpContinueStore.updateProgress(
-                    movioContext, media.profileId, media.id, media.type, media.title, media.poster, media.year,
-                    player.position.value.coerceAtLeast(0L), player.duration.value.coerceAtLeast(0L),
-                )
-            }
+            flushMovioXpProgress(movioContext, player, media)
             movioXpPlayback = null
         }
         resumeVideo() // restore mpv `vid=auto` before stop so the next played item isn't left video-less
@@ -2189,28 +2082,10 @@ fun OwnTVShell(
                         { showLocalSubPicker = true }
                     } else null,
                     onAudioTrackSelected = movioXpPlayback?.let { media -> { trackId ->
-                        val suffix = "${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}"
-                        val lang = player.audioTracks().firstOrNull { it.mpvId == trackId }?.lang.orEmpty()
-                        xpTrackPreferences.edit().putInt("xp_audio_$suffix", trackId)
-                            .putString("xp_audio_lang_$suffix", lang).apply()
-                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_audio_$suffix", trackId,
-                        )
-                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_audio_lang_$suffix", lang,
-                        )
+                        saveMovioXpAudioPreference(movioContext, player, media, trackId)
                     } },
                     onSubtitleTrackSelected = movioXpPlayback?.let { media -> { trackId ->
-                        val suffix = "${media.profileId}_${("stremio:${media.type}:${media.id}").hashCode()}"
-                        val lang = trackId?.let { picked -> player.textTracks().firstOrNull { it.mpvId == picked }?.lang }.orEmpty()
-                        xpTrackPreferences.edit().putInt("xp_subtitle_$suffix", trackId ?: -1)
-                            .putString("xp_subtitle_lang_$suffix", lang).apply()
-                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_subtitle_$suffix", trackId ?: -1,
-                        )
-                        tv.own.owntv.features.home.XpCentralDataSync.markSetting(
-                            movioContext, media.profileId, "xp_subtitle_lang_$suffix", lang,
-                        )
+                        saveMovioXpSubtitlePreference(movioContext, player, media, trackId)
                     } },
                     // In-stream favorite toggle for the current channel/movie/series.
                     favorite = favActive,
