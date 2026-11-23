@@ -149,6 +149,8 @@ android {
 
     buildTypes {
         debug {
+            // Isolated diagnostic APK: install alongside normal MovioXP without touching its data.
+            applicationIdSuffix = ".diagnostic"
             // V7.9+: stable application ID for update-in-place. A matching signing key is ALSO required.
             // Never rename the package or delete databases during an upgrade.
             // Pseudolocales (en-XA / ar-XB) are generated for the debug BuildType, NOT androidResources.
