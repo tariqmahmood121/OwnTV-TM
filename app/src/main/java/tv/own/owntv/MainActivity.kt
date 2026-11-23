@@ -550,7 +550,7 @@ open class MainActivity : ComponentActivity() {
                             )
                             // Cloud profiles come only from Central. Never create an unrelated
                             // local profile through onboarding while a cloud account is selected.
-                            centralAccountId != null && !activeProfileKnown -> ProfileGate(
+                            centralAccountId != null && (profile < 0L || !activeProfileKnown) -> ProfileGate(
                                 onEnter = { profileId -> gateSession.authenticateProfile(profileId) },
                                 onAddProfile = {},
                                 modifier = Modifier.fillMaxSize(),
