@@ -24,6 +24,7 @@ internal object XpCentralDataSync {
         if (localProfileId <= 0L) return
         val cloudKey = canonicalPreferenceKey(key, localProfileId) ?: return
         mark(context, localProfileId, "setting", "xp:$cloudKey", JSONObject().put("key", cloudKey).put("value", value))
+        XpCentralEventSync.request(context, localProfileId)
     }
 
     private fun mark(context: Context, profileId: Long, type: String, key: String, payload: JSONObject) {
