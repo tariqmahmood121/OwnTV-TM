@@ -2,9 +2,16 @@ package tv.own.owntv.features.setup
 
 import android.icu.text.ListFormatter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -407,14 +422,15 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
     var message by remember { mutableStateOf<String?>(null) }
     val usernameLabel = stringResource(R.string.moviotv_xp_central_username_label)
     val passwordLabel = stringResource(R.string.moviotv_xp_central_password_label)
-    val valid = username.isNotBlank() && password.isNotBlank() && (!registering || (username.trim().length >= 3 && password.length >= 12))
+    val valid = username.trim().isNotEmpty() && password.isNotEmpty() && (!registering || (username.trim().length >= 3 && password.length >= 12))
     WizardFrame(
-        step = WizardStep.LANGUAGE,
+        step = WizardStep.PROFILE,
         title = stringResource(if (registering) R.string.moviotv_xp_central_register else R.string.moviotv_xp_central_login),
-        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_requirements else R.string.moviotv_xp_central_account_help),
+        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_short_help else R.string.moviotv_xp_central_login_short_help),
+        compactOnPhone = true,
         back = WizardAction(stringResource(R.string.common_back), onBack),
         next = WizardAction(
-            stringResource(if (registering) R.string.moviotv_xp_central_create_and_continue else R.string.moviotv_xp_central_login),
+            stringResource(if (registering) R.string.moviotv_xp_central_create_short else R.string.moviotv_xp_central_login_short),
             onClick = {
                 if (valid && !busy) {
                     busy = true
@@ -439,10 +455,79 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
         ),
         extraLeft = if (busy) listOf(WizardAction(stringResource(R.string.moviotv_xp_central_connecting), {}, enabled = false)) else emptyList(),
     ) {
-        val fieldHelp = stringResource(R.string.settings_form_field_help)
-        StageFieldRow(OwnTVIcon.PERSON, usernameLabel, username, { username = it; message = null }, SettingHelp(usernameLabel, fieldHelp), modifier = Modifier.focusRequester(rememberFirstFocus()), keyboardType = KeyboardType.Text)
-        StageFieldRow(OwnTVIcon.PENCIL, passwordLabel, password, { password = it; message = null }, SettingHelp(passwordLabel, fieldHelp), password = true)
-        message?.let { Text(it, style = stageText(16, 600), color = StageColors.Warn, modifier = Modifier.padding(top = 10.mpx)) }
+        CentralCredentialField(
+            label = usernameLabel,
+            placeholder = stringResource(R.string.moviotv_xp_central_username_hint),
+            value = username,
+            onValueChange = { username = it; message = null },
+            modifier = Modifier.focusRequester(rememberFirstFocus()),
+        )
+        CentralCredentialField(
+            label = passwordLabel,
+            placeholder = stringResource(R.string.moviotv_xp_central_password_hint),
+            value = password,
+            onValueChange = { password = it; message = null },
+            password = true,
+        )
+        if (registering) {
+            Text(stringResource(R.string.moviotv_xp_central_register_requirements),
+                style = stageText(13, 500), color = StageColors.Muted)
+        }
+        message?.let { Text(it, style = stageText(14, 600), color = StageColors.Warn) }
+    }
+}
+
+/**
+ * Central login uses real, visible touch-sized entry fields instead of the settings menu's
+ * focus-only StageFieldRow. Works with the software keyboard and TV remote; no changes to auth.
+ */
+@Composable
+private fun CentralCredentialField(
+    label: String,
+    placeholder: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    password: Boolean = false,
+) {
+    var showPassword by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    val accent = stageAccent.accent
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, color = StageColors.Text, style = stageText(16, 650))
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                .clip(shape).background(Color(0xFF28222F))
+                .border(1.dp, accent.copy(alpha = .6f), shape)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else KeyboardType.Text),
+                visualTransformation = if (password && !showPassword) PasswordVisualTransformation() else VisualTransformation.None,
+                cursorBrush = SolidColor(accent),
+                decorationBox = { input ->
+                    Box {
+                        if (value.isBlank()) Text(placeholder, color = StageColors.Muted,
+                            style = stageText(14, 400), maxLines = 1)
+                        input()
+                    }
+                },
+            )
+            if (password) {
+                Text(
+                    stringResource(if (showPassword) R.string.moviotv_xp_central_hide_password else R.string.moviotv_xp_central_show_password),
+                    color = accent, style = stageText(13, 650),
+                    modifier = Modifier.clickable { showPassword = !showPassword }
+                        .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+                )
+            }
+        }
     }
 }
 
