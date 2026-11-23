@@ -42,9 +42,12 @@ internal object XpCentralDataSync {
         val owner = "${connection.accountId}:$centralProfileId"
         val previousOwner = state.getString(ownerKey, null)
 
-        // Local preferences are keyed by device profile IDs. Clear a previous account's local copy
-        // before pulling another account's profile, so account switching cannot cross-seed data.
-        if (previousOwner != null && previousOwner != owner) clearLocalProfile(context, localProfileId)
+        // A local profile belongs permanently to its first Central account/profile binding.
+        // NEVER wipe its saved favourites/history/resume on account switch: old accounts must remain
+        // intact and dormant. Refuse a cross-account mapping rather than migrating private data.
+        if (previousOwner != null && previousOwner != owner) {
+            throw IllegalStateException("Local profile belongs to a different Central account")
+        }
 
         val response = XpCentralAddonSync.request(connection.apiBase, "sync?profile_id=$centralProfileId", connection.token)
         val remote = parseRecords(response).associateBy { recordId(it.type, it.key) }.toMutableMap()
