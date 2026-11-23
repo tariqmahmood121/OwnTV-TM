@@ -70,6 +70,8 @@ internal fun WizardFrame(
     next: WizardAction?,
     onBack: (() -> Unit)? = back?.onClick,
     width: Dp = 1040.mpx,
+    /** Adapt Central sign-in/register to a touch-sized card without changing the normal TV wizard. */
+    compactOnPhone: Boolean = false,
     /** More buttons beside Back (the display step's Reset). */
     extraLeft: List<WizardAction> = emptyList(),
     body: @Composable ColumnScope.() -> Unit = {},
@@ -77,42 +79,47 @@ internal fun WizardFrame(
     if (onBack != null) BackHandler { onBack() }
     val a = stageAccent
     BoxWithConstraints(Modifier.fillMaxSize().stageBackground(a.accent)) {
+        val compact = compactOnPhone && maxWidth < 700.dp
         // The OwnTV lockup: the play mark on its cream tile, the name beside it.
         Row(
-            Modifier.padding(start = 64.mpx, top = 56.mpx),
-            horizontalArrangement = Arrangement.spacedBy(14.mpx),
+            Modifier.padding(start = if (compact) 25.mpx else 64.mpx, top = if (compact) 25.mpx else 56.mpx),
+            horizontalArrangement = Arrangement.spacedBy(12.mpx),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
                 painter = painterResource(R.drawable.moviotv_launcher),
                 contentDescription = stringResource(R.string.moviotv_app_name),
-                modifier = Modifier.size(44.mpx),
+                modifier = Modifier.size(if (compact) 36.mpx else 44.mpx),
             )
             Column {
-                Text(stringResource(R.string.moviotv_app_name), style = stageText(24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.moviotv_app_name), style = stageText(if (compact) 22 else 24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(stringResource(R.string.moviotv_credit), style = stageText(11, 600), color = Color(0xFFB465FF))
             }
         }
-        StepDots(step, Modifier.align(Alignment.TopEnd).padding(end = 64.mpx, top = 66.mpx))
+        if (!compactOnPhone) StepDots(step, Modifier.align(Alignment.TopEnd).padding(end = 64.mpx, top = 66.mpx))
 
         Column(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 170.mpx, bottom = 120.mpx)
-                .width(width.coerceAtMost(maxWidth - 128.mpx))
-                .heightIn(max = maxHeight - 290.mpx)
-                .stageGlass(32.mpx)
+                .padding(top = if (compact) 110.mpx else 170.mpx, bottom = if (compact) 35.mpx else 120.mpx)
+                .width(width.coerceAtMost(maxWidth - (if (compact) 34.mpx else 128.mpx)))
+                .heightIn(max = maxHeight - (if (compact) 150.mpx else 290.mpx))
+                .stageGlass(if (compact) 22.mpx else 32.mpx)
                 .focusGroup()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 48.mpx, vertical = 44.mpx),
+                .padding(horizontal = if (compact) 25.mpx else 48.mpx, vertical = if (compact) 26.mpx else 44.mpx),
         ) {
-            Text(title, style = stageText(42, 800, (-1f / 46f).em), color = StageColors.Text)
+            Text(title, style = stageText(if (compact) 31 else 42, 800, (-1f / 46f).em), color = StageColors.Text)
             if (!sub.isNullOrBlank()) {
-                Text(sub, style = stageText(19, 500).copy(lineHeight = 29.5f.mpxLine()), color = StageColors.Muted, modifier = Modifier.padding(top = 10.mpx))
+                Text(sub, style = stageText(if (compact) 16 else 19, 500).copy(lineHeight = (if (compact) 23f else 29.5f).mpxLine()),
+                    color = StageColors.Muted, modifier = Modifier.padding(top = 9.mpx))
             }
-            Column(Modifier.padding(top = 28.mpx), verticalArrangement = Arrangement.spacedBy(6.mpx), content = body)
+            Column(Modifier.padding(top = if (compact) 18.mpx else 28.mpx),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 14.mpx else 6.mpx), content = body)
             if (back != null || next != null || extraLeft.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().padding(top = 30.mpx), horizontalArrangement = Arrangement.spacedBy(12.mpx)) {
+                Row(Modifier.fillMaxWidth().padding(top = if (compact) 18.mpx else 30.mpx),
+                    horizontalArrangement = Arrangement.spacedBy(if (compact) 8.mpx else 12.mpx),
+                    verticalAlignment = Alignment.CenterVertically) {
                     (listOfNotNull(back) + extraLeft).forEach { b ->
                         StagePill(b.label, onClick = b.onClick, enabled = b.enabled, modifier = b.focus?.let { Modifier.focusRequester(it) } ?: Modifier)
                     }
@@ -126,7 +133,7 @@ internal fun WizardFrame(
                 }
             }
         }
-        StageKeyHints(
+        if (!compact) StageKeyHints(
             listOf(
                 stringResource(R.string.common_ok) to stringResource(R.string.content_key_select),
                 stringResource(R.string.common_back) to stringResource(R.string.setup_key_previous_step),
