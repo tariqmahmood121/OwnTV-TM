@@ -278,4 +278,13 @@
     <string name="moviotv_xp_restoring_profile">Preparing your profile…</string>
     <string name="moviotv_xp_setup_failed">Setup error: %1$s</string>
     <string name="moviotv_xp_category_selector">%1$s  ▾</string>
+    <string name="moviotv_xp_diag_title">MovioXP startup diagnostic</string>
+    <string name="moviotv_xp_diag_stage_minimal">1. Minimal</string>
+    <string name="moviotv_xp_diag_stage_shell">2. App shell</string>
+    <string name="moviotv_xp_diag_stage_catalogue">3. Catalogue</string>
+    <string name="moviotv_xp_diag_stage_full">4. Full navigation</string>
+    <string name="moviotv_xp_diag_minimal_ok">Minimal home opened successfully</string>
+    <string name="moviotv_xp_diag_instructions">Select App shell, then Catalogue, then Full navigation. If the app closes, reopen it and note the last attempted stage. No profile or add-on data is cleared.</string>
+    <string name="moviotv_xp_diag_previous">Previous attempted stage: %1$s</string>
+    <string name="moviotv_xp_diag_shell_home">The app shell is loaded. Add-on catalogues are disabled for this stage.</string>
 </resources>
