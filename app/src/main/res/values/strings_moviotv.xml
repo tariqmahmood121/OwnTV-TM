@@ -156,6 +156,14 @@
     <string name="moviotv_xp_nav_addons">Add-ons</string>
     <string name="moviotv_xp_nav_discover">Discover</string>
     <string name="moviotv_xp_nav_settings">Settings</string>
+    <string name="moviotv_xp_appearance_heading">Appearance &amp; personalisation</string>
+    <string name="moviotv_xp_appearance_hint">Bring back the original MovioTV customisation options.</string>
+    <string name="moviotv_xp_settings_colours">Colours, themes &amp; backgrounds</string>
+    <string name="moviotv_xp_settings_fonts">Fonts &amp; text sizes</string>
+    <string name="moviotv_xp_settings_gui">GUI layout &amp; navigation</string>
+    <string name="moviotv_xp_settings_all">All MovioTV settings</string>
+    <string name="moviotv_xp_central_profile_saved">Add-ons saved to Central profile: %1$s</string>
+    <string name="moviotv_xp_central_saving_profile">Saving add-ons to your Central profile…</string>
     <string name="moviotv_xp_auto_select_source">Automatically play the best available source</string>
     <string name="moviotv_xp_preferred_addon">Preferred add-on</string>
     <string name="moviotv_xp_preferred_addon_option">Preferred · %1$s</string>
