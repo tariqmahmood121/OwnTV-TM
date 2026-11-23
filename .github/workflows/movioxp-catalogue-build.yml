@@ -3,7 +3,7 @@ name: MovioXP Catalogue APK
 on:
   workflow_dispatch:
   push:
-    branches: [MovioXP, fix/movioxp-verifyerror-agp941]
+    branches: [MovioXP, fix/movioxp-verifyerror-agp941, fix/movioxp-verifyerror-shell-split]
     paths:
       - app/src/main/java/tv/own/owntv/features/home/**
       - app/src/main/java/tv/own/owntv/features/setup/**
