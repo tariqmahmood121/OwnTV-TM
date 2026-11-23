@@ -1251,7 +1251,16 @@ fun StremioCatalogScreen(
             if (page in browsePages) {
                 // The add-on catalogue rows are rendered as the MovioXP poster grid above.
             } else if (page == "addons") {
-                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = if (compactPhone) 14.dp else 24.dp, vertical = 8.dp)) {
+                    // On phone the header is the compact search bar, not the TV toolbar,
+                    // so the install action must live at the top of the Add-ons page itself.
+                    if (showBottomNavigation) {
+                        XpAction(stringResource(R.string.moviotv_xp_addon_url_button), busy) {
+                            adding = true
+                            notice = null
+                        }
+                        Spacer(Modifier.height(14.dp))
+                    }
                     Text(stringResource(R.string.moviotv_xp_addon_category), color = XpMuted, fontSize = 13.sp)
                     Column {
                         val categoryLabel = when (addonCategory) {
