@@ -188,9 +188,14 @@ internal fun startMovioXpStream(
 }
 
 internal fun storeMovioXpSource(
-    context: Context, profileId: Long, contentKey: String, source: tv.own.owntv.features.home.XpPlaybackSource,
+    context: Context, profileId: Long, contentKey: String,
+    source: tv.own.owntv.features.home.XpPlaybackSource,
+    explicitChoice: Boolean = false,
 ) {
-    tv.own.owntv.features.home.XpSourcePreference.store(context, profileId, contentKey, source)
+    // Keep automatic playback/fallback from replacing the user's last chosen source.
+    if (explicitChoice || source.userSelected) {
+        tv.own.owntv.features.home.XpSourcePreference.store(context, profileId, contentKey, source)
+    }
 }
 
 internal fun saveMovioXpAudioPreference(
