@@ -602,6 +602,8 @@ fun StremioCatalogScreen(
     var centralUsername by remember { mutableStateOf(centralConnection?.username.orEmpty()) }
     var centralPassword by remember { mutableStateOf("") }
     var centralSyncBusy by remember { mutableStateOf(false) }
+    // Installing an add-on during an existing Central refresh must never drop its upload.
+    var centralSyncAgain by remember { mutableStateOf(false) }
     var centralSyncMessage by remember { mutableStateOf<String?>(null) }
     val firstSourceFocus = remember { FocusRequester() }
     val detailFocus = remember { FocusRequester() }
@@ -720,7 +722,10 @@ fun StremioCatalogScreen(
     }
 
     fun syncAddonsWithCentral() {
-        if (centralSyncBusy) return
+        if (centralSyncBusy) {
+            centralSyncAgain = true
+            return
+        }
         if (favoritesProfileId <= 0L || activeProfileName.isBlank()) {
             centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_required)
             return
@@ -756,19 +761,28 @@ fun StremioCatalogScreen(
                     context, connection, localProfileId, localProfileName, childProfile, localAddons,
                 )
             }.onSuccess { mergedUrls ->
-                XpAddonStore.write(context, mergedUrls, localProfileId)
+                // An installation may have completed while this network request was in flight.
+                // Keep that URL locally and upload it in the queued follow-up sync.
+                val latestLocal = addons.filterNot { it.builtIn }.map { it.url }
+                val allUrls = (mergedUrls + latestLocal).distinct()
+                XpAddonStore.write(context, allUrls, localProfileId)
                 val builtIn = addons.firstOrNull { it.builtIn }
                 addons.clear()
                 if (builtIn != null) addons.add(builtIn)
-                mergedUrls.forEach { url ->
+                allUrls.forEach { url ->
                     runCatching { XpAddonProtocol.loadManifest(url) }
                         .onSuccess { loaded -> if (addons.none { it.url == loaded.url }) addons.add(loaded) }
                 }
-                centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_complete, mergedUrls.size)
+                centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_saved, localProfileName)
             }.onFailure {
+                // Local encrypted URL list stays intact and will be retried at next sync.
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
             }
             centralSyncBusy = false
+            if (centralSyncAgain) {
+                centralSyncAgain = false
+                syncAddonsWithCentral()
+            }
         }
     }
 
@@ -807,7 +821,10 @@ fun StremioCatalogScreen(
                     if (addons.none { it.url == addon.url }) {
                         addons.add(addon)
                         XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
-                        if (centralConnection != null) syncAddonsWithCentral()
+                        if (centralConnection != null) {
+                            centralSyncMessage = context.getString(R.string.moviotv_xp_central_saving_profile)
+                            syncAddonsWithCentral()
+                        }
                     }
                     notice = null
                     adding = false
@@ -1259,7 +1276,12 @@ fun StremioCatalogScreen(
                             adding = true
                             notice = null
                         }
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(8.dp))
+                        if (centralConnection != null && centralSyncMessage != null) {
+                            Text(centralSyncMessage.orEmpty(), color = XpAccent, fontSize = 13.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Spacer(Modifier.height(6.dp))
                     }
                     Text(stringResource(R.string.moviotv_xp_addon_category), color = XpMuted, fontSize = 13.sp)
                     Column {
@@ -1764,7 +1786,14 @@ fun StremioCatalogScreen(
                                     selected = null
                                     manualSourceSelection = false
                                     showManualSources = false
-                                    onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
+                                    if (onPlayStreamCandidates != null) {
+                                        onPlayStreamCandidates(
+                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name)),
+                                            item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs,
+                                        )
+                                    } else {
+                                        onPlayStream(playable, item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs)
+                                    }
                                 }
                             }
                         }
