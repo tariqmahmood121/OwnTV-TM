@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,6 +33,8 @@ import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.Text
 import tv.own.owntv.R
 import tv.own.owntv.core.database.entity.ProfileEntity
+import tv.own.owntv.features.home.XpCentralProfileScope
+import tv.own.owntv.features.home.XpCentralConnectionStore
 import tv.own.owntv.ui.components.OwnTVAvatar
 import tv.own.owntv.ui.components.OwnTVIcon
 
@@ -43,7 +46,14 @@ import tv.own.owntv.ui.components.OwnTVIcon
 @Composable
 fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
     val vm: ProfilesViewModel = koinViewModel()
-    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val allProfiles by vm.profiles.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val centralAccountId by XpCentralProfileScope.accountId.collectAsStateWithLifecycle()
+    val membershipRevision by XpCentralProfileScope.revision.collectAsStateWithLifecycle()
+    val profiles = if (centralAccountId == null) allProfiles else {
+        val allowed = XpCentralProfileScope.allowedLocalIds(context, centralAccountId!!)
+        allProfiles.filter { it.id in allowed }
+    }
 
     var pinFor by remember { mutableStateOf<ProfileEntity?>(null) }
     var pinError by remember { mutableStateOf(false) }
@@ -80,7 +90,31 @@ fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Mod
                         onClick = { choose(p) },
                     )
                 }
-                item { AddTile(onClick = onAddProfile) }
+                if (centralAccountId == null) item { AddTile(onClick = onAddProfile) }
+            }
+            if (centralAccountId != null && profiles.isEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    stringResource(R.string.moviotv_xp_central_profile_required),
+                    style = tv.own.owntv.ui.theme.stageText(21, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Muted,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(18.dp))
+                tv.own.owntv.ui.stage.StageSurface(
+                    onClick = { XpCentralConnectionStore.clear(context) },
+                    radius = 16.dp,
+                    modifier = Modifier.padding(12.dp),
+                    focusStyle = tv.own.owntv.ui.stage.StageFocus.FX,
+                    contentAlignment = Alignment.Center,
+                ) { _ ->
+                    Text(
+                        stringResource(R.string.moviotv_xp_central_disconnect),
+                        style = tv.own.owntv.ui.theme.stageText(22, 600),
+                        color = tv.own.owntv.ui.theme.StageColors.Text,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
             }
         }
     }
