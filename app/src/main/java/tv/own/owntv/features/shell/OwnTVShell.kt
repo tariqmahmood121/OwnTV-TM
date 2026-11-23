@@ -709,7 +709,11 @@ fun OwnTVShell(
                 xpCandidateContentKey = "stremio:$type:$contentId"
                 xpCandidateResumePositionMs = resumePositionMs
                 xpCandidateGeneration += 1
-                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first())
+                // Auto-play must never overwrite a source explicitly chosen in a prior session.
+                // The candidates are already ordered with the saved user preference first.
+                if (candidates.first().userSelected) {
+                    storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, candidates.first())
+                }
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
@@ -736,10 +740,8 @@ fun OwnTVShell(
                 seekMovioXpWhenReady(player, mpvEngine, xpCandidateContentKey, resumeAtMs)
             }
             xpCandidateIndex = nextIndex
-            val activeSource = xpCandidateSources.getOrNull(nextIndex)
-            if (activeSource != null) {
-                storeMovioXpSource(movioContext, activeProfileId ?: -1L, xpCandidateContentKey, activeSource)
-            }
+            // Failover is temporary and must not replace the viewer's saved preference.
+            // When this same film is reopened, try their preferred stream first again.
         }
     }
     LaunchedEffect(playerMode) {
