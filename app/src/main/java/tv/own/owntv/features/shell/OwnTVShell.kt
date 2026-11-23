@@ -178,6 +178,7 @@ fun OwnTVShell(
     modifier: Modifier = Modifier,
     // Called once the profile's start-up choice has been applied; the splash waits for it.
     onStartupSettled: () -> Unit = {},
+    diagnosticStage: Int = 3,
 ) {
     val movioContext = androidx.compose.ui.platform.LocalContext.current
     val movioConfiguration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -1412,7 +1413,7 @@ fun OwnTVShell(
                 // One group with a restorer: leaving for the mini player and coming back lands on the
                 // exact control that was focused, without every screen having to remember its own.
                 .focusRequester(shellContentFocus)
-                .focusRestorer()
+                .then(if (diagnosticStage < 3) Modifier else Modifier.focusRestorer())
                 .focusGroup(),
         ) {
           if (isOffline) OfflineBanner()
@@ -1514,7 +1515,7 @@ fun OwnTVShell(
                                     true
                                 }
                                 .focusRequester(contentAreaFocus)
-                                .focusRestorer()
+                                .then(if (diagnosticStage < 3) Modifier else Modifier.focusRestorer())
                                 .focusGroup(),
                         ),
                 ) {
@@ -1578,6 +1579,13 @@ fun OwnTVShell(
                                 .focusGroup(),
                         ) }
 
+                        selectedSection == MainSection.HOME && diagnosticStage == 1 -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.tv.material3.Text(stringResource(R.string.moviotv_xp_diag_shell_home))
+                        }
+
                         selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen(
                             onLiveTv = { restoreFocus = false; onSelectSection(MainSection.LIVE_TV) },
                             onMovies = { restoreFocus = false; onSelectSection(MainSection.MOVIES) },
@@ -1609,6 +1617,7 @@ fun OwnTVShell(
                                 onSelectSection(MainSection.SETTINGS)
                             },
                             onEntryHook = { homeEntry = it },
+                            diagnosticFocusEnabled = diagnosticStage >= 3,
                             modifier = Modifier.fillMaxSize(),
                         )
 
