@@ -554,8 +554,9 @@ open class MainActivity : ComponentActivity() {
                                 onAddProfile = { gateSession.startAddingProfile() },
                                 modifier = Modifier.fillMaxSize(),
                             )
-                            shellReady -> OwnTVShell(
-                                selectedSection = selectedSection,
+                            shellReady -> tv.own.owntv.features.recovery.MovioXpStartupDiagnostic(onReady = { startupSettled = true }) { diagnosticStage ->
+                                OwnTVShell(
+                                selectedSection = if (diagnosticStage <= 2) tv.own.owntv.core.nav.MainSection.HOME else selectedSection,
                                 visibleSections = visibleSections,
                                 onSelectSection = viewModel::selectSection,
                                 themeMode = themeMode,
@@ -581,6 +582,7 @@ open class MainActivity : ComponentActivity() {
                                 isOffline = !isOnline,
                                 onExitApp = { finish() },
                                 onStartupSettled = { startupSettled = true },
+                                diagnosticStage = diagnosticStage,
                                 onSwitchProfile = {
                                     // Stop playback and return to the "Who's watching?" gate — no app restart.
                                     tv.own.owntv.features.profiles.stopPlaybackForProfileGate(shellViewModel, engines)
@@ -590,7 +592,8 @@ open class MainActivity : ComponentActivity() {
                                     gateSession.requestSwitchProfile()
                                 },
                                 modifier = Modifier.fillMaxSize(),
-                            )
+                                )
+                            }
                             // No unexpected combination of asynchronous state may fall through to
                             // the shell. The known loading/onboarding/gate cases are above; a blank
                             // frame is safer than rendering protected content if a new state is added.
