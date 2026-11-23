@@ -74,6 +74,7 @@ fun MovioLandingScreen(
     onPlayStream: (url: String, title: String, type: String, year: String?, contentId: String, poster: String?, resumePositionMs: Long) -> Unit,
     onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     onOpenAppSettings: (() -> Unit)? = null,
+    onOpenSettingsGroup: ((Int) -> Unit)? = null,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -95,6 +96,7 @@ fun MovioLandingScreen(
             onPlayStreamCandidates = onPlayStreamCandidates,
             showBottomNavigation = true,
             onOpenAppSettings = onOpenAppSettings,
+            onOpenSettingsGroup = onOpenSettingsGroup,
             modifier = modifier.fillMaxSize(),
         )
     } else BoxWithConstraints(
