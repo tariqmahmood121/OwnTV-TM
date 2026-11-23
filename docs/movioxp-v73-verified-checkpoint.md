@@ -34,3 +34,15 @@ Do not report Central cross-device sync as verified until the user tests it. Kee
 **Test acceptance:** (1) Reopen same movie after choosing source B; source B plays at the saved position, including when A and B belong to the same add-on. (2) Fallback works if B is no longer available. (3) Source preference remains profile-scoped. (4) Test Central propagation between devices separately. (5) Preserve the 1.0.73 Android 17 verifier fix: avoid expanding `OwnTVShell` substantially.
 
 **Development branch:** `feature/movioxp-v74-next`. **Protected baseline:** `stable/movioxp-v1.0.73` (untouched).
+
+## Next build P0: port MovioTV event-triggered Central playback sync
+
+The original MovioTV agreement is to update the Central profile **when playback is paused, stopped, completed, or when a seek settles**, rather than waiting for the 90-second periodic fallback. A seek is considered settled **3 seconds after the most recent scrub**; another scrub restarts that timer. Sync movie ID/title, resume position, duration, and existing per-title source/audio/subtitle preferences, all isolated to the authenticated Central account and active profile.
+
+**Current 1.0.73 limitation:** `MovioXpPlaybackEffects` persists the movie position locally every 5 seconds, and `XpContinueStore.updateProgress` only marks Central records dirty. `StremioCatalogScreen` runs `XpCentralDataSync.sync` approximately every 90 seconds while its catalogue composition is active. Leaving the app before that may mean Central has not received the latest title/position, even though local resume works.
+
+**Port requirements:** (1) immediate local write and queued cloud upload on pause, Back/stop, completion, and stabilized seek; (2) initial seek after resume must not send a spurious zero position; (3) async network I/O off the UI thread, serialization and coalescing, with dirty records retained for retry if offline; (4) sync source, audio, subtitle choices on change; (5) 90-second sync remains a safety net, not the primary mechanism; (6) 3-second seek debounce is independent from the normal 1-second playback ticks, no flood of requests; (7) verify Central profile ownership/permissions and avoid cross-account leakage; (8) ensure no regression to the Android 17 `OwnTVShell` ART `VerifyError`.
+
+**Validation:** Play movie on phone, pause and seek several times, stop; verify `GET /sync?profile_id=<id>` returns the latest `resume` record before 90 seconds. Restart same movie on the same device and on TV with same Central profile. Also test offline/reconnect replay of dirty data and finished movie deletion. Central server and multi-device behavior remains unverified until tested.
+
+**Protected branch:** `stable/movioxp-v1.0.73`. Target: `feature/movioxp-v74-next`.
