@@ -546,6 +546,8 @@ fun StremioCatalogScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    // Keep all five XP tab labels legible on narrow touch devices.
+    val compactPhone = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
     val scope = rememberCoroutineScope()
     val profiles: ProfilesViewModel = koinViewModel()
     val activeProfileId by profiles.activeProfileId.collectAsStateWithLifecycle()
@@ -808,6 +810,8 @@ fun StremioCatalogScreen(
                         if (centralConnection != null) syncAddonsWithCentral()
                     }
                     notice = null
+                    adding = false
+                    address = ""
                 }
                 .onFailure { notice = context.getString(R.string.moviotv_xp_addon_install_failed) }
             busy = false
@@ -954,24 +958,25 @@ fun StremioCatalogScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             if (showBottomNavigation) Row(
-                Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().padding(horizontal = if (compactPhone) 12.dp else 22.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 14.dp),
             ) {
                 Image(
                     painter = androidx.compose.ui.res.painterResource(R.drawable.moviotv_launcher),
                     contentDescription = stringResource(R.string.moviotv_xp_title),
-                    modifier = Modifier.size(42.dp).clickable { page = "home" },
+                    modifier = Modifier.size(if (compactPhone) 34.dp else 42.dp).clickable { page = "home" },
                 )
                 Row(
                     Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(XpPanel)
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                        .padding(horizontal = if (compactPhone) 12.dp else 18.dp, vertical = if (compactPhone) 11.dp else 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.weight(1f)) {
                         if (searchText.isBlank()) Text(
-                            stringResource(R.string.moviotv_xp_search_hint), color = XpMuted,
-                            fontSize = 20.sp,
+                            stringResource(if (compactPhone) R.string.moviotv_xp_nav_search else R.string.moviotv_xp_search_hint),
+                            color = XpMuted, fontSize = if (compactPhone) 15.sp else 20.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         BasicTextField(
                             value = searchText,
@@ -983,14 +988,14 @@ fun StremioCatalogScreen(
                                 } else if (page == "search") page = returnPage
                             },
                             singleLine = true,
-                            textStyle = TextStyle(color = XpText, fontSize = 20.sp),
+                            textStyle = TextStyle(color = XpText, fontSize = if (compactPhone) 16.sp else 20.sp),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    DrawOwnTVIcon(OwnTVIcon.SEARCH, XpText, Modifier.size(24.dp))
+                    DrawOwnTVIcon(OwnTVIcon.SEARCH, XpText, Modifier.size(if (compactPhone) 19.dp else 24.dp))
                 }
                 Box(
-                    Modifier.size(56.dp).clip(RoundedCornerShape(18.dp))
+                    Modifier.size(if (compactPhone) 42.dp else 56.dp).clip(RoundedCornerShape(18.dp))
                         .background(if (accountIconFocused) XpFocus.copy(alpha = .3f) else XpPanel)
                         .border(if (accountIconFocused) 3.dp else 1.dp, if (accountIconFocused) XpFocus else Color(0xFF3A3144), RoundedCornerShape(18.dp))
                         .clickable { page = "central" }
@@ -998,7 +1003,7 @@ fun StremioCatalogScreen(
                         .focusable(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DrawOwnTVIcon(OwnTVIcon.PERSON, XpText, Modifier.size(28.dp))
+                    DrawOwnTVIcon(OwnTVIcon.PERSON, XpText, Modifier.size(if (compactPhone) 23.dp else 28.dp))
                 }
             } else Row(
                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 20.dp),
@@ -1028,7 +1033,10 @@ fun StremioCatalogScreen(
                     }
                 }
                 if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
-                if (page == "addons") XpAction(if (adding) stringResource(R.string.moviotv_xp_cancel) else stringResource(R.string.moviotv_xp_add_catalogue), false) { adding = !adding; notice = null }
+                if (page == "addons") XpAction(stringResource(R.string.moviotv_xp_addon_url_button), false) {
+                    adding = true
+                    notice = null
+                }
                 XpAction(stringResource(R.string.moviotv_xp_back), false) {
                     if (page != initialPage) page = initialPage else onBack()
                 }
@@ -1178,37 +1186,62 @@ fun StremioCatalogScreen(
                 )
             }
             if (page == "addons" && adding) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Box(
-                        Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp))
-                            .background(XpPanel).padding(horizontal = 16.dp),
-                        contentAlignment = Alignment.CenterStart,
+                Dialog(onDismissRequest = { adding = false; notice = null }) {
+                    Column(
+                        Modifier.fillMaxWidth().widthIn(max = 440.dp)
+                            .clip(RoundedCornerShape(22.dp)).background(XpBackground)
+                            .border(1.dp, XpAccent.copy(alpha = .5f), RoundedCornerShape(22.dp))
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        if (address.isBlank()) Text(stringResource(R.string.moviotv_xp_addon_url_hint), color = XpMuted)
-                        BasicTextField(
-                            value = address,
-                            onValueChange = { address = it },
-                            singleLine = true,
-                            textStyle = TextStyle(color = XpText, fontSize = 16.sp),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    XpAction(stringResource(R.string.moviotv_xp_install), busy) {
-                        val candidate = address.trim()
-                        if (candidate.isBlank()) notice = context.getString(R.string.moviotv_xp_enter_addon_url)
-                        else {
-                            installAddon(candidate)
-                            address = ""
-                            adding = false
+                        Text(stringResource(R.string.moviotv_xp_addon_manifest_title),
+                            color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.moviotv_xp_addon_paste_help),
+                            color = XpMuted, fontSize = 14.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(stringResource(R.string.moviotv_xp_addon_url_button),
+                                color = XpText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Box(
+                                Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                                    .clip(RoundedCornerShape(12.dp)).background(XpPanel)
+                                    .border(1.dp, XpAccent.copy(alpha = .65f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 14.dp, vertical = 15.dp),
+                            ) {
+                                if (address.isBlank()) Text(
+                                    stringResource(R.string.moviotv_xp_addon_url_hint), color = XpMuted,
+                                    fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                BasicTextField(
+                                    value = address,
+                                    onValueChange = { address = it; notice = null },
+                                    singleLine = true,
+                                    textStyle = TextStyle(color = XpText, fontSize = 16.sp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
-                    }
-                    XpAction(stringResource(R.string.moviotv_xp_remote_enter_on_phone), busy) {
-                        showAddonRemote = true
-                        addonRemoteServer.start()
+                        notice?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp) }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            XpAction(stringResource(R.string.moviotv_xp_cancel), false) {
+                                adding = false; notice = null
+                            }
+                            XpAction(stringResource(R.string.moviotv_xp_install), busy) {
+                                val candidate = address.trim()
+                                if (candidate.isBlank()) {
+                                    notice = context.getString(R.string.moviotv_xp_enter_addon_url)
+                                } else installAddon(candidate)
+                            }
+                        }
+                        if (!compactPhone) {
+                            XpAction(stringResource(R.string.moviotv_xp_remote_enter_on_phone), busy) {
+                                showAddonRemote = true
+                                addonRemoteServer.start()
+                            }
+                        }
                     }
                 }
             }
@@ -1606,7 +1639,8 @@ fun StremioCatalogScreen(
                 }
             }
             if (showBottomNavigation) Row(
-                Modifier.fillMaxWidth().background(XpBackground.copy(alpha = .88f)).padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().background(XpBackground.copy(alpha = .94f))
+                    .padding(horizontal = if (compactPhone) 4.dp else 18.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1618,7 +1652,7 @@ fun StremioCatalogScreen(
                         Triple("app_settings", R.string.moviotv_xp_nav_settings, OwnTVIcon.GEAR),
                     ).forEach { (key, labelRes, icon) ->
                         XpNavigationItem(stringResource(labelRes), icon, selected = page == key,
-                            focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
+                            compact = compactPhone, focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
                             if (key == "app_settings" && onOpenAppSettings != null) onOpenAppSettings()
                             else page = if (key == "app_settings") "settings" else key
                             if (key == "addons") adding = false
@@ -1743,22 +1777,23 @@ private fun RowScope.XpNavigationItem(
     icon: OwnTVIcon = OwnTVIcon.TILES,
     selected: Boolean,
     focusRequester: FocusRequester? = null,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(
-        Modifier.weight(1f).padding(horizontal = 2.dp).clip(RoundedCornerShape(12.dp))
+        Modifier.weight(1f).padding(horizontal = if (compact) 0.dp else 2.dp).clip(RoundedCornerShape(12.dp))
             .background(if (focused || selected) (if (focused) XpFocus else XpAccent).copy(alpha = if (focused) .32f else .20f) else Color.Transparent)
             .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
-            .padding(horizontal = 5.dp, vertical = 10.dp),
+            .padding(horizontal = if (compact) 1.dp else 5.dp, vertical = if (compact) 7.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        DrawOwnTVIcon(icon, if (focused) XpFocus else if (selected) XpAccent else XpMuted, Modifier.size(23.dp))
+        DrawOwnTVIcon(icon, if (focused) XpFocus else if (selected) XpAccent else XpMuted, Modifier.size(if (compact) 21.dp else 23.dp))
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (focused) XpFocus else if (selected) XpText else XpMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        Text(label, color = if (focused) XpFocus else if (selected) XpText else XpMuted, fontSize = if (compact) 10.sp else 12.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
