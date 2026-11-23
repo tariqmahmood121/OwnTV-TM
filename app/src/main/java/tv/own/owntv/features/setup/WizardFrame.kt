@@ -127,7 +127,8 @@ internal fun WizardFrame(
                     if (next != null) {
                         StagePill(
                             next.label, onClick = next.onClick, trailingIcon = OwnTVIcon.CHEVRON, enabled = next.enabled,
-                            modifier = next.focus?.let { Modifier.focusRequester(it) } ?: Modifier,
+                            modifier = (if (compact) Modifier.widthIn(min = 170.dp).heightIn(min = 60.dp) else Modifier)
+                                .then(next.focus?.let { Modifier.focusRequester(it) } ?: Modifier),
                         )
                     }
                 }
