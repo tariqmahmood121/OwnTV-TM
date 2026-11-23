@@ -75,6 +75,7 @@ fun MovioLandingScreen(
     onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     onOpenAppSettings: (() -> Unit)? = null,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
+    diagnosticFocusEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -85,7 +86,7 @@ fun MovioLandingScreen(
     // Open discovery first so Movies and Series have posters before add-ons are installed.
     var showStremioCatalogues by remember { mutableStateOf(true) }
     LaunchedEffect(touchMode, showStremioCatalogues) {
-        if (!touchMode && !showStremioCatalogues) runCatching { firstFocus.requestFocus() }
+        if (diagnosticFocusEnabled && !touchMode && !showStremioCatalogues) runCatching { firstFocus.requestFocus() }
     }
 
     if (showStremioCatalogues) {
@@ -94,6 +95,7 @@ fun MovioLandingScreen(
             onPlayStream = onPlayStream,
             onPlayStreamCandidates = onPlayStreamCandidates,
             showBottomNavigation = true,
+            diagnosticFocusEnabled = diagnosticFocusEnabled,
             onOpenAppSettings = onOpenAppSettings,
             modifier = modifier.fillMaxSize(),
         )
