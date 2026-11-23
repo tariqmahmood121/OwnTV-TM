@@ -151,7 +151,7 @@ internal data class XpMeta(
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
 )
-data class XpPlaybackSource(val url: String, val label: String, val provider: String)
+data class XpPlaybackSource(val url: String, val label: String, val provider: String, val identity: String = "")
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
@@ -923,18 +923,24 @@ fun StremioCatalogScreen(
         if (manualSourceSelection || !autoSelectSource || streamsLoading || selectedStreams.isEmpty()) return@LaunchedEffect
         val itemKey = "${item.type}:${item.id}"
         if (autoStartedItem == itemKey) return@LaunchedEffect
-        val preferenceKey = "last_source_${favoritesProfileId}_${("stremio:${item.type}:${item.id}").hashCode()}"
-        val lastProvider = playbackPrefs.getString(preferenceKey, null)
-        val candidates = selectedStreams.filter { it.url != null }
-            .sortedWith(
-                compareBy<XpStream> { if (it.addon.name == lastProvider) 0 else 1 }
-                    .thenBy { if (it.addon.url == preferredAddonUrl) 0 else 1 },
-            )
+        val contentKey = "stremio:${item.type}:${item.id}"
+        val saved = XpSourcePreference.read(context, favoritesProfileId, contentKey)
+        val candidates = selectedStreams.mapNotNull { stream ->
+            stream.url?.let { url ->
+                XpPlaybackSource(
+                    url, stream.label, stream.addon.name,
+                    XpSourcePreference.identity(stream.addon.url, stream.label, stream.detail),
+                )
+            }
+        }.sortedWith(
+            compareBy<XpPlaybackSource> { XpSourcePreference.score(saved, it) }
+                .thenBy { if (addons.firstOrNull { addon -> addon.name == it.provider }?.url == preferredAddonUrl) 0 else 1 },
+        )
         if (candidates.isEmpty()) return@LaunchedEffect
         autoStartedItem = itemKey
         XpContinueStore.add(context, favoritesProfileId, item)
         continueTitles = XpContinueStore.read(context, favoritesProfileId)
-        val sources = candidates.mapNotNull { stream -> stream.url?.let { XpPlaybackSource(it, stream.label, stream.addon.name) } }
+        val sources = candidates
         selected = null
         manualSourceSelection = false
         showManualSources = false
@@ -1839,7 +1845,8 @@ fun StremioCatalogScreen(
                                     showManualSources = false
                                     if (onPlayStreamCandidates != null) {
                                         onPlayStreamCandidates(
-                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name)),
+                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name,
+                                                XpSourcePreference.identity(stream.addon.url, stream.label, stream.detail))),
                                             item.name, item.type, item.releaseInfo, item.id, item.poster, item.positionMs,
                                         )
                                     } else {
