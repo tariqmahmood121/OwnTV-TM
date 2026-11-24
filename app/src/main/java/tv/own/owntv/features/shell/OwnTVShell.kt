@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
@@ -211,6 +212,11 @@ fun OwnTVShell(
     }
     // One-shot: set when leaving the player so the returning browse screen re-focuses the item you played.
     var restoreFocus by remember { mutableStateOf(false) }
+    val movioHomeState = rememberSaveableStateHolder()
+    var returnToMovioPoster by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedSection) {
+        if (selectedSection != MainSection.HOME) returnToMovioPoster = false
+    }
     var searchReturn by remember { mutableStateOf<MainSection?>(null) }
     var restoreTrendingSearchFocus by remember { mutableStateOf(false) }
     var trendingSearchActive by remember { mutableStateOf(false) }
@@ -780,7 +786,10 @@ fun OwnTVShell(
         liveVm.hideCategoryBrowser()
         liveVm.onFullscreenExited() // no longer full-screen on ExoPlayer → let the preview re-take the engine
         player.stop()
-        if (wasMovioXp != null) onSelectSection(MainSection.HOME)
+        if (wasMovioXp != null) {
+            returnToMovioPoster = true
+            onSelectSection(MainSection.HOME)
+        }
         subtitleController.clear() // leaving the player drops the OpenSubtitles item context
         if (selectedSection != MainSection.LIVE_TV) liveVm.clearLiveOnExo()
         // Closing back into a guide: it focuses the channel that was playing (zapped-to included).
@@ -1502,7 +1511,8 @@ fun OwnTVShell(
                                 .focusGroup(),
                         ) }
 
-                        selectedSection == MainSection.HOME -> tv.own.owntv.features.home.MovioLandingScreen(
+                        selectedSection == MainSection.HOME -> movioHomeState.SaveableStateProvider(MainSection.HOME.name) {
+                            tv.own.owntv.features.home.MovioLandingScreen(
                             onLiveTv = { restoreFocus = false; onSelectSection(MainSection.LIVE_TV) },
                             onMovies = { restoreFocus = false; onSelectSection(MainSection.MOVIES) },
                             onSeries = { restoreFocus = false; onSelectSection(MainSection.SERIES) },
@@ -1533,8 +1543,9 @@ fun OwnTVShell(
                                 onSelectSection(MainSection.SETTINGS)
                             },
                             onEntryHook = { homeEntry = it },
+                            restoreHomePosterFocus = returnToMovioPoster && !movioTouch,
                             modifier = Modifier.fillMaxSize(),
-                        )
+                        ) }
 
                         selectedSection == MainSection.SEARCH -> SearchScreen(
                             vm = searchVm,

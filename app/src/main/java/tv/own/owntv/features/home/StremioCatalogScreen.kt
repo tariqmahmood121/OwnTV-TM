@@ -6,7 +6,6 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import android.net.Uri
-import android.os.SystemClock
 import androidx.compose.foundation.Image
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -94,6 +93,16 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -264,7 +273,17 @@ private object XpAddonProtocol {
 
     suspend fun loadManifest(raw: String): XpAddon = withContext(Dispatchers.IO) {
         val url = manifestUrl(raw)
-        val json = get(url)
+        parseManifest(url, get(url))
+    }
+
+    fun observeManifest(repository: XpCatalogueRepository, profile: String, raw: String) =
+        manifestUrl(raw).let { url ->
+            repository.observe(XpCatalogueRepository.Key(profile, url, url)) {
+                get(url).also { parseManifest(url, it) }.toString()
+            }.map { body -> body?.let { parseManifest(url, JSONObject(it)) } }.flowOn(Dispatchers.IO)
+        }
+
+    private fun parseManifest(url: String, json: JSONObject): XpAddon {
         val resourceSource = json.optJSONArray("resources") ?: JSONArray()
         val resources = buildList {
             for (index in 0 until resourceSource.length()) {
@@ -314,7 +333,7 @@ private object XpAddonProtocol {
             }
         }
         require(resources.isNotEmpty()) { "This add-on manifest has no supported resources." }
-        XpAddon(
+        return XpAddon(
             url,
             json.optString("id").ifBlank { url },
             json.optString("name").ifBlank { URI(url).host ?: url },
@@ -355,14 +374,34 @@ private object XpAddonProtocol {
     }
 
     suspend fun loadCatalog(row: XpCatalogRow, overrides: Map<String, String> = emptyMap()): List<XpMeta> = withContext(Dispatchers.IO) {
+        parseCatalog(row, get(catalogUrl(row, overrides)))
+    }
+
+    fun observeCatalog(
+        repository: XpCatalogueRepository,
+        profile: String,
+        row: XpCatalogRow,
+        overrides: Map<String, String>,
+        refreshAfter: Long,
+    ) = catalogUrl(row, overrides).let { url ->
+        repository.observe(XpCatalogueRepository.Key(profile, row.addon.url, row.addon.version + row.catalog.toString() + url), refreshAfter) {
+            get(url).also { require(it.optJSONArray("metas") != null) }.toString()
+        }.map { body -> body?.let { parseCatalog(row, JSONObject(it)) } }.flowOn(Dispatchers.IO)
+    }
+
+    private fun catalogUrl(row: XpCatalogRow, overrides: Map<String, String>): String {
         val route = "catalog/${Uri.encode(row.catalog.type)}/${Uri.encode(row.catalog.id)}"
         val parameters = (row.catalog.defaults.toMap() + overrides).filterKeys { it in row.catalog.extraFields }
         val extra = parameters.entries.joinToString("&") { (key, value) ->
             "${Uri.encode(key)}=${Uri.encode(value)}"
         }
         val path = if (extra.isBlank()) "$route.json" else "$route/$extra.json"
-        val source = get(resourceUrl(row.addon.url, path)).optJSONArray("metas") ?: JSONArray()
-        buildList {
+        return resourceUrl(row.addon.url, path)
+    }
+
+    private fun parseCatalog(row: XpCatalogRow, json: JSONObject): List<XpMeta> {
+        val source = json.optJSONArray("metas") ?: JSONArray()
+        return buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
                 val id = item.optString("id").trim()
@@ -655,6 +694,7 @@ fun StremioCatalogScreen(
     onOpenAppSettings: (() -> Unit)? = null,
     onOpenSettingsGroup: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    restoreHomePosterFocus: Boolean = false,
 ) {
     val context = LocalContext.current
     // Keep all five XP tab labels legible on narrow touch devices.
@@ -666,15 +706,27 @@ fun StremioCatalogScreen(
     val activeProfile = profileList.firstOrNull { it.id == activeProfileId }
     val activeProfileName = activeProfile?.name.orEmpty()
     val favoritesProfileId = activeProfileId ?: -1L
-    val addons = remember { mutableStateListOf<XpAddon>() }
+    var centralConnection by remember { mutableStateOf(XpCentralConnectionStore.read(context)) }
+    val catalogueProfile = catalogueProfileKey(centralConnection, favoritesProfileId)
+    val addons = remember(catalogueProfile) { mutableStateListOf<XpAddon>() }
+    val homeListState = key(catalogueProfile) { rememberLazyListState() }
+    var lastHomePoster by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
+    var returnHomePoster by remember(catalogueProfile) {
+        mutableStateOf(lastHomePoster.takeIf { restoreHomePosterFocus })
+    }
+    fun trackHomePoster(poster: String) {
+        lastHomePoster = poster
+        if (returnHomePoster == poster) returnHomePoster = null
+    }
+    var savedHomeAnchor by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
+    var savedHomeOffset by rememberSaveable(catalogueProfile) { mutableIntStateOf(0) }
+    var returnHomeAnchor by remember(catalogueProfile) { mutableStateOf(savedHomeAnchor) }
+    val returnHomeOffset = remember(catalogueProfile) { savedHomeOffset }
     var homeSettings by remember(favoritesProfileId) {
         mutableStateOf(XpHomeConfig.read(context, favoritesProfileId))
     }
     var showAddHomeCategory by remember { mutableStateOf(false) }
     val directoryAddons = remember { mutableStateListOf<XpAddonListing>() }
-    val rows = remember { mutableStateListOf<XpCatalogRow>() }
-    val metas = remember { mutableStateMapOf<String, List<XpMeta>>() }
-    val loadingRows = remember { mutableStateMapOf<String, Boolean>() }
     var address by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -765,7 +817,6 @@ fun StremioCatalogScreen(
     var autoSelectSource by remember { mutableStateOf(playbackPrefs.getBoolean("auto_select_source", true)) }
     var preferredAddonUrl by remember { mutableStateOf(playbackPrefs.getString("preferred_addon", "").orEmpty()) }
     var autoStartedItem by remember { mutableStateOf<String?>(null) }
-    var centralConnection by remember { mutableStateOf(XpCentralConnectionStore.read(context)) }
     var centralApiBase by remember { mutableStateOf(centralConnection?.apiBase?.removeSuffix("/") ?: "https://moviotv.opticalzoo.com/movio/api/index.php") }
     var centralUsername by remember { mutableStateOf(centralConnection?.username.orEmpty()) }
     var centralPassword by remember { mutableStateOf("") }
@@ -813,50 +864,42 @@ fun StremioCatalogScreen(
     val visibleHomeIds = if (page == "home" ||
         (page == "discover" && discoveryType != "series" && discoveryCatalog == "all" && discoveryGenre == "all")
     ) homeSettings.visibleDiscoverIds() else emptyList()
-    val discoverMetas = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, List<XpMeta>>() }
-    val discoverLoading = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Boolean>() }
-    val centralCatalogs = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, List<XpMeta>?>() }
-    val centralLastFetch = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Long>() }
-    val discoverLastFetch = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Long>() }
-    val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, addons.toList()) }
-    val metadataRequests = remember { Semaphore(3) }
+    val repository = remember(context) { XpCatalogueRepository.get(context) }
+    var refreshCatalogues by remember(catalogueProfile, page, discoveryType, discoveryCatalog, discoveryGenre) { mutableLongStateOf(0L) }
+    val discoverMetas = remember(catalogueProfile) { mutableStateMapOf<Pair<String, XpDiscoverSource?>, List<XpMeta>>() }
+    val discoverLoading = remember(catalogueProfile) { mutableStateMapOf<String, Boolean>() }
+    val metas = remember(catalogueProfile) { mutableStateMapOf<Pair<String, XpCatalogRow>, List<XpMeta>>() }
+    val loadingRows = remember(catalogueProfile) { mutableStateMapOf<String, Boolean>() }
+    val installedAddons = addons.toList()
+    val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, installedAddons) }
 
-    LaunchedEffect(centralConnection, favoritesProfileId, homeSources) {
+    fun discoveryDataKey(id: String, source: XpDiscoverSource?) = id to source
+    LaunchedEffect(catalogueProfile, centralConnection, homeSources, refreshCatalogues) {
         val connection = centralConnection
+        discoverMetas.keys.retainAll(homeSources.map { (id, source) -> discoveryDataKey(id, source) }.toSet())
         for ((id, source) in homeSources) {
             val category = XpCentralMetadata.category(id)
-            val centralAvailable = connection != null && category != null
-            if (!centralAvailable && source == null) continue
-            val cacheKey = "$id|${source?.row?.addon?.url}|${source?.row?.catalog?.id}|${source?.parameters}"
-            if (SystemClock.elapsedRealtime() - (discoverLastFetch[cacheKey] ?: Long.MIN_VALUE / 2) < 300000L) continue
+            if ((connection == null || category == null) && source == null) continue
             launch {
+                val dataKey = discoveryDataKey(id, source)
                 discoverLoading[id] = true
                 try {
-                    val central = if (connection != null && category != null) {
-                        if (centralLastFetch[category]?.let { SystemClock.elapsedRealtime() - it < 300000L } != true) {
-                            centralCatalogs[category] = metadataRequests.withPermit {
-                                runCatching { XpCentralMetadata.catalog(connection, category) }
-                                    .getOrElse { error ->
-                                        if (error is kotlinx.coroutines.CancellationException) throw error
-                                        null
-                                    }
+                    suspend fun fallback() {
+                        if (source == null) {
+                            discoverMetas.remove(dataKey)
+                            return
+                        }
+                        XpAddonProtocol.observeCatalog(repository, catalogueProfile, source.row, source.parameters, refreshCatalogues)
+                            .collect { titles ->
+                                if (titles != null) discoverMetas[dataKey] = titles.distinctBy { it.type to it.id }
                             }
-                            centralLastFetch[category] = SystemClock.elapsedRealtime()
-                        }
-                        centralCatalogs[category]
-                    } else null
-                    val titles = central ?: source?.let {
-                        metadataRequests.withPermit {
-                            runCatching { XpAddonProtocol.loadCatalog(it.row, it.parameters) }
-                                .getOrElse { error ->
-                                    if (error is kotlinx.coroutines.CancellationException) throw error
-                                    emptyList()
-                                }
-                        }
                     }
-                    discoverMetas[id] = titles.orEmpty().distinctBy { it.type to it.id }
-                    // Retry a Central fallback when manifests arrive, or on a later visit.
-                    if (titles != null) discoverLastFetch[cacheKey] = SystemClock.elapsedRealtime()
+                    if (connection == null || category == null) fallback()
+                    else XpCentralMetadata.observe(repository, catalogueProfile, connection, category, refreshCatalogues)
+                        .collectLatest { titles ->
+                            if (titles == null) fallback()
+                            else discoverMetas[dataKey] = titles
+                        }
                 } finally {
                     discoverLoading.remove(id)
                 }
@@ -866,11 +909,8 @@ fun StremioCatalogScreen(
 
     fun catalogKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}"
-    fun fetchRows() {
-        rows.clear()
-        val catalogRows = if (page == "home" && !homeSettings.showDefaultCatalogs) emptyList()
-            else addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
-        rows.addAll(catalogRows.filter { row ->
+    val rows = if (page == "home" && !homeSettings.showDefaultCatalogs) emptyList()
+        else installedAddons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }.filter { row ->
             val typeMatches = when (page) {
                 "movies" -> row.catalog.type.equals("movie", true)
                 "series" -> row.catalog.type.equals("series", true)
@@ -883,19 +923,51 @@ fun StremioCatalogScreen(
                 row.catalog.extraFields.keys.any { it.equals("genre", true) }
             val catalogMatches = page != "discover" || discoveryCatalog == "all" || catalogKey(row) == discoveryCatalog
             typeMatches && catalogMatches && genreSupported
-        })
+        }
+    LaunchedEffect(catalogueProfile, page, rows, discoveryGenre, refreshCatalogues) {
+        if (page != "home" && page != "discover" && page !in browsePages) return@LaunchedEffect
+        val visibleKeys = rows.map { rowKey(it) to it }.toSet()
+        metas.keys.retainAll(visibleKeys)
         rows.forEach { row ->
             val key = rowKey(row)
             val genreField = row.catalog.extraFields.keys.firstOrNull { it.equals("genre", true) }
             val overrides = if ((page == "discover" || page == "movies" || page == "series") && discoveryGenre != "all" && genreField != null) {
                 mapOf(genreField to discoveryGenre)
             } else emptyMap()
-            loadingRows[key] = true
-            scope.launch {
-                runCatching { XpAddonProtocol.loadCatalog(row, overrides) }
-                    .onSuccess { metas[key] = it }
-                    .onFailure { notice = context.getString(R.string.moviotv_xp_catalogue_load_failed) }
-                loadingRows[key] = false
+            launch {
+                loadingRows[key] = true
+                try {
+                    XpAddonProtocol.observeCatalog(repository, catalogueProfile, row, overrides, refreshCatalogues).collect { titles ->
+                        if (titles != null) metas[key to row] = titles.distinctBy { it.type to it.id }
+                    }
+                } finally {
+                    loadingRows.remove(key)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(page, visibleHomeIds, rows, returnHomeAnchor) {
+        val anchor = returnHomeAnchor ?: return@LaunchedEffect
+        if (page != "home") return@LaunchedEffect
+        val keys = listOf("xp-continue-watching") + visibleHomeIds.map { "discover:$it" } + rows.map(::rowKey)
+        val index = keys.indexOf(anchor)
+        if (index >= 0) {
+            homeListState.scrollToItem(index, returnHomeOffset)
+            returnHomeAnchor = null
+        }
+    }
+
+    LaunchedEffect(page, catalogueProfile) {
+        if (page != "home") return@LaunchedEffect
+        snapshotFlow {
+            val first = homeListState.firstVisibleItemIndex
+            val key = homeListState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == first }?.key as? String
+            key to homeListState.firstVisibleItemScrollOffset
+        }.collect { (key, offset) ->
+            if (returnHomeAnchor == null && key != null) {
+                savedHomeAnchor = key
+                savedHomeOffset = offset
             }
         }
     }
@@ -937,7 +1009,7 @@ fun StremioCatalogScreen(
             rating = null,
         )
     } else emptyList()
-    val sectionTitles = (if (page == "favorites") favoriteTitles else localLiveTitles + rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
+    val sectionTitles = (if (page == "favorites") favoriteTitles else localLiveTitles + rows.flatMap { row -> metas[rowKey(row) to row].orEmpty() })
         .distinctBy { "${it.type}:${it.id}" }
         .let { sortedTitles(it) }
     val gridState = rememberLazyGridState()
@@ -1016,13 +1088,21 @@ fun StremioCatalogScreen(
                 // Central is authoritative on refresh: do not restore a disabled/removed
                 // add-on from the previous device cache (e.g. Comet).
                 val allUrls = mergedUrls.distinct()
+                val removedUrls = XpAddonStore.read(context, localProfileId) - allUrls.toSet()
                 XpAddonStore.write(context, allUrls, localProfileId)
-                val builtIn = addons.firstOrNull { it.builtIn }
-                addons.clear()
-                if (builtIn != null) addons.add(builtIn)
-                allUrls.forEach { url ->
-                    runCatching { XpAddonProtocol.loadManifest(url) }
-                        .onSuccess { loaded -> if (addons.none { it.url == loaded.url }) addons.add(loaded) }
+                if (localProfileId == favoritesProfileId && catalogueProfileKey(centralConnection, localProfileId) == catalogueProfile) {
+                    addons.removeAll { !it.builtIn && it.url !in allUrls }
+                    removedUrls.forEach { repository.invalidate(catalogueProfile, it) }
+                    allUrls.forEach { url ->
+                        launch {
+                            XpAddonProtocol.observeManifest(repository, catalogueProfile, url).collect { loaded ->
+                                if (loaded != null && url in XpAddonStore.read(context, localProfileId)) {
+                                    val index = addons.indexOfFirst { it.url == loaded.url }
+                                    if (index >= 0) addons[index] = loaded else addons.add(loaded)
+                                }
+                            }
+                        }
+                    }
                 }
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_saved, localProfileName)
             }.onFailure {
@@ -1117,6 +1197,7 @@ fun StremioCatalogScreen(
     fun removeAddon(addon: XpAddon) {
         if (addon.builtIn) return
         addons.remove(addon)
+        scope.launch { repository.invalidate(catalogueProfile, addon.url) }
         XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
         centralConnection?.let { connection ->
             scope.launch {
@@ -1128,25 +1209,24 @@ fun StremioCatalogScreen(
         }
     }
 
-    LaunchedEffect(favoritesProfileId) {
+    LaunchedEffect(catalogueProfile) {
         addons.clear()
-        busy = true
-        runCatching {
-            XpAddonProtocol.loadManifest(context.getString(R.string.moviotv_xp_default_catalogue_manifest))
-                .copy(builtIn = true)
+        val builtInUrl = context.getString(R.string.moviotv_xp_default_catalogue_manifest)
+        val savedUrls = XpAddonStore.read(context, favoritesProfileId)
+        for (url in (listOf(builtInUrl) + savedUrls).distinct()) {
+            val builtIn = url == builtInUrl
+            launch {
+                XpAddonProtocol.observeManifest(repository, catalogueProfile, url).collect { addon ->
+                    if (addon != null && (builtIn || url in XpAddonStore.read(context, favoritesProfileId))) {
+                        val index = addons.indexOfFirst { it.url == addon.url }
+                        val updated = addon.copy(builtIn = builtIn)
+                        if (index >= 0) addons[index] = updated
+                        else if (builtIn) addons.add(0, updated)
+                        else addons.add(updated)
+                    }
+                }
+            }
         }
-            .onSuccess { builtIn -> addons.add(builtIn) }
-            .onFailure { notice = context.getString(R.string.moviotv_xp_default_catalogue_load_failed) }
-        XpAddonStore.read(context, favoritesProfileId).forEach { saved ->
-            runCatching { XpAddonProtocol.loadManifest(saved) }
-                .onSuccess { addon -> if (addons.none { it.url == addon.url }) addons.add(addon) }
-                .onFailure { notice = context.getString(R.string.moviotv_xp_addon_refresh_failed) }
-        }
-        busy = false
-        if (centralConnection != null) syncAddonsWithCentral()
-    }
-    LaunchedEffect(page, discoveryType, discoveryCatalog, discoveryGenre, addons.size, homeSettings.showDefaultCatalogs) {
-        if (page == "home" || page == "discover" || page in browsePages) fetchRows()
     }
     LaunchedEffect(page, searchText, addons.size) {
         val query = searchText.trim()
@@ -1339,7 +1419,7 @@ fun StremioCatalogScreen(
                         adding = false
                     }
                 }
-                if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { fetchRows() }
+                if (page != "addons") XpAction(stringResource(R.string.moviotv_xp_refresh), busy) { refreshCatalogues = System.currentTimeMillis() }
                 if (page == "addons") XpAction(stringResource(R.string.moviotv_xp_addon_url_button), false) {
                     adding = true
                     notice = null
@@ -2072,7 +2152,7 @@ fun StremioCatalogScreen(
                 }
             } else {
                 LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth()
+                    modifier = Modifier.weight(1f).fillMaxWidth()
                         .pointerInput(homeZoomKey, showBottomNavigation) {
                             if (showBottomNavigation) awaitEachGesture {
                                 do {
@@ -2089,17 +2169,22 @@ fun StremioCatalogScreen(
                                 } while (event.changes.any { it.pressed })
                             }
                         },
+                    state = if (page == "home") homeListState else rememberLazyListState(),
                     contentPadding = PaddingValues(bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (page == "home" && continueTitles.isNotEmpty()) {
+                    if (page == "home") {
                         item(key = "xp-continue-watching") {
-                            Column {
+                            if (continueTitles.isNotEmpty()) Column {
                                 Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(start = 24.dp, top = 2.dp))
-                                LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    items(sortedTitles(continueTitles), key = { "continue:${it.type}:${it.id}" }) { title ->
-                                        XpPoster(title, width = 142.dp * homeScale,
+                                val titles = sortedTitles(continueTitles)
+                                LazyRow(state = rememberHomeCatalogueRowState("xp-continue-watching", titles, returnHomePoster),
+                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(titles, key = { "continue:${it.type}:${it.id}" }) { title ->
+                                        HomeCataloguePoster(title, "xp-continue-watching", 142.dp * homeScale, returnHomePoster,
+                                            onFocused = ::trackHomePoster,
                                             onLongClick = { openDetails(title, false) },
                                             onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
                                     }
@@ -2129,7 +2214,7 @@ fun StremioCatalogScreen(
                                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
                                         )
                                     } else {
-                                        val titles = sortedTitles(discoverMetas[id].orEmpty())
+                                        val titles = sortedTitles(discoverMetas[discoveryDataKey(id, source)].orEmpty())
                                         if (titles.isEmpty()) {
                                             Text(
                                                 stringResource(if (discoverLoading[id] == true)
@@ -2139,11 +2224,14 @@ fun StremioCatalogScreen(
                                             )
                                         } else {
                                             LazyRow(
+                                                state = rememberHomeCatalogueRowState(id, titles, returnHomePoster.takeIf { page == "home" }),
                                                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             ) {
                                                 items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                                    XpPoster(item, width = 142.dp * homeScale,
+                                                    HomeCataloguePoster(item, id, 142.dp * homeScale,
+                                                        returnHomePoster.takeIf { page == "home" },
+                                                        onFocused = { if (page == "home") trackHomePoster(it) },
                                                         onLongClick = { openDetails(item, false) },
                                                         onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
                                                 }
@@ -2162,7 +2250,7 @@ fun StremioCatalogScreen(
                     }
                     items(rows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
-                        val titles = sortedTitles(metas[key].orEmpty())
+                        val titles = sortedTitles(metas[key to row].orEmpty())
                         Column {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 4.dp),
@@ -2180,11 +2268,14 @@ fun StremioCatalogScreen(
                                 )
                             } else {
                                 LazyRow(
+                                    state = rememberHomeCatalogueRowState(key, titles, returnHomePoster.takeIf { page == "home" }),
                                     contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                        XpPoster(item, width = 142.dp * homeScale,
+                                        HomeCataloguePoster(item, key, 142.dp * homeScale,
+                                            returnHomePoster.takeIf { page == "home" },
+                                            onFocused = { if (page == "home") trackHomePoster(it) },
                                             onLongClick = { openDetails(item, false) },
                                             onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
                                     }
@@ -2570,6 +2661,45 @@ private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpM
     }
 }
 
+private fun homePosterKey(row: String, item: XpMeta) = "$row|${item.type}:${item.id}"
+
+@Composable
+private fun rememberHomeCatalogueRowState(row: String, titles: List<XpMeta>, returnPoster: String?): androidx.compose.foundation.lazy.LazyListState {
+    val state = rememberLazyListState()
+    LaunchedEffect(row, titles, returnPoster) {
+        if (returnPoster == null) return@LaunchedEffect
+        val index = titles.indexOfFirst { homePosterKey(row, it) == returnPoster }
+        if (index < 0) return@LaunchedEffect
+        withFrameNanos { }
+        if (state.layoutInfo.visibleItemsInfo.none { it.index == index }) state.scrollToItem(index)
+    }
+    return state
+}
+
+@Composable
+private fun HomeCataloguePoster(
+    item: XpMeta,
+    row: String,
+    width: Dp,
+    returnPoster: String?,
+    onFocused: (String) -> Unit,
+    onLongClick: () -> Unit,
+    onVeryLongClick: () -> Unit,
+    onClick: () -> Unit,
+) {
+    val posterKey = homePosterKey(row, item)
+    val requester = remember(posterKey) { FocusRequester() }
+    var restored by remember(posterKey, returnPoster) { mutableStateOf(false) }
+    LaunchedEffect(returnPoster) {
+        if (!restored && returnPoster == posterKey) {
+            withFrameNanos { }
+            restored = runCatching { requester.requestFocus() }.getOrDefault(false)
+        }
+    }
+    XpPoster(item, width, requester, onLongClick, onVeryLongClick,
+        onFocused = { onFocused(posterKey) }, onClick = onClick)
+}
+
 @Composable
 private fun XpPoster(
     item: XpMeta,
@@ -2577,6 +2707,7 @@ private fun XpPoster(
     focusRequester: FocusRequester? = null,
     onLongClick: () -> Unit = {},
     onVeryLongClick: () -> Unit = {},
+    onFocused: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -2586,7 +2717,10 @@ private fun XpPoster(
             .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
             .background(if (focused) XpFocus.copy(alpha = .22f) else Color.Transparent)
             .padding(3.dp).then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused && !focused) onFocused?.invoke()
+                focused = it.isFocused
+            }
             .onPreviewKeyEvent { event ->
                 val keyCode = event.nativeKeyEvent.keyCode
                 val isOk = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
@@ -2619,7 +2753,12 @@ private fun XpPoster(
                 .background(if (focused) XpAccent.copy(alpha = .24f) else XpPanel),
         ) {
             item.poster?.let {
-                AsyncImage(model = it, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                val context = LocalContext.current
+                val request = remember(context, it) {
+                    coil3.request.ImageRequest.Builder(context).data(it)
+                        .diskCachePolicy(coil3.request.CachePolicy.ENABLED).build()
+                }
+                AsyncImage(model = request, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
             XpPosterBadges(item)
             if (item.durationMs > 0L && item.positionMs > 0L) {

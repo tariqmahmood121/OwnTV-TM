@@ -77,6 +77,7 @@ fun MovioLandingScreen(
     onOpenSettingsGroup: ((Int) -> Unit)? = null,
     onEntryHook: (((() -> Boolean)?) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    restoreHomePosterFocus: Boolean = false,
 ) {
     val firstFocus = remember { FocusRequester() }
     DisposableEffect(onEntryHook) {
@@ -98,6 +99,7 @@ fun MovioLandingScreen(
             onSwitchProfile = onProfileClick,
             onOpenAppSettings = onOpenAppSettings,
             onOpenSettingsGroup = onOpenSettingsGroup,
+            restoreHomePosterFocus = restoreHomePosterFocus,
             modifier = modifier.fillMaxSize(),
         )
     } else BoxWithConstraints(

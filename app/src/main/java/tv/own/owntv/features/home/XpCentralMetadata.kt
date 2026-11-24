@@ -1,7 +1,8 @@
 package tv.own.owntv.features.home
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import org.json.JSONObject
 import java.util.Locale
 
@@ -45,11 +46,19 @@ internal object XpCentralMetadata {
         }
     }
 
-    suspend fun catalog(connection: XpCentralConnection, category: String): List<XpMeta>? =
-        withContext(Dispatchers.IO) {
-            val response = XpCentralAddonSync.request(connection.apiBase, "metadata/catalog/$category", connection.token)
-            parseCatalog(response)
-        }
+    fun observe(
+        repository: XpCatalogueRepository,
+        profile: String,
+        connection: XpCentralConnection,
+        category: String,
+        refreshAfter: Long,
+    ) = repository.observe(
+        XpCatalogueRepository.Key(profile, connection.apiBase, category),
+        refreshAfter,
+        cacheable = { body -> JSONObject(body).let { it.has("metas") && !it.optBoolean("fallback") && !it.optBoolean("stale") } },
+    ) {
+        XpCentralAddonSync.request(connection.apiBase, "metadata/catalog/$category", connection.token).toString()
+    }.map { body -> body?.let { parseCatalog(JSONObject(it)) } }.flowOn(Dispatchers.IO)
 
     // Null means Central allows a provider fallback. An empty list is an authoritative empty row.
     internal fun parseCatalog(response: JSONObject): List<XpMeta>? {
@@ -79,3 +88,6 @@ internal object XpCentralMetadata {
         }.distinctBy { it.type to it.id }
     }
 }
+
+internal fun catalogueProfileKey(connection: XpCentralConnection?, localProfileId: Long): String =
+    "${connection?.apiBase}|${connection?.accountId}|$localProfileId"
