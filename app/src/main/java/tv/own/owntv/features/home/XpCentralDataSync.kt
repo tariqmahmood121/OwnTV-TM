@@ -275,6 +275,8 @@ internal object XpCentralDataSync {
             payload.optString("year").takeIf(String::isNotBlank),
             payload.optString("rating").takeIf(String::isNotBlank),
             payload.optLong("positionMs", 0L), payload.optLong("durationMs", 0L),
+            payload.optString("tmdb_id").takeIf(String::isNotBlank),
+            payload.optString("rating_source").takeIf(String::isNotBlank),
         )
     }
 
@@ -282,6 +284,7 @@ internal object XpCentralDataSync {
         .put("id", item.id).put("type", item.type).put("name", item.name)
         .put("poster", item.poster ?: "").put("description", item.description ?: "")
         .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: "")
+        .put("tmdb_id", item.tmdbId.orEmpty()).put("rating_source", item.ratingSource.orEmpty())
         .put("positionMs", item.positionMs).put("durationMs", item.durationMs)
 
     private fun titleKey(type: String, id: String) = "$type:$id"

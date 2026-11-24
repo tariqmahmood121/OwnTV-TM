@@ -6,6 +6,7 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.foundation.Image
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -158,6 +159,7 @@ internal data class XpMeta(
     val id: String, val type: String, val name: String, val poster: String?,
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
+    val tmdbId: String? = null, val ratingSource: String? = null,
 )
 data class XpPlaybackSource(
     val url: String,
@@ -214,7 +216,12 @@ private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDisco
     }
 
     val customGenre = XpHomeConfig.genreName(categoryId)
-    if (customGenre != null) return genre(listOf(customGenre))
+    if (customGenre != null) {
+        val aliases = if (XpCentralMetadata.category(categoryId) == "science-fiction") {
+            listOf(customGenre, "Science Fiction", "Sci-Fi")
+        } else listOf(customGenre)
+        return genre(aliases)
+    }
     return when (categoryId) {
         "xp_trending" -> {
             val row = candidates.firstOrNull { it.catalog.name.contains("Trending", true) } ?:
@@ -237,6 +244,12 @@ private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDisco
         "xp_action" -> genre(listOf("Action"))
         "xp_thriller" -> genre(listOf("Thriller"))
         "xp_bollywood" -> genre(listOf("Bollywood", "Hindi", "Indian"))
+        "xp_cinema" -> candidates.firstOrNull {
+            it.catalog.name.equals("In Cinemas", true) || it.catalog.name.equals("Now Playing", true)
+        }?.let { XpDiscoverSource(categoryId, it) }
+        "xp_upcoming" -> candidates.firstOrNull {
+            it.catalog.name.equals("Upcoming", true)
+        }?.let { XpDiscoverSource(categoryId, it) }
         else -> null
     }
 }
@@ -393,8 +406,8 @@ private object XpAddonProtocol {
         unique.values.toList() to failures.get()
     }
 
-    suspend fun loadStreams(addon: XpAddon, item: XpMeta): List<XpStream> = withContext(Dispatchers.IO) {
-        val source = get(resourceUrl(addon.url, "stream/${Uri.encode(item.type)}/${Uri.encode(item.id)}.json"))
+    suspend fun loadStreams(addon: XpAddon, item: XpMeta, streamId: String): List<XpStream> = withContext(Dispatchers.IO) {
+        val source = get(resourceUrl(addon.url, "stream/${Uri.encode(item.type)}/${Uri.encode(streamId)}.json"))
             .optJSONArray("streams") ?: JSONArray()
         buildList {
             for (index in 0 until source.length()) {
@@ -516,6 +529,8 @@ internal object XpFavoritesStore {
                         description = item.optString("description").takeIf(String::isNotBlank),
                         releaseInfo = item.optString("year").takeIf(String::isNotBlank),
                         rating = item.optString("rating").takeIf(String::isNotBlank),
+                        tmdbId = item.optString("tmdb_id").takeIf(String::isNotBlank),
+                        ratingSource = item.optString("rating_source").takeIf(String::isNotBlank),
                     )
                 )
             }
@@ -527,7 +542,8 @@ internal object XpFavoritesStore {
             titles.distinctBy { "${it.type}:${it.id}" }.forEach { item ->
                 put(JSONObject().put("id", item.id).put("type", item.type).put("name", item.name)
                     .put("poster", item.poster ?: "").put("description", item.description ?: "")
-                    .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: ""))
+                    .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: "").put("tmdb_id", item.tmdbId.orEmpty())
+                    .put("rating_source", item.ratingSource.orEmpty()))
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREFIX + profileId, json.toString()).apply()
@@ -573,7 +589,9 @@ internal object XpContinueStore {
                     XpMeta(id, item.optString("type", "movie"), name,
                         item.optString("poster").takeIf(String::isNotBlank), null,
                         item.optString("year").takeIf(String::isNotBlank), item.optString("rating").takeIf(String::isNotBlank),
-                        item.optLong("positionMs", 0L), item.optLong("durationMs", 0L))
+                        item.optLong("positionMs", 0L), item.optLong("durationMs", 0L),
+                        item.optString("tmdb_id").takeIf(String::isNotBlank),
+                        item.optString("rating_source").takeIf(String::isNotBlank))
                 )
             }
         }
@@ -593,12 +611,12 @@ internal object XpContinueStore {
         val knownDuration = durationMs.takeIf { it > 0L } ?: previous?.durationMs ?: 0L
         val safePosition = positionMs.coerceAtLeast(0L)
         if (knownDuration > 0L && safePosition >= knownDuration * .95f) {
-            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource)
             val remaining = read(context, profileId).filterNot { it.id == id && it.type == type }
             write(context, profileId, remaining)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = true)
         } else if (safePosition > 0L) {
-            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource)
             save(context, profileId, meta)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = false)
         }
@@ -616,6 +634,7 @@ internal object XpContinueStore {
             updated.forEach { meta ->
                 put(JSONObject().put("id", meta.id).put("type", meta.type).put("name", meta.name)
                     .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: "").put("rating", meta.rating ?: "")
+                    .put("tmdb_id", meta.tmdbId.orEmpty()).put("rating_source", meta.ratingSource.orEmpty())
                     .put("positionMs", meta.positionMs).put("durationMs", meta.durationMs))
             }
         }
@@ -652,9 +671,6 @@ fun StremioCatalogScreen(
         mutableStateOf(XpHomeConfig.read(context, favoritesProfileId))
     }
     var showAddHomeCategory by remember { mutableStateOf(false) }
-    val discoverMetas = remember { mutableStateMapOf<String, List<XpMeta>>() }
-    val discoverLoading = remember { mutableStateMapOf<String, Boolean>() }
-    val discoverLastFetch = remember { mutableStateMapOf<String, Long>() }
     val directoryAddons = remember { mutableStateListOf<XpAddonListing>() }
     val rows = remember { mutableStateListOf<XpCatalogRow>() }
     val metas = remember { mutableStateMapOf<String, List<XpMeta>>() }
@@ -794,26 +810,56 @@ fun StremioCatalogScreen(
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    val visibleHomeIds = if (page == "home") homeSettings.visibleDiscoverIds() else emptyList()
+    val visibleHomeIds = if (page == "home" ||
+        (page == "discover" && discoveryType != "series" && discoveryCatalog == "all" && discoveryGenre == "all")
+    ) homeSettings.visibleDiscoverIds() else emptyList()
+    val discoverMetas = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, List<XpMeta>>() }
+    val discoverLoading = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Boolean>() }
+    val centralCatalogs = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, List<XpMeta>?>() }
+    val centralLastFetch = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Long>() }
+    val discoverLastFetch = remember(centralConnection, favoritesProfileId) { mutableStateMapOf<String, Long>() }
     val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, addons.toList()) }
+    val metadataRequests = remember { Semaphore(3) }
 
-    LaunchedEffect(page, favoritesProfileId, homeSettings, addons.toList()) {
-        if (page != "home") return@LaunchedEffect
-        val now = System.currentTimeMillis()
-        for (id in homeSettings.visibleDiscoverIds()) {
-            val source = xpDiscoverSource(id, addons.toList()) ?: continue
-            val cacheKey = "$id|${source.row.addon.url}|${source.row.catalog.id}|${source.parameters}"
-            val valid = discoverMetas.containsKey(cacheKey) &&
-                now - (discoverLastFetch[cacheKey] ?: 0L) < 1800000L
-            if (valid || discoverLoading[cacheKey] == true) continue
-            discoverLoading[cacheKey] = true
+    LaunchedEffect(centralConnection, favoritesProfileId, homeSources) {
+        val connection = centralConnection
+        for ((id, source) in homeSources) {
+            val category = XpCentralMetadata.category(id)
+            val centralAvailable = connection != null && category != null
+            if (!centralAvailable && source == null) continue
+            val cacheKey = "$id|${source?.row?.addon?.url}|${source?.row?.catalog?.id}|${source?.parameters}"
+            if (SystemClock.elapsedRealtime() - (discoverLastFetch[cacheKey] ?: Long.MIN_VALUE / 2) < 300000L) continue
             launch {
-                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters) }
-                    .onSuccess {
-                        discoverMetas[cacheKey] = it
-                        discoverLastFetch[cacheKey] = System.currentTimeMillis()
+                discoverLoading[id] = true
+                try {
+                    val central = if (connection != null && category != null) {
+                        if (centralLastFetch[category]?.let { SystemClock.elapsedRealtime() - it < 300000L } != true) {
+                            centralCatalogs[category] = metadataRequests.withPermit {
+                                runCatching { XpCentralMetadata.catalog(connection, category) }
+                                    .getOrElse { error ->
+                                        if (error is kotlinx.coroutines.CancellationException) throw error
+                                        null
+                                    }
+                            }
+                            centralLastFetch[category] = SystemClock.elapsedRealtime()
+                        }
+                        centralCatalogs[category]
+                    } else null
+                    val titles = central ?: source?.let {
+                        metadataRequests.withPermit {
+                            runCatching { XpAddonProtocol.loadCatalog(it.row, it.parameters) }
+                                .getOrElse { error ->
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                    emptyList()
+                                }
+                        }
                     }
-                discoverLoading[cacheKey] = false
+                    discoverMetas[id] = titles.orEmpty().distinctBy { it.type to it.id }
+                    // Retry a Central fallback when manifests arrive, or on a later visit.
+                    if (titles != null) discoverLastFetch[cacheKey] = SystemClock.elapsedRealtime()
+                } finally {
+                    discoverLoading.remove(id)
+                }
             }
         }
     }
@@ -1128,13 +1174,23 @@ fun StremioCatalogScreen(
             streamsLoading = false
             return@LaunchedEffect
         }
-        val providers = addons.filter { addon -> addon.resources.any { it.supports(item.type, item.id) } }
+        val providers = addons.mapNotNull { addon ->
+            val ids = listOfNotNull(item.id, item.tmdbId).distinct()
+                .filter { id -> addon.resources.any { it.supports(item.type, id) } }
+            if (ids.isEmpty()) null else addon to ids
+        }
         if (providers.isEmpty()) {
             streamsLoading = false
         } else {
             streamsLoading = true
-            selectedStreams = providers.flatMap { addon ->
-                runCatching { XpAddonProtocol.loadStreams(addon, item) }.getOrDefault(emptyList())
+            selectedStreams = providers.flatMap { (addon, ids) ->
+                ids.firstNotNullOfOrNull { id ->
+                    runCatching { XpAddonProtocol.loadStreams(addon, item, id) }
+                        .getOrElse { error ->
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            emptyList()
+                        }.takeIf { it.isNotEmpty() }
+                }.orEmpty()
             }
             streamsLoading = false
         }
@@ -1725,6 +1781,7 @@ fun StremioCatalogScreen(
                         homeSettings.order.forEachIndexed { index, id ->
                             val category = XpHomeConfig.categories.firstOrNull { it.id == id }
                             val title = category?.let { stringResource(it.labelRes) }
+                                ?: XpCentralMetadata.category(id)?.let { XpCentralMetadata.customGenres[it] }?.let { stringResource(it) }
                                 ?: XpHomeConfig.genreName(id)
                             if (title != null) {
                                 XpHomeCategoryControls(
@@ -1762,7 +1819,9 @@ fun StremioCatalogScreen(
                             selected = showAddHomeCategory,
                         ) { showAddHomeCategory = !showAddHomeCategory }
                         if (showAddHomeCategory) {
-                            val available = availableHomeGenres.filter { genre ->
+                            val available = (availableHomeGenres +
+                                if (centralConnection != null) XpCentralMetadata.customGenres.keys.map { it.replace('-', ' ') } else emptyList()
+                            ).distinctBy { it.lowercase(java.util.Locale.ROOT).replace('-', ' ') }.sorted().filter { genre ->
                                 val id = XpHomeConfig.idForGenre(genre)
                                 id != null && id !in homeSettings.order
                             }
@@ -1771,7 +1830,9 @@ fun StremioCatalogScreen(
                                     color = XpMuted, fontSize = 13.sp)
                             }
                             available.forEach { genre ->
-                                XpSettingsOption(genre) {
+                                val category = XpHomeConfig.idForGenre(genre)?.let(XpCentralMetadata::category)
+                                val label = category?.let { XpCentralMetadata.customGenres[it] }?.let { stringResource(it) } ?: genre
+                                XpSettingsOption(label) {
                                     val id = XpHomeConfig.idForGenre(genre)
                                     if (id != null) {
                                         homeSettings = XpHomeConfig.add(homeSettings, id)
@@ -2001,7 +2062,7 @@ fun StremioCatalogScreen(
                         }
                     }
                 }
-            } else if (rows.isEmpty() && page != "home") {
+            } else if (rows.isEmpty() && page != "home" && visibleHomeIds.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.moviotv_xp_empty_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
@@ -2047,10 +2108,11 @@ fun StremioCatalogScreen(
                         }
                     }
 
-                    if (page == "home") {
+                    if (visibleHomeIds.isNotEmpty()) {
                         items(visibleHomeIds, key = { "discover:$it" }) { id ->
                             val category = XpHomeConfig.categories.firstOrNull { it.id == id }
                             val label = category?.let { stringResource(it.labelRes) }
+                                ?: XpCentralMetadata.category(id)?.let { XpCentralMetadata.customGenres[it] }?.let { stringResource(it) }
                                 ?: XpHomeConfig.genreName(id)
                             val source = homeSources[id]
                             if (label != null) {
@@ -2060,18 +2122,17 @@ fun StremioCatalogScreen(
                                         fontSize = 20.sp, fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(start = 24.dp, top = 6.dp),
                                     )
-                                    if (source == null) {
+                                    if (source == null && (centralConnection == null || XpCentralMetadata.category(id) == null)) {
                                         Text(
                                             stringResource(R.string.movioxp_discover_no_source),
                                             color = XpMuted, fontSize = 13.sp,
                                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
                                         )
                                     } else {
-                                        val cacheKey = "$id|${source.row.addon.url}|${source.row.catalog.id}|${source.parameters}"
-                                        val titles = sortedTitles(discoverMetas[cacheKey].orEmpty())
+                                        val titles = sortedTitles(discoverMetas[id].orEmpty())
                                         if (titles.isEmpty()) {
                                             Text(
-                                                stringResource(if (discoverLoading[cacheKey] == true)
+                                                stringResource(if (discoverLoading[id] == true)
                                                     R.string.moviotv_xp_loading_catalogue else R.string.moviotv_xp_no_titles),
                                                 color = XpMuted, fontSize = 13.sp,
                                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
@@ -2260,7 +2321,7 @@ fun StremioCatalogScreen(
                     focusRequester = detailFocus,
                 ) { toggleFavorite(item) }
                 Text(
-                    listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, item.rating?.let { context.getString(R.string.moviotv_xp_rating, it) })
+                    listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, item.rating?.let { context.getString(if (item.ratingSource == "TMDB") R.string.movioxp_tmdb_rating else R.string.moviotv_xp_rating, it) })
                         .joinToString(stringResource(R.string.moviotv_xp_meta_separator)),
                     color = XpAccent, fontSize = 17.sp, modifier = Modifier.padding(top = 8.dp),
                 )
@@ -2496,7 +2557,9 @@ private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpM
             .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text("★ ", color = Color(0xFFFFD54F), fontSize = 11.sp)
-            Text(String.format(java.util.Locale.US, "%.1f", rating), color = Color.White, fontSize = 11.sp)
+            val value = String.format(java.util.Locale.US, "%.1f", rating)
+            Text(if (item.ratingSource == "TMDB") stringResource(R.string.movioxp_tmdb_rating, value) else value,
+                color = Color.White, fontSize = 11.sp)
         }
     }
     val year = xpReleaseYear(item).orEmpty()

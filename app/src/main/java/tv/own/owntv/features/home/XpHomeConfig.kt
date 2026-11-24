@@ -21,6 +21,8 @@ internal object XpHomeConfig {
         Category("xp_action", R.string.movioxp_home_action),
         Category("xp_thriller", R.string.movioxp_home_thriller),
         Category("xp_bollywood", R.string.movioxp_home_bollywood),
+        Category("xp_cinema", R.string.movioxp_home_cinema),
+        Category("xp_upcoming", R.string.movioxp_home_upcoming),
     )
     private val ids = categories.map { it.id }
     private val defaults = ids.toSet()
