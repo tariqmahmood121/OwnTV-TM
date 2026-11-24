@@ -115,18 +115,20 @@ internal fun MovioTouchSearch(
     textColor: Color = Color.White,
     hintColor: Color = pale,
 ) {
+    var focused by remember { mutableStateOf(false) }
+    val pink = focused && LocalXpTvControls.current
     Box(
         modifier = modifier.height(44.dp).clip(RoundedCornerShape(12.dp))
-            .background(background).border(1.dp, outline, RoundedCornerShape(12.dp))
+            .background(background).border(if (pink) 2.dp else 1.dp, if (pink) XpRemotePink else outline, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (value.isEmpty()) Text(hint, color = hintColor, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (value.isEmpty()) Text(hint, color = if (pink) XpRemotePink else hintColor, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicTextField(
             value = value, onValueChange = onChange,
-            singleLine = true, textStyle = TextStyle(color = textColor, fontSize = 15.sp),
+            singleLine = true, textStyle = TextStyle(color = if (pink) XpRemotePink else textColor, fontSize = 15.sp),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(purple),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
         )
     }
 }

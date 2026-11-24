@@ -1,5 +1,7 @@
 package tv.own.owntv.features.home
 
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -40,6 +42,16 @@ class XpQa4NavigationTest {
         assertNull(XpCataloguePaging.next(50, 51))
         assertNull(XpCataloguePaging.next(4, 6))
         assertNull(XpCataloguePaging.next(4, 4))
+    }
+
+    @Test fun centralPageReaderCapsPayloadAndRespectsServerPagination() {
+        val payload = JSONObject().put("metas", JSONArray((1..25).map {
+            JSONObject().put("id", "tmdb:$it").put("name", "Title $it")
+        })).put("next_page", 50)
+        val page = requireNotNull(XpCentralMetadata.parsePage(payload, 49))
+        assertEquals(20, page.titles.size)
+        assertEquals(50, page.next)
+        assertNull(XpCentralMetadata.parsePage(payload.put("next_page", 51), 50)?.next)
     }
 
     @Test fun deduplicatesVerifiedAliasesAcrossPagesAndSearchWithoutMergingByName() {

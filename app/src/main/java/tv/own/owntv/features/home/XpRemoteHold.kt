@@ -28,6 +28,8 @@ internal class XpRemoteHold {
         return true
     }
 
+    fun isActive(direction: Direction): Boolean = active == direction
+
     fun release(direction: Direction): Release {
         if (active != direction) return Release.IGNORE
         val result = if (triggered) Release.CONSUME else Release.STEP

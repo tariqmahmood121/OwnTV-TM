@@ -2,6 +2,7 @@ package tv.own.owntv.ui.stage
 
 import tv.own.owntv.ui.theme.stageTone
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.em
 import androidx.tv.material3.Text
@@ -160,6 +162,7 @@ fun StageSurface(
     highlighted: Boolean = false,
     /** The focus colours; the player's chrome passes its on-video accent. */
     accent: StageAccent = stageAccent,
+    focusOutline: Color? = null,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -168,7 +171,11 @@ fun StageSurface(
     Box(
         modifier = modifier
             .stageLift(focused, focusStyle)
-            .then(if (focused) Modifier.stageFocusDecor(focusStyle, radius, accent, palette) else idle)
+            .then(when {
+                focused && focusOutline != null -> idle.border(2.dp, focusOutline, RoundedCornerShape(radius))
+                focused -> Modifier.stageFocusDecor(focusStyle, radius, accent, palette)
+                else -> idle
+            })
             .stageClickable(interaction, enabled, onClick, onLongClick),
         contentAlignment = contentAlignment,
     ) { content(focused) }
@@ -261,6 +268,7 @@ fun StageButton(
     tinted: Boolean = false,
     /** A glyph after the label: the ▾ of "● Record ▾". */
     trailingIcon: OwnTVIcon? = null,
+    focusOutline: Color? = null,
 ) {
     val a = stageAccent
     val r = StageRadii.Button
@@ -271,8 +279,9 @@ fun StageButton(
         focusStyle = StageFocus.PRIMARY,
         idle = if (tinted) Modifier.background(a.accent.copy(alpha = 0.2f), RoundedCornerShape(r)) else Modifier.stageGlass(r),
         contentAlignment = Alignment.Center,
+        focusOutline = focusOutline,
     ) { focused ->
-        val color = if (focused) a.onAccent else if (tinted) a.accent else StageColors.Text
+        val color = if (focused) focusOutline ?: a.onAccent else if (tinted) a.accent else StageColors.Text
         Row(
             Modifier.then(if (round) Modifier else Modifier.padding(horizontal = 30.mpx)),
             horizontalArrangement = Arrangement.spacedBy(12.mpx),
@@ -283,7 +292,7 @@ fun StageButton(
             if (trailing != null) {
                 // On a tinted button the trailing part is the label's accent at 70% ("· 12 min left").
                 val idle = if (tinted) a.accent.copy(alpha = 0.7f) else StageColors.Muted
-                Text(trailing, style = stageText(textSize, 600), color = if (focused) a.onAccent else idle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(trailing, style = stageText(textSize, 600), color = if (focused) focusOutline ?: a.onAccent else idle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (trailingIcon != null) StageIcon(trailingIcon, color, textSize.mpx)
         }

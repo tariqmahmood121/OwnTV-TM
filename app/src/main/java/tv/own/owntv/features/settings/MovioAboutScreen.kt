@@ -26,6 +26,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import tv.own.owntv.R
+import tv.own.owntv.features.home.LocalXpTvControls
+import tv.own.owntv.features.home.XpRemotePink
 import tv.own.owntv.BuildConfig
 import tv.own.owntv.ui.stage.StageButton
 import tv.own.owntv.ui.theme.LocalStagePalette
@@ -37,6 +39,7 @@ import tv.own.owntv.ui.theme.stageText
 fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovioXp: Boolean = false) {
     BackHandler(onBack = onBack)
     val accent = stageAccent.accent
+    val focusOutline = XpRemotePink.takeIf { forMovioXp && LocalXpTvControls.current }
     val context = LocalContext.current
     var showLegal by remember { mutableStateOf(false) }
     Column(
@@ -66,7 +69,7 @@ fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovio
         Spacer(Modifier.height(6.dp))
         // Oak Studios is our identity. Preserve the original MovioTV About design, and move
         // upstream GPL attribution into the legal view instead of the main studio description.
-        StageButton(stringResource(R.string.moviotv_xp_about_licences), onClick = { showLegal = !showLegal })
+        StageButton(stringResource(R.string.moviotv_xp_about_licences), onClick = { showLegal = !showLegal }, focusOutline = focusOutline)
         if (showLegal) {
             Text(stringResource(R.string.moviotv_xp_about_attribution),
                 style = stageText(15, 500), color = StageColors.Text)
@@ -79,6 +82,6 @@ fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovio
             }.getOrDefault("") }
             Text(licence, style = stageText(11, 400), color = StageColors.Muted)
         }
-        StageButton(stringResource(R.string.common_back), onClick = onBack)
+        StageButton(stringResource(R.string.common_back), onClick = onBack, focusOutline = focusOutline)
     }
 }
