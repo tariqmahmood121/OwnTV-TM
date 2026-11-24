@@ -7,6 +7,7 @@ on:
       - feature/movioxp-profile-library-v80
       - feature/movioxp-central-account-zoom-v81
       - feature/movioxp-discover-v82
+      - feature/movioxp-discover-v83
   workflow_dispatch:
 
 permissions:
@@ -54,8 +55,8 @@ jobs:
 
       - name: Unit tests and signed release APK
         env:
-          VERSION_CODE: '100082'
-          VERSION_NAME: '1.0.82-qa1'
+          VERSION_CODE: '100083'
+          VERSION_NAME: '1.0.83-qa1'
           KEYSTORE_PASSWORD: ${{ secrets.MOVIOXP_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MOVIOXP_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.MOVIOXP_KEY_PASSWORD }}
@@ -73,12 +74,12 @@ jobs:
           [ -n "$SDK_APKSIGNER" ] || { echo "::error::apksigner missing"; exit 1; }
           "$SDK_APKSIGNER" verify "$APK"
           mkdir -p dist
-          cp "$APK" dist/MovioXP-1.0.82-qa1-discover-home-release.apk
+          cp "$APK" dist/MovioXP-1.0.83-qa1-discover-home-release.apk
 
       - name: Upload signed QA release APK
         uses: actions/upload-artifact@v7
         with:
-          name: MovioXP-1.0.82-qa1-Discover-Home-SIGNED
+          name: MovioXP-1.0.83-qa1-Discover-Home-SIGNED
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 21
