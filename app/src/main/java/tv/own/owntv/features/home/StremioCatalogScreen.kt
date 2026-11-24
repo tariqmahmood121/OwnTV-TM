@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -1680,7 +1681,7 @@ fun StremioCatalogScreen(
                         else -> {
                             if (searchFailureCount > 0) {
                                 Text(
-                                    stringResource(R.string.moviotv_xp_search_partial, searchFailureCount),
+                                    pluralStringResource(R.plurals.moviotv_xp_search_partial, searchFailureCount, searchFailureCount),
                                     color = XpMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 6.dp),
                                 )
                             }
