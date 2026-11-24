@@ -200,6 +200,9 @@ internal object XpCentralDataSync {
     }
 
     private fun canonicalPreferenceKey(key: String, profileId: Long): String? = when {
+        key == XpHomeConfig.orderKey(profileId) -> "home:order"
+        key == XpHomeConfig.hiddenKey(profileId) -> "home:hidden"
+        key == XpHomeConfig.defaultsKey(profileId) -> "home:defaults"
         key == "xp_library_zoom_$profileId" -> "poster_zoom:library"
         key == "xp_home_zoom_$profileId" -> "poster_zoom:home"
         key == "auto_select_source" || key == "preferred_addon" -> key
@@ -212,6 +215,9 @@ internal object XpCentralDataSync {
     }
 
     private fun localPreferenceKey(key: String, profileId: Long): String? = when {
+        key == "home:order" -> XpHomeConfig.orderKey(profileId)
+        key == "home:hidden" -> XpHomeConfig.hiddenKey(profileId)
+        key == "home:defaults" -> XpHomeConfig.defaultsKey(profileId)
         key == "auto_select_source" || key == "preferred_addon" -> key
         key.startsWith("last_source:") -> "last_source_${profileId}_" + key.removePrefix("last_source:")
         key.startsWith("audio:") -> "xp_audio_${profileId}_" + key.removePrefix("audio:")

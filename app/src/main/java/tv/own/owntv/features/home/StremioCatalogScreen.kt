@@ -169,6 +169,78 @@ data class XpPlaybackSource(
     val legacyIdentity: String = "",
 )
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
+
+/**
+ * Built-in discovery rows reuse the catalogue metadata already available to MovioXP.
+ * Never invent a movie genre or stream endpoint when the provider does not support it.
+ */
+private data class XpDiscoverSource(
+    val categoryId: String,
+    val row: XpCatalogRow,
+    val parameters: Map<String, String> = emptyMap(),
+)
+
+private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDiscoverSource? {
+    val candidates = addons.sortedByDescending { it.builtIn }.flatMap { addon ->
+        addon.catalogs.filter { it.type == "movie" }.map { XpCatalogRow(addon, it) }
+    }
+    fun genre(terms: List<String>): XpDiscoverSource? {
+        for (row in candidates) {
+            val field = row.catalog.extraFields.keys.firstOrNull { it.equals("genre", true) } ?: continue
+            val options = row.catalog.extraFields[field].orEmpty()
+            val match = terms.firstNotNullOfOrNull { expected ->
+                options.firstOrNull { it.equals(expected, true) }
+            }
+            if (match != null && (row.catalog.id == "top" || categoryId.startsWith("genre:"))) {
+                return XpDiscoverSource(categoryId, row, mapOf(field to match))
+            }
+        }
+        // Other installed, permitted metadata catalogues may expose Bollywood or Hindi.
+        if (categoryId == "xp_bollywood") {
+            for (row in candidates) {
+                if (row.catalog.name.contains("Bollywood", ignoreCase = true) ||
+                    row.catalog.name.contains("Hindi Movies", ignoreCase = true)) {
+                    return XpDiscoverSource(categoryId, row)
+                }
+                val field = row.catalog.extraFields.keys.firstOrNull { it.equals("genre", true) } ?: continue
+                val options = row.catalog.extraFields[field].orEmpty()
+                val match = terms.firstNotNullOfOrNull { expected ->
+                    options.firstOrNull { it.equals(expected, true) }
+                }
+                if (match != null) return XpDiscoverSource(categoryId, row, mapOf(field to match))
+            }
+        }
+        return null
+    }
+
+    val customGenre = XpHomeConfig.genreName(categoryId)
+    if (customGenre != null) return genre(listOf(customGenre))
+    return when (categoryId) {
+        "xp_trending" -> {
+            val row = candidates.firstOrNull { it.catalog.name.contains("Trending", true) } ?:
+                candidates.firstOrNull { it.catalog.id == "top" }
+            row?.let { XpDiscoverSource(categoryId, it) }
+        }
+        "xp_latest" -> {
+            val row = candidates.firstOrNull { it.catalog.id == "year" }
+            if (row != null) {
+                val field = row.catalog.extraFields.keys.firstOrNull { it.equals("genre", true) }
+                val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR).toString()
+                val supported = field != null && year in row.catalog.extraFields[field].orEmpty()
+                if (supported) XpDiscoverSource(categoryId, row, mapOf(field!! to year))
+                else null
+            } else candidates.firstOrNull {
+                it.catalog.name.contains("Latest", true) || it.catalog.name.equals("New", true)
+            }?.let { XpDiscoverSource(categoryId, it) }
+        }
+        "xp_horror" -> genre(listOf("Horror"))
+        "xp_action" -> genre(listOf("Action"))
+        "xp_thriller" -> genre(listOf("Thriller"))
+        "xp_bollywood" -> genre(listOf("Bollywood", "Hindi", "Indian"))
+        else -> null
+    }
+}
+
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
 private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
 
@@ -575,6 +647,13 @@ fun StremioCatalogScreen(
     val activeProfileName = activeProfile?.name.orEmpty()
     val favoritesProfileId = activeProfileId ?: -1L
     val addons = remember { mutableStateListOf<XpAddon>() }
+    var homeSettings by remember(favoritesProfileId) {
+        mutableStateOf(XpHomeConfig.read(context, favoritesProfileId))
+    }
+    var showAddHomeCategory by remember { mutableStateOf(false) }
+    val discoverMetas = remember { mutableStateMapOf<String, List<XpMeta>>() }
+    val discoverLoading = remember { mutableStateMapOf<String, Boolean>() }
+    val discoverLastFetch = remember { mutableStateMapOf<String, Long>() }
     val directoryAddons = remember { mutableStateListOf<XpAddonListing>() }
     val rows = remember { mutableStateListOf<XpCatalogRow>() }
     val metas = remember { mutableStateMapOf<String, List<XpMeta>>() }
@@ -638,6 +717,17 @@ fun StremioCatalogScreen(
         onDispose { libraryPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     val playbackPrefs = remember(context) { context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE) }
+    DisposableEffect(playbackPrefs, favoritesProfileId) {
+        val refresh = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == XpHomeConfig.orderKey(favoritesProfileId) ||
+                key == XpHomeConfig.hiddenKey(favoritesProfileId) ||
+                key == XpHomeConfig.defaultsKey(favoritesProfileId)) {
+                homeSettings = XpHomeConfig.read(context, favoritesProfileId)
+            }
+        }
+        playbackPrefs.registerOnSharedPreferenceChangeListener(refresh)
+        onDispose { playbackPrefs.unregisterOnSharedPreferenceChangeListener(refresh) }
+    }
     var autoSelectSource by remember { mutableStateOf(playbackPrefs.getBoolean("auto_select_source", true)) }
     var preferredAddonUrl by remember { mutableStateOf(playbackPrefs.getString("preferred_addon", "").orEmpty()) }
     var autoStartedItem by remember { mutableStateOf<String?>(null) }
@@ -686,11 +776,36 @@ fun StremioCatalogScreen(
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
+    val visibleHomeIds = if (page == "home") homeSettings.visibleDiscoverIds() else emptyList()
+    val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, addons.toList()) }
+
+    LaunchedEffect(page, favoritesProfileId, homeSettings, addons.toList()) {
+        if (page != "home") return@LaunchedEffect
+        val now = System.currentTimeMillis()
+        for (id in homeSettings.visibleDiscoverIds()) {
+            val source = xpDiscoverSource(id, addons.toList()) ?: continue
+            val cacheKey = "$id|${source.row.addon.url}|${source.row.catalog.id}|${source.parameters}"
+            val valid = discoverMetas.containsKey(cacheKey) &&
+                now - (discoverLastFetch[cacheKey] ?: 0L) < 1800000L
+            if (valid || discoverLoading[cacheKey] == true) continue
+            discoverLoading[cacheKey] = true
+            launch {
+                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters) }
+                    .onSuccess {
+                        discoverMetas[cacheKey] = it
+                        discoverLastFetch[cacheKey] = System.currentTimeMillis()
+                    }
+                discoverLoading[cacheKey] = false
+            }
+        }
+    }
+
     fun catalogKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}"
     fun fetchRows() {
         rows.clear()
-        val catalogRows = addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
+        val catalogRows = if (page == "home" && !homeSettings.showDefaultCatalogs) emptyList()
+            else addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
         rows.addAll(catalogRows.filter { row ->
             val typeMatches = when (page) {
                 "movies" -> row.catalog.type.equals("movie", true)
@@ -722,6 +837,16 @@ fun StremioCatalogScreen(
     }
 
     val availableCatalogRows = addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
+    val availableHomeGenres = availableCatalogRows
+        .filter { it.catalog.type == "movie" }
+        .filter { it.catalog.id == "top" || it.catalog.name.contains("genre", true) }
+        .flatMap { it.catalog.extraFields.entries }
+        .filter { it.key.equals("genre", true) }
+        .flatMap { it.value }
+        .distinct()
+        .filterNot { it.trim().matches(Regex("\\d{4}")) }
+        .filter { XpHomeConfig.idForGenre(it) != null }
+        .sorted()
     val activeType = when (page) {
         "movies" -> "movie"
         "series" -> "series"
@@ -956,7 +1081,7 @@ fun StremioCatalogScreen(
         busy = false
         if (centralConnection != null) syncAddonsWithCentral()
     }
-    LaunchedEffect(page, discoveryType, discoveryCatalog, discoveryGenre, addons.size) {
+    LaunchedEffect(page, discoveryType, discoveryCatalog, discoveryGenre, addons.size, homeSettings.showDefaultCatalogs) {
         if (page == "home" || page == "discover" || page in browsePages) fetchRows()
     }
     LaunchedEffect(page, searchText, addons.size) {
@@ -1554,6 +1679,80 @@ fun StremioCatalogScreen(
                     Text(stringResource(R.string.moviotv_xp_nav_settings), color = XpText,
                         fontSize = if (compactPhone) 24.sp else 27.sp, fontWeight = FontWeight.Bold)
                     XpSettingsAccordion(
+                        title = stringResource(R.string.movioxp_home_settings_title),
+                        summary = stringResource(R.string.movioxp_home_settings_summary),
+                        expanded = expandedSettingsGroup == 4,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 4) null else 4 },
+                    ) {
+                        Text(stringResource(R.string.movioxp_home_settings_hint), color = XpMuted, fontSize = 13.sp)
+                        XpSettingsOption(
+                            title = stringResource(R.string.movioxp_home_default_rows),
+                            selected = homeSettings.showDefaultCatalogs,
+                        ) {
+                            homeSettings = homeSettings.copy(showDefaultCatalogs = !homeSettings.showDefaultCatalogs)
+                            XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                        }
+                        homeSettings.order.forEachIndexed { index, id ->
+                            val category = XpHomeConfig.categories.firstOrNull { it.id == id }
+                            val title = category?.let { stringResource(it.labelRes) }
+                                ?: XpHomeConfig.genreName(id)
+                            if (title != null) {
+                                XpHomeCategoryControls(
+                                    title = title,
+                                    enabled = id !in homeSettings.hidden,
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < homeSettings.order.lastIndex,
+                                    onToggle = {
+                                        val hidden = homeSettings.hidden.toMutableSet()
+                                        if (!hidden.add(id)) hidden.remove(id)
+                                        homeSettings = homeSettings.copy(hidden = hidden)
+                                        XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                                    },
+                                    onMoveUp = {
+                                        homeSettings = XpHomeConfig.move(homeSettings, index, -1)
+                                        XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                                    },
+                                    onMoveDown = {
+                                        homeSettings = XpHomeConfig.move(homeSettings, index, 1)
+                                        XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                                    },
+                                )
+                                if (XpHomeConfig.genreName(id) != null) {
+                                    XpSettingsOption(
+                                        title = stringResource(R.string.movioxp_home_remove_category, title),
+                                    ) {
+                                        homeSettings = XpHomeConfig.remove(homeSettings, id)
+                                        XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                                    }
+                                }
+                            }
+                        }
+                        XpSettingsOption(
+                            title = stringResource(R.string.movioxp_home_add_category),
+                            selected = showAddHomeCategory,
+                        ) { showAddHomeCategory = !showAddHomeCategory }
+                        if (showAddHomeCategory) {
+                            val available = availableHomeGenres.filter { genre ->
+                                val id = XpHomeConfig.idForGenre(genre)
+                                id != null && id !in homeSettings.order
+                            }
+                            if (available.isEmpty()) {
+                                Text(stringResource(R.string.movioxp_home_no_categories),
+                                    color = XpMuted, fontSize = 13.sp)
+                            }
+                            available.forEach { genre ->
+                                XpSettingsOption(genre) {
+                                    val id = XpHomeConfig.idForGenre(genre)
+                                    if (id != null) {
+                                        homeSettings = XpHomeConfig.add(homeSettings, id)
+                                        XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                                        showAddHomeCategory = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    XpSettingsAccordion(
                         title = stringResource(R.string.moviotv_xp_settings_display_heading),
                         summary = stringResource(R.string.moviotv_xp_settings_display_summary),
                         expanded = expandedSettingsGroup == 0,
@@ -1817,7 +2016,54 @@ fun StremioCatalogScreen(
                             }
                         }
                     }
-                    if (page == "home" && rows.isEmpty()) {
+
+                    if (page == "home") {
+                        items(visibleHomeIds, key = { "discover:$it" }) { id ->
+                            val category = XpHomeConfig.categories.firstOrNull { it.id == id }
+                            val label = category?.let { stringResource(it.labelRes) }
+                                ?: XpHomeConfig.genreName(id)
+                            val source = homeSources[id]
+                            if (label != null) {
+                                Column {
+                                    Text(
+                                        label, color = XpText,
+                                        fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 24.dp, top = 6.dp),
+                                    )
+                                    if (source == null) {
+                                        Text(
+                                            stringResource(R.string.movioxp_discover_no_source),
+                                            color = XpMuted, fontSize = 13.sp,
+                                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
+                                        )
+                                    } else {
+                                        val cacheKey = "$id|${source.row.addon.url}|${source.row.catalog.id}|${source.parameters}"
+                                        val titles = discoverMetas[cacheKey].orEmpty()
+                                        if (titles.isEmpty()) {
+                                            Text(
+                                                stringResource(if (discoverLoading[cacheKey] == true)
+                                                    R.string.moviotv_xp_loading_catalogue else R.string.moviotv_xp_no_titles),
+                                                color = XpMuted, fontSize = 13.sp,
+                                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
+                                            )
+                                        } else {
+                                            LazyRow(
+                                                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            ) {
+                                                items(titles, key = { "${it.type}:${it.id}" }) { item ->
+                                                    XpPoster(item, width = 142.dp * homeScale,
+                                                        onLongClick = { openDetails(item, false) },
+                                                        onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (page == "home" && rows.isEmpty() && visibleHomeIds.isEmpty() && continueTitles.isEmpty()) {
                         item(key = "xp-home-empty") {
                             Text(stringResource(R.string.moviotv_xp_empty_description), color = XpMuted, fontSize = 16.sp,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp))

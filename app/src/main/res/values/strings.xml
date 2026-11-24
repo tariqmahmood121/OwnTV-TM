@@ -12,4 +12,25 @@
     <string name="movioxp_account_profiles">Choose a profile for %1$s</string>
     <string name="movioxp_account_menu">Account and profiles</string>
     <string name="movioxp_logout_central">Log out of Central</string>
+    <string name="movioxp_home_settings_title">Home Screen</string>
+    <string name="movioxp_home_settings_summary">Choose, hide and rearrange movie rows</string>
+    <string name="movioxp_home_settings_hint">The built-in Discover categories use your existing catalogue sources. No extra add-on or movie server is installed.</string>
+    <string name="movioxp_home_default_rows">Show other add-on catalogue rows</string>
+    <string name="movioxp_home_trending">Trending</string>
+    <string name="movioxp_home_latest">Latest</string>
+    <string name="movioxp_home_horror">Horror</string>
+    <string name="movioxp_home_action">Action</string>
+    <string name="movioxp_home_thriller">Thriller</string>
+    <string name="movioxp_home_bollywood">Bollywood</string>
+    <string name="movioxp_home_on">On</string>
+    <string name="movioxp_home_off">Off</string>
+    <string name="movioxp_home_row_toggle">%1$s · %2$s</string>
+    <string name="movioxp_home_move_up">Move %1$s up</string>
+    <string name="movioxp_home_move_down">Move %1$s down</string>
+    <string name="movioxp_discover_no_source">This category needs an installed catalogue source that supports it.</string>
+    <string name="movioxp_home_add_category">Add Category</string>
+    <string name="movioxp_home_remove_category">Remove %1$s</string>
+    <string name="movioxp_home_no_categories">No additional movie genres are advertised by installed catalogues.</string>
+    <string name="movioxp_home_arrow_up">↑</string>
+    <string name="movioxp_home_arrow_down">↓</string>
 </resources>

@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,6 +117,69 @@ internal fun XpSettingsOption(
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick).focusable(enabled)
             .padding(horizontal = 14.dp, vertical = 12.dp),
+    )
+}
+
+/**
+ * Compact, focusable Home row controls for phone and D-pad TV remotes.
+ * One toggle and two reorder controls, no drag gestures required on TV.
+ */
+@Composable
+internal fun XpHomeCategoryControls(
+    title: String,
+    enabled: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onToggle: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        XpHomeButton(
+            label = stringResource(R.string.movioxp_home_row_toggle, title,
+                stringResource(if (enabled) R.string.movioxp_home_on else R.string.movioxp_home_off)),
+            selected = enabled, active = true, modifier = Modifier.weight(1f), onClick = onToggle,
+        )
+        XpHomeButton(
+            label = stringResource(R.string.movioxp_home_arrow_up), accessibility = stringResource(R.string.movioxp_home_move_up, title),
+            active = canMoveUp, modifier = Modifier.width(49.dp), onClick = onMoveUp,
+        )
+        XpHomeButton(
+            label = stringResource(R.string.movioxp_home_arrow_down), accessibility = stringResource(R.string.movioxp_home_move_down, title),
+            active = canMoveDown, modifier = Modifier.width(49.dp), onClick = onMoveDown,
+        )
+    }
+}
+
+@Composable
+private fun XpHomeButton(
+    label: String,
+    accessibility: String = label,
+    selected: Boolean = false,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val palette = OwnTVTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Text(
+        label,
+        color = if (!active) palette.onSurfaceVariant.copy(alpha = .55f)
+                else if (focused || selected) palette.primary else palette.onSurface,
+        fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.heightIn(min = 47.dp).clip(shape)
+            .background(if (focused || selected) palette.primary.copy(alpha = .15f)
+                else palette.surfaceContainerHigh.copy(alpha = .45f))
+            .border(if (focused) 2.dp else 1.dp,
+                if (focused) palette.primary else Color.Transparent, shape)
+            .semantics { contentDescription = accessibility }
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(enabled = active, onClick = onClick)
+            .focusable(active)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
     )
 }
 
