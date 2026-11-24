@@ -7,4 +7,7 @@
     <string name="movioxp_profile_unavailable">Central profile is no longer available for this account</string>
     <string name="movioxp_profile_wrong_account">Local profile belongs to a different Central account</string>
     <string name="movioxp_default_profile_name">Profile</string>
+    <string name="movioxp_switch_profile">Switch profile</string>
+    <string name="movioxp_guest_label">Guest</string>
+    <string name="movioxp_account_profiles">Choose a profile for %1$s</string>
 </resources>

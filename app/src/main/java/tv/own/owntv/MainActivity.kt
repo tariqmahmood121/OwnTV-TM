@@ -429,9 +429,14 @@ open class MainActivity : ComponentActivity() {
             // tests. The policy checks the Room list, active-id membership, and authentication as
             // one decision; a future branch must not accidentally make the shell depend on only
             // one of the asynchronous inputs again.
-            val gateRequired = shouldShowProfileGate || switchProfileRequested
             val authenticatedForActiveProfile = loadedProfileId != null &&
                 authenticatedProfileId == loadedProfileId
+            // Central login must offer profile selection, even with one unlocked profile.
+            val gateRequired = shouldShowProfileGate || switchProfileRequested ||
+                (centralAccountId != null && !authenticatedForActiveProfile)
+            LaunchedEffect(centralAccountId) {
+                if (centralAccountId != null) gateSession.requestSwitchProfile()
+            }
             val shellReady = activeProfileKnown && tv.own.owntv.features.profiles.shellMayCompose(
                 profileState = profileState,
                 activeProfileId = loadedProfileId,

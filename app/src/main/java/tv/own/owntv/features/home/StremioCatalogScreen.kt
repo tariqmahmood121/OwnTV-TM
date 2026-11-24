@@ -35,6 +35,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -552,6 +558,7 @@ fun StremioCatalogScreen(
     onPlayStreamCandidates: ((List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit)? = null,
     initialPage: String = "home",
     showBottomNavigation: Boolean = true,
+    onSwitchProfile: (() -> Unit)? = null,
     onOpenAppSettings: (() -> Unit)? = null,
     onOpenSettingsGroup: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -574,7 +581,6 @@ fun StremioCatalogScreen(
     var address by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var accountIconFocused by remember { mutableStateOf(false) }
     var showAddonRemote by remember { mutableStateOf(false) }
     val addonRemoteServer = remember(context) { XpAddonRemoteServer(context) }
     val addonRemoteState by addonRemoteServer.state.collectAsStateWithLifecycle()
@@ -608,6 +614,12 @@ fun StremioCatalogScreen(
     var searchFailureCount by remember { mutableStateOf(0) }
     var continueTitles by remember(favoritesProfileId) { mutableStateOf(XpContinueStore.read(context, favoritesProfileId)) }
     var favoriteTitles by remember(favoritesProfileId) { mutableStateOf(XpFavoritesStore.read(context, favoritesProfileId)) }
+    val libraryTitles = (continueTitles + favoriteTitles).distinctBy { it.type to it.id }
+    val libraryPrefs = remember(context) { context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE) }
+    val libraryZoomKey = "xp_library_zoom_$favoritesProfileId"
+    var libraryScale by remember(libraryZoomKey) {
+        mutableStateOf(libraryPrefs.getFloat(libraryZoomKey, 1f).coerceIn(0.65f, 1.85f))
+    }
     val playbackPrefs = remember(context) { context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE) }
     var autoSelectSource by remember { mutableStateOf(playbackPrefs.getBoolean("auto_select_source", true)) }
     var preferredAddonUrl by remember { mutableStateOf(playbackPrefs.getString("preferred_addon", "").orEmpty()) }
@@ -1053,17 +1065,15 @@ fun StremioCatalogScreen(
                     }
                     DrawOwnTVIcon(OwnTVIcon.SEARCH, XpText, Modifier.size(if (compactPhone) 19.dp else 24.dp))
                 }
-                Box(
-                    Modifier.size(if (compactPhone) 42.dp else 56.dp).clip(RoundedCornerShape(18.dp))
-                        .background(if (accountIconFocused) XpFocus.copy(alpha = .3f) else XpPanel)
-                        .border(if (accountIconFocused) 3.dp else 1.dp, if (accountIconFocused) XpFocus else Color(0xFF3A3144), RoundedCornerShape(18.dp))
-                        .clickable { page = "central" }
-                        .onFocusChanged { accountIconFocused = it.isFocused }
-                        .focusable(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    DrawOwnTVIcon(OwnTVIcon.PERSON, XpText, Modifier.size(if (compactPhone) 23.dp else 28.dp))
-                }
+                XpAccountProfileBadge(
+                    displayName = activeProfileName,
+                    signedIn = centralConnection != null,
+                    compact = compactPhone,
+                    onClick = {
+                        if (centralConnection != null && onSwitchProfile != null) onSwitchProfile()
+                        else page = "central"
+                    },
+                )
             } else Row(
                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1074,6 +1084,15 @@ fun StremioCatalogScreen(
                     if (activeProfileName.isNotBlank()) Text(activeProfileName, color = XpMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Text(stringResource(when (page) { "movies" -> R.string.moviotv_nav_movies; "series" -> R.string.moviotv_nav_series; "live" -> R.string.moviotv_nav_live_tv; "search" -> R.string.moviotv_xp_nav_search; "library" -> R.string.moviotv_xp_nav_library; "addons" -> R.string.moviotv_xp_nav_addons; "settings" -> R.string.moviotv_xp_nav_settings; "home" -> R.string.moviotv_nav_home; else -> R.string.moviotv_xp_nav_discover }), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
+                XpAccountProfileBadge(
+                    displayName = activeProfileName,
+                    signedIn = centralConnection != null,
+                    compact = false,
+                    onClick = {
+                        if (centralConnection != null && onSwitchProfile != null) onSwitchProfile()
+                        else page = "central"
+                    },
+                )
                 if (page != "settings") XpAction(stringResource(R.string.moviotv_xp_nav_settings), false) { page = "settings"; adding = false }
                 if (showBottomNavigation) XpAction(stringResource(R.string.moviotv_nav_more), false) {
                     runCatching { bottomNavigationFocus.requestFocus() }
@@ -1659,15 +1678,58 @@ fun StremioCatalogScreen(
                 }
                 if (showXpAbout) XpAboutDialog(onDismiss = { showXpAbout = false })
             } else if (page == "library") {
-                if (continueTitles.isEmpty()) {
+                if (libraryTitles.isEmpty()) {
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text(stringResource(R.string.moviotv_xp_library_empty), color = XpMuted, fontSize = 16.sp)
                     }
                 } else {
-                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
-                        item { Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
-                        items(continueTitles, key = { "library:${it.type}:${it.id}" }) { title ->
-                            XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                    Column(Modifier.weight(1f).fillMaxWidth()) {
+                        Text(
+                            stringResource(R.string.moviotv_xp_nav_library),
+                            color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 8.dp),
+                        )
+                        BoxWithConstraints(
+                            Modifier.weight(1f).fillMaxWidth()
+                                .pointerInput(libraryZoomKey, showBottomNavigation) {
+                                    // Preserve one-finger scrolling and remote navigation.
+                                    if (showBottomNavigation) awaitEachGesture {
+                                        do {
+                                            val event = awaitPointerEvent()
+                                            if (event.changes.count { it.pressed } >= 2) {
+                                                val next = (libraryScale * event.calculateZoom()).coerceIn(0.65f, 1.85f)
+                                                if (kotlin.math.abs(next - libraryScale) > 0.003f) {
+                                                    libraryScale = next
+                                                    libraryPrefs.edit().putFloat(libraryZoomKey, next).apply()
+                                                    event.changes.forEach { it.consume() }
+                                                }
+                                            }
+                                        } while (event.changes.any { it.pressed })
+                                    }
+                                },
+                        ) {
+                            val targetWidth = (if (compactPhone) 142.dp else 186.dp) * libraryScale
+                            val columns = ((maxWidth - 36.dp).value / (targetWidth.value + 12f))
+                                .toInt().coerceIn(2, 12)
+                            val width = ((maxWidth - 36.dp - 12.dp * (columns - 1)) / columns)
+                                .coerceAtLeast(72.dp)
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(columns),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                items(libraryTitles.size, key = { index ->
+                                    val title = libraryTitles[index]
+                                    "library:${title.type}:${title.id}"
+                                }) { index ->
+                                    val title = libraryTitles[index]
+                                    XpPoster(title, width = width,
+                                        onLongClick = { openDetails(title, false) },
+                                        onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                                }
+                            }
                         }
                     }
                 }
@@ -2041,6 +2103,34 @@ private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRe
             .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
             .padding(horizontal = 10.dp, vertical = 10.dp),
     )
+}
+
+@Composable
+private fun XpAccountProfileBadge(
+    displayName: String,
+    signedIn: Boolean,
+    compact: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val label = if (signedIn) stringResource(R.string.movioxp_switch_profile)
+        else stringResource(R.string.moviotv_xp_central_login)
+    val letter = displayName.ifBlank { stringResource(R.string.movioxp_guest_label) }
+        .take(1).uppercase()
+    val shape = RoundedCornerShape(if (compact) 15.dp else 20.dp)
+    Box(
+        Modifier.size(if (compact) 42.dp else 56.dp)
+            .clip(shape).background(if (focused) Color(0xFFFFD078) else Color(0xFFFFAB32))
+            .border(if (focused) 3.dp else 1.dp, if (focused) Color.White else Color(0xFFB5791A), shape)
+            .semantics { contentDescription = label }
+            .clickable(onClick = onClick)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(letter, color = Color(0xFF231609), fontWeight = FontWeight.Black,
+            fontSize = if (compact) 21.sp else 26.sp)
+    }
 }
 
 @Composable

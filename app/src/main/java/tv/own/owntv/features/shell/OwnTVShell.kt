@@ -1515,12 +1515,7 @@ fun OwnTVShell(
                             touchMode = movioTouch,
                             profileName = profileName,
                             providerName = playlistLabel,
-                            onProfileClick = {
-                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(
-                                     tv.own.owntv.features.shell.components.SettingsGroup.PROFILE.ordinal, false,
-                                 )
-                                 onSelectSection(MainSection.SETTINGS)
-                             },
+                            onProfileClick = onSwitchProfile,
                             onProviderClick = {
                                 settingsStart = tv.own.owntv.features.shell.components.SettingsStart(-7007, false)
                                 onSelectSection(MainSection.SETTINGS)
@@ -1593,6 +1588,7 @@ fun OwnTVShell(
                                 }
                             },
                             showBottomNavigation = movioTouch,
+                            onSwitchProfile = onSwitchProfile,
                             onOpenAppSettings = {
                                 settingsStart = null
                                 onSelectSection(MainSection.SETTINGS)

@@ -95,6 +95,7 @@ fun MovioLandingScreen(
             onPlayStream = onPlayStream,
             onPlayStreamCandidates = onPlayStreamCandidates,
             showBottomNavigation = true,
+            onSwitchProfile = onProfileClick,
             onOpenAppSettings = onOpenAppSettings,
             onOpenSettingsGroup = onOpenSettingsGroup,
             modifier = modifier.fillMaxSize(),

@@ -78,6 +78,15 @@ fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Mod
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.profiles_gate_title), style = tv.own.owntv.ui.theme.stageText(54, 700), color = tv.own.owntv.ui.theme.StageColors.Text)
+            if (centralAccountId != null) {
+                val username = XpCentralConnectionStore.read(context)?.username.orEmpty()
+                Text(
+                    stringResource(R.string.movioxp_account_profiles, username),
+                    style = tv.own.owntv.ui.theme.stageText(23, 500),
+                    color = tv.own.owntv.ui.theme.StageColors.Muted,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(36.dp))
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
