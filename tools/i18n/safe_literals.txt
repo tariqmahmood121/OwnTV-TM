@@ -182,7 +182,7 @@
 1	assertion	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	This add-on manifest has no supported resources.
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Use a secure HTTPS add-on URL.
 2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	[]
-23	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
+22	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}
 14	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	addons
 21	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	all
