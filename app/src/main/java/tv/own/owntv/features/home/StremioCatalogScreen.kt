@@ -2262,6 +2262,7 @@ fun StremioCatalogScreen(
                 val snapshotKey = "$page|$category"
                 var railQuery by key(page, catalogueProfile) { rememberSaveable { mutableStateOf("") } }
                 val railState = key(page, catalogueProfile) { rememberLazyListState() }
+                var restoreRailFocus by remember(page, catalogueProfile) { mutableStateOf(false) }
                 personalGridState.SaveableStateProvider(snapshotKey) {
                     val pages = remember(catalogueProfile, category) { mutableStateMapOf<Int, XpCatalogueSlice>() }
                     var loadPage by rememberSaveable { mutableIntStateOf(1) }
@@ -2330,6 +2331,8 @@ fun StremioCatalogScreen(
                         categoryQuery = railQuery,
                         onCategoryQuery = { railQuery = it },
                         railState = railState,
+                        restoreRailFocus = restoreRailFocus,
+                        onRailFocusHandled = { restoreRailFocus = false },
                         sortLabels = sortLabels,
                         selectedSort = xpCategorySort(category.takeUnless { library }, sortMode.takeIf { it >= 0 }),
                         onSort = ::changeSort,
@@ -2340,10 +2343,11 @@ fun StremioCatalogScreen(
                         canLoadMore = firstPage == null && pages[loadPage]?.next != null,
                         onLoadMore = { if (!pageLoading) loadPage = pages[loadPage]?.next ?: loadPage },
                         onRetry = { reload = System.currentTimeMillis() },
-                        onCategory = {
-                            if (library) libraryCategory = it else {
-                                discoverCategory = it
-                                pagePrefs.edit().putString(catalogueProfile, it).apply()
+                        onCategory = { id, fromRail ->
+                            restoreRailFocus = fromRail && id != category
+                            if (library) libraryCategory = id else {
+                                discoverCategory = id
+                                pagePrefs.edit().putString(catalogueProfile, id).apply()
                             }
                         },
                         onZoom = { next ->
@@ -2839,6 +2843,8 @@ private fun XpBrowseGrid(
     categoryQuery: String,
     onCategoryQuery: (String) -> Unit,
     railState: androidx.compose.foundation.lazy.LazyListState,
+    restoreRailFocus: Boolean,
+    onRailFocusHandled: () -> Unit,
     sortLabels: List<String>,
     selectedSort: Int,
     onSort: (Int) -> Unit,
@@ -2849,7 +2855,7 @@ private fun XpBrowseGrid(
     canLoadMore: Boolean,
     onLoadMore: () -> Unit,
     onRetry: () -> Unit,
-    onCategory: (String) -> Unit,
+    onCategory: (String, Boolean) -> Unit,
     onZoom: (Float) -> Unit,
     restorePoster: String?,
     onFocused: (String) -> Unit,
@@ -2862,6 +2868,13 @@ private fun XpBrowseGrid(
     val categoryFocus = remember { FocusRequester() }
     val gridFocus = remember { FocusRequester() }
     val filterFocus = remember { FocusRequester() }
+    LaunchedEffect(restoreRailFocus) {
+        if (restoreRailFocus) {
+            withFrameNanos { }
+            runCatching { categoryFocus.requestFocus() }
+            onRailFocusHandled()
+        }
+    }
     var titleQuery by rememberSaveable { mutableStateOf("") }
     val state = rememberLazyGridState()
     val shown = remember(titles, titleQuery) { titles.filter { it.name.contains(titleQuery.trim(), true) } }
@@ -2918,7 +2931,7 @@ private fun XpBrowseGrid(
                                     categoryFocus.takeIf { category == entry.id || (index == 0 && matching.none { it.id == category }) },
                                     gridFocus.takeIf { wide },
                                 ) {
-                                    onCategory(entry.id)
+                                    onCategory(entry.id, wide)
                                     sidebar = false
                                 }
                             }
