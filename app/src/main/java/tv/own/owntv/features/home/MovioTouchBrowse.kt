@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,17 +105,26 @@ fun MovioTouchBottomNav(
 }
 
 @Composable
-private fun MovioTouchSearch(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun MovioTouchSearch(
+    value: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    hint: String = stringResource(R.string.moviotv_search_titles),
+    background: Color = Color(0xFF30213E),
+    outline: Color = Color(0xFF6B4B85),
+    textColor: Color = Color.White,
+    hintColor: Color = pale,
+) {
     Box(
         modifier = modifier.height(44.dp).clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF30213E)).border(1.dp, Color(0xFF6B4B85), RoundedCornerShape(12.dp))
+            .background(background).border(1.dp, outline, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (value.isEmpty()) Text(stringResource(R.string.moviotv_search_titles), color = pale, fontSize = 14.sp)
+        if (value.isEmpty()) Text(hint, color = hintColor, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicTextField(
             value = value, onValueChange = onChange,
-            singleLine = true, textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+            singleLine = true, textStyle = TextStyle(color = textColor, fontSize = 15.sp),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(purple),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -124,16 +132,22 @@ private fun MovioTouchSearch(value: String, onChange: (String) -> Unit, modifier
 }
 
 @Composable
-private fun MovioBrowseButton(label: String, onClick: () -> Unit) {
+internal fun MovioBrowseButton(
+    label: String,
+    onClick: () -> Unit,
+    background: Color = Color(0xFF50326D),
+    foreground: Color = Color.White,
+    modifier: Modifier = Modifier,
+) {
     var focused by remember { mutableStateOf(false) }
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp))
-            .background(if (focused) purple.copy(alpha = .32f) else Color(0xFF50326D))
+        modifier.clip(RoundedCornerShape(10.dp))
+            .background(if (focused) purple.copy(alpha = .32f) else background)
             .border(if (focused) 2.dp else 1.dp, if (focused) purple else Color.Transparent, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
-        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium)
+        Text(label, color = foreground, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium)
     }
 }
 

@@ -73,6 +73,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1541,7 +1542,16 @@ fun StremioCatalogScreen(
                     contentDescription = stringResource(R.string.moviotv_xp_title),
                     modifier = Modifier.size(if (compactPhone) 34.dp else 42.dp).clickable { page = "home" },
                 )
-                Row(
+                if (page == "discover" || page == "library") {
+                    Text(
+                        stringResource(if (page == "discover") R.string.moviotv_xp_nav_discover else R.string.moviotv_xp_nav_library),
+                        color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                    )
+                    MovioBrowseButton(stringResource(R.string.moviotv_xp_nav_search), {
+                        returnPage = page
+                        page = "search"
+                    }, background = XpPanel, foreground = XpText)
+                } else Row(
                     Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(XpPanel)
                         .padding(horizontal = if (compactPhone) 12.dp else 18.dp, vertical = if (compactPhone) 11.dp else 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1658,8 +1668,8 @@ fun StremioCatalogScreen(
                         modifier = Modifier.clickable { page = "search" }.padding(start = 8.dp))
                 }
             }
-            if (page == "discover" || page == "library" || page in browsePages) {
-                val currentSort = xpCategorySort(discoverCategory.takeIf { page == "discover" }, sortMode.takeIf { it >= 0 })
+            if (page in browsePages) {
+                val currentSort = effectiveSort
                 XpFilterDropdown(
                     title = stringResource(R.string.movioxp_sort),
                     selectedLabel = sortLabels[currentSort],
@@ -2250,6 +2260,8 @@ fun StremioCatalogScreen(
                 val source = providerRow?.let { XpDiscoverSource(category, it) } ?: xpDiscoverSource(category, installedAddons)
                 val centralCategory = if (category == "movies") "all-movies" else XpCentralMetadata.category(category)
                 val snapshotKey = "$page|$category"
+                var railQuery by key(page, catalogueProfile) { rememberSaveable { mutableStateOf("") } }
+                val railState = key(page, catalogueProfile) { rememberLazyListState() }
                 personalGridState.SaveableStateProvider(snapshotKey) {
                     val pages = remember(catalogueProfile, category) { mutableStateMapOf<Int, XpCatalogueSlice>() }
                     var loadPage by rememberSaveable { mutableIntStateOf(1) }
@@ -2315,6 +2327,12 @@ fun StremioCatalogScreen(
                         options = options,
                         category = category,
                         focusScope = snapshotKey,
+                        categoryQuery = railQuery,
+                        onCategoryQuery = { railQuery = it },
+                        railState = railState,
+                        sortLabels = sortLabels,
+                        selectedSort = xpCategorySort(category.takeUnless { library }, sortMode.takeIf { it >= 0 }),
+                        onSort = ::changeSort,
                         titles = gridTitles,
                         scale = if (library) libraryScale else discoverScale,
                         loading = pageLoading,
@@ -2818,6 +2836,12 @@ private fun XpBrowseGrid(
     options: List<XpBrowseCategory>,
     category: String,
     focusScope: String,
+    categoryQuery: String,
+    onCategoryQuery: (String) -> Unit,
+    railState: androidx.compose.foundation.lazy.LazyListState,
+    sortLabels: List<String>,
+    selectedSort: Int,
+    onSort: (Int) -> Unit,
     titles: List<XpMeta>,
     scale: Float,
     loading: Boolean,
@@ -2834,9 +2858,10 @@ private fun XpBrowseGrid(
     modifier: Modifier = Modifier,
 ) {
     var sidebar by rememberSaveable { mutableStateOf(false) }
-    var categorySearch by rememberSaveable { mutableStateOf(false) }
-    var titleSearch by rememberSaveable { mutableStateOf(false) }
-    var categoryQuery by rememberSaveable { mutableStateOf("") }
+    var filterOpen by rememberSaveable { mutableStateOf(false) }
+    val categoryFocus = remember { FocusRequester() }
+    val gridFocus = remember { FocusRequester() }
+    val filterFocus = remember { FocusRequester() }
     var titleQuery by rememberSaveable { mutableStateOf("") }
     val state = rememberLazyGridState()
     val shown = remember(titles, titleQuery) { titles.filter { it.name.contains(titleQuery.trim(), true) } }
@@ -2856,49 +2881,93 @@ private fun XpBrowseGrid(
     }
 
     BoxWithConstraints(modifier.padding(horizontal = 12.dp)) {
-        val wide = maxWidth >= 620.dp
-        BackHandler(enabled = !LocalXpPlaybackActive.current && !wide && sidebar) { sidebar = false }
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!wide) XpAction(
-                    options.firstOrNull { it.id == category }?.label ?: stringResource(R.string.moviotv_categories), false,
-                ) { sidebar = !sidebar }
-                XpAction(stringResource(R.string.movioxp_filter_titles), false) {
-                    titleSearch = !titleSearch
-                    if (!titleSearch) titleQuery = ""
-                }
-                if (failed) XpAction(stringResource(R.string.moviotv_xp_refresh), loading, onClick = onRetry)
-            }
-            if (titleSearch) XpGridSearch(titleQuery, stringResource(R.string.movioxp_filter_titles)) { titleQuery = it }
-            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (wide || sidebar) {
-                    Column(Modifier.width(if (wide) 188.dp else 140.dp).fillMaxHeight()
-                        .clip(RoundedCornerShape(12.dp)).background(XpPanel).padding(4.dp)) {
-                        XpAction(stringResource(R.string.movioxp_filter_categories), false) {
-                            categorySearch = !categorySearch
-                            if (!categorySearch) categoryQuery = ""
-                        }
-                        if (categorySearch) XpGridSearch(categoryQuery, stringResource(R.string.movioxp_filter_categories)) { categoryQuery = it }
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            val matching = options.filter { it.label.contains(categoryQuery.trim(), true) }
-                            matching.forEachIndexed { index, entry ->
-                                if (entry.group != null && matching.getOrNull(index - 1)?.group != entry.group) {
-                                    item {
-                                        Text(entry.group, color = XpMuted, fontSize = 12.sp, modifier = Modifier.padding(6.dp))
-                                    }
+        val wide = maxWidth >= 560.dp
+        val railWidth = (maxWidth * 0.30f).coerceIn(166.dp, 260.dp)
+        val categoryLabel = options.firstOrNull { it.id == category }?.label ?: stringResource(R.string.moviotv_categories)
+        BackHandler(enabled = !LocalXpPlaybackActive.current && (filterOpen || (!wide && sidebar))) {
+            if (filterOpen) {
+                filterOpen = false
+                runCatching { filterFocus.requestFocus() }
+            } else sidebar = false
+        }
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (wide || sidebar) {
+                Column(
+                    (if (wide) Modifier.width(railWidth) else Modifier.fillMaxWidth()).fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp)).background(XpPanel).padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (!wide) MovioBrowseButton(stringResource(R.string.moviotv_categories), { sidebar = false },
+                        background = XpBackground, foreground = XpText)
+                    MovioTouchSearch(
+                        categoryQuery, onCategoryQuery, Modifier.fillMaxWidth(),
+                        hint = stringResource(R.string.movioxp_filter_categories),
+                        background = XpBackground, outline = XpAccent.copy(alpha = .45f), textColor = XpText, hintColor = XpMuted,
+                    )
+                    val matching = options.filter { it.label.contains(categoryQuery.trim(), true) }
+                    LazyColumn(state = railState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        matching.forEachIndexed { index, entry ->
+                            if (entry.group != null && matching.getOrNull(index - 1)?.group != entry.group) {
+                                item {
+                                    Text(entry.group, color = XpMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 10.dp, top = 10.dp, bottom = 4.dp))
                                 }
-                                item(key = entry.id) {
-                                    XpSettingsOption(entry.label, selected = category == entry.id) {
-                                        onCategory(entry.id)
-                                        sidebar = false
-                                    }
+                            }
+                            item(key = entry.id) {
+                                XpGenreRow(entry.label, category == entry.id,
+                                    categoryFocus.takeIf { category == entry.id || (index == 0 && matching.none { it.id == category }) },
+                                    gridFocus.takeIf { wide },
+                                ) {
+                                    onCategory(entry.id)
+                                    sidebar = false
                                 }
                             }
                         }
                     }
                 }
-                if (wide || !sidebar) BoxWithConstraints(
-                    Modifier.weight(1f).fillMaxHeight().pointerInput(Unit) {
+            }
+            if (wide || !sidebar) Column(
+                Modifier.weight(1f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!wide) MovioBrowseButton(stringResource(R.string.moviotv_categories), { sidebar = true; filterOpen = false },
+                    background = XpPanel, foreground = XpText)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    MovioTouchSearch(
+                        titleQuery, { titleQuery = it }, Modifier.weight(1f),
+                        hint = stringResource(R.string.movioxp_filter_titles),
+                        background = XpPanel, outline = XpAccent.copy(alpha = .55f), textColor = XpText, hintColor = XpMuted,
+                    )
+                    MovioBrowseButton(
+                        stringResource(R.string.movioxp_grid_filter, stringResource(
+                            if (filterOpen) R.string.moviotv_xp_filter_expanded else R.string.moviotv_xp_filter_collapsed)),
+                        { filterOpen = !filterOpen }, background = XpAccent.copy(alpha = .42f), foreground = XpText,
+                        modifier = Modifier.focusRequester(filterFocus),
+                    )
+                }
+                if (filterOpen) {
+                    Column(Modifier.fillMaxWidth().heightIn(max = 210.dp).clip(RoundedCornerShape(12.dp))
+                        .background(XpPanel).verticalScroll(rememberScrollState()).padding(6.dp)) {
+                        Text(stringResource(R.string.movioxp_sort), color = XpMuted, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                        sortLabels.forEachIndexed { index, label ->
+                            XpGenreRow(label, index == selectedSort, null, null) {
+                                onSort(index)
+                                filterOpen = false
+                                runCatching { filterFocus.requestFocus() }
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(categoryLabel, color = XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (failed) XpAction(stringResource(R.string.moviotv_xp_refresh), loading, onClick = onRetry)
+                }
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().weight(1f).pointerInput(Unit) {
                         awaitEachGesture {
                             do {
                                 val event = awaitPointerEvent()
@@ -2920,8 +2989,9 @@ private fun XpBrowseGrid(
                             else -> R.string.moviotv_xp_no_titles
                         }), color = XpMuted, modifier = Modifier.align(Alignment.Center),
                     )
-                    val columns = (maxWidth.value / (132f * scale + 8f)).toInt().coerceIn(2, 12)
-                    val width = ((maxWidth - 8.dp * (columns - 1)) / columns).coerceAtLeast(60.dp)
+                    val columns = (maxWidth.value / (132f * scale + 8f)).toInt()
+                        .coerceIn(if (maxWidth >= 250.dp) 2 else 1, 12)
+                    val width = (maxWidth - 8.dp * (columns - 1)) / columns
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns), state = state, modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(vertical = 6.dp),
@@ -2930,24 +3000,23 @@ private fun XpBrowseGrid(
                     ) {
                         items(shown.size, key = { index -> homePosterKey(focusScope, shown[index]) }) { index ->
                             val item = shown[index]
-                            HomeCataloguePoster(item, focusScope, width, restorePoster, onFocused,
-                                onLongClick = { onDetails(item, false) },
-                                onVeryLongClick = { onDetails(item, true) },
-                            ) { onOpen(item) }
+                            Box(Modifier.onPreviewKeyEvent { event ->
+                                wide && index % columns == 0 &&
+                                    event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT &&
+                                    runCatching { categoryFocus.requestFocus() }.getOrDefault(false)
+                            }) {
+                                HomeCataloguePoster(item, focusScope, width, restorePoster, onFocused,
+                                    onLongClick = { onDetails(item, false) },
+                                    onVeryLongClick = { onDetails(item, true) },
+                                    initialRequester = gridFocus.takeIf { index == state.firstVisibleItemIndex },
+                                ) { onOpen(item) }
+                            }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun XpGridSearch(value: String, hint: String, onChange: (String) -> Unit) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(XpPanel).padding(10.dp)) {
-        if (value.isEmpty()) Text(hint, color = XpMuted, fontSize = 13.sp)
-        BasicTextField(value, onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
-            textStyle = TextStyle(color = XpText, fontSize = 14.sp))
     }
 }
 
@@ -3014,7 +3083,7 @@ private fun XpGenreRail(
 }
 
 @Composable
-private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRequester?, rightFocusRequester: FocusRequester, onClick: () -> Unit) {
+private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRequester?, rightFocusRequester: FocusRequester?, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Text(
         label,
@@ -3030,11 +3099,11 @@ private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRe
             .onPreviewKeyEvent { event ->
                 if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
                     event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    runCatching { rightFocusRequester.requestFocus() }
-                    true
+                    rightFocusRequester?.let { runCatching { it.requestFocus() }.getOrDefault(false) } ?: false
                 } else false
             }
-            .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
+            .semantics { this.selected = selected }
             .padding(horizontal = 10.dp, vertical = 10.dp),
     )
 }
