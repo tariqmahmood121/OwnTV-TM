@@ -572,7 +572,7 @@ internal object XpContinueStore {
                 if (id.isNotBlank() && name.isNotBlank()) add(
                     XpMeta(id, item.optString("type", "movie"), name,
                         item.optString("poster").takeIf(String::isNotBlank), null,
-                        item.optString("year").takeIf(String::isNotBlank), null,
+                        item.optString("year").takeIf(String::isNotBlank), item.optString("rating").takeIf(String::isNotBlank),
                         item.optLong("positionMs", 0L), item.optLong("durationMs", 0L))
                 )
             }
@@ -593,12 +593,12 @@ internal object XpContinueStore {
         val knownDuration = durationMs.takeIf { it > 0L } ?: previous?.durationMs ?: 0L
         val safePosition = positionMs.coerceAtLeast(0L)
         if (knownDuration > 0L && safePosition >= knownDuration * .95f) {
-            val meta = XpMeta(id, type, name, poster, null, year, null, safePosition, knownDuration)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration)
             val remaining = read(context, profileId).filterNot { it.id == id && it.type == type }
             write(context, profileId, remaining)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = true)
         } else if (safePosition > 0L) {
-            val meta = XpMeta(id, type, name, poster, null, year, null, safePosition, knownDuration)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration)
             save(context, profileId, meta)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = false)
         }
@@ -615,7 +615,7 @@ internal object XpContinueStore {
         val json = JSONArray().apply {
             updated.forEach { meta ->
                 put(JSONObject().put("id", meta.id).put("type", meta.type).put("name", meta.name)
-                    .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: "")
+                    .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: "").put("rating", meta.rating ?: "")
                     .put("positionMs", meta.positionMs).put("durationMs", meta.durationMs))
             }
         }
@@ -687,19 +687,24 @@ fun StremioCatalogScreen(
     var discoveryCatalog by remember { mutableStateOf("all") }
     var discoveryGenre by remember { mutableStateOf("all") }
     var genrePickerOpen by remember { mutableStateOf(false) }
-    val sortPrefs = remember(context) { context.getSharedPreferences("xp_catalog_sort", Context.MODE_PRIVATE) }
-    var sortMode by remember(favoritesProfileId) { mutableStateOf(sortPrefs.getInt(favoritesProfileId.toString(), 1)) }
-    val sortLabels = listOf(stringResource(R.string.xp_catalog_sort_default), stringResource(R.string.xp_catalog_sort_newest), stringResource(R.string.xp_catalog_sort_oldest), stringResource(R.string.xp_catalog_sort_name_asc), stringResource(R.string.xp_catalog_sort_name_desc), stringResource(R.string.xp_catalog_sort_rating_desc), stringResource(R.string.xp_catalog_sort_rating_asc))
-    fun changeSort(mode: Int) { sortMode = mode; sortPrefs.edit().putInt(favoritesProfileId.toString(), mode).apply() }
-    fun sortedTitles(titles: List<XpMeta>, mode: Int = sortMode): List<XpMeta> = when (mode) {
-        1 -> titles.sortedByDescending { xpReleaseKey(it) }
-        2 -> titles.sortedBy { xpReleaseKey(it).ifBlank { "9999" } }
-        3 -> titles.sortedBy { it.name.lowercase() }
-        4 -> titles.sortedByDescending { it.name.lowercase() }
-        5 -> titles.sortedByDescending { it.rating?.toDoubleOrNull() ?: -1.0 }
-        6 -> titles.sortedBy { it.rating?.toDoubleOrNull() ?: Double.MAX_VALUE }
-        else -> titles
+    val sortPrefs = remember(context) { context.getSharedPreferences(XpCentralDataSync.SORT_PREFS, Context.MODE_PRIVATE) }
+    val sortKey = favoritesProfileId.toString()
+    fun readSort() = sortPrefs.getInt(sortKey, 1).takeIf { it in 0..6 } ?: 1
+    var sortMode by remember(sortKey) { mutableStateOf(readSort()) }
+    DisposableEffect(sortPrefs, sortKey) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == sortKey) sortMode = readSort()
+        }
+        sortPrefs.registerOnSharedPreferenceChangeListener(listener)
+        sortMode = readSort()
+        onDispose { sortPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+    val sortLabels = listOf(stringResource(R.string.xp_catalog_sort_default), stringResource(R.string.xp_catalog_sort_newest), stringResource(R.string.xp_catalog_sort_oldest), stringResource(R.string.xp_catalog_sort_name_asc), stringResource(R.string.xp_catalog_sort_name_desc), stringResource(R.string.xp_catalog_sort_rating_desc), stringResource(R.string.xp_catalog_sort_rating_asc))
+    fun changeSort(mode: Int) {
+        XpCentralDataSync.saveCatalogSort(context, favoritesProfileId, mode)
+        sortMode = mode
+    }
+    fun sortedTitles(titles: List<XpMeta>): List<XpMeta> = sortXpTitles(titles, sortMode)
     var expandedFilter by remember { mutableStateOf<String?>(null) }
     var searchHits by remember { mutableStateOf<List<XpSearchHit>>(emptyList()) }
     var searchLoading by remember { mutableStateOf(false) }
@@ -2032,7 +2037,7 @@ fun StremioCatalogScreen(
                                 Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(start = 24.dp, top = 2.dp))
                                 LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title ->
+                                    items(sortedTitles(continueTitles), key = { "continue:${it.type}:${it.id}" }) { title ->
                                         XpPoster(title, width = 142.dp * homeScale,
                                             onLongClick = { openDetails(title, false) },
                                             onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
@@ -2482,16 +2487,10 @@ private fun XpAccountProfileBadge(
     }
 }
 
-private fun xpReleaseKey(item: XpMeta): String {
-    val raw = item.releaseInfo.orEmpty()
-    val date = Regex("""\d{4}-\d{2}-\d{2}""").find(raw)?.value
-    return date ?: Regex("""\d{4}""").find(raw)?.value?.plus("-00-00").orEmpty()
-}
-
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpMeta) {
     if (item.type != "movie" && item.type != "series") return
-    val rating = item.rating?.toDoubleOrNull()?.takeIf { it > 0 && it <= 10 }
+    val rating = xpRating(item)
     if (rating != null) {
         Row(Modifier.align(Alignment.TopStart).padding(4.dp)
             .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),
@@ -2500,7 +2499,7 @@ private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpM
             Text(String.format(java.util.Locale.US, "%.1f", rating), color = Color.White, fontSize = 11.sp)
         }
     }
-    val year = xpReleaseKey(item).take(4)
+    val year = xpReleaseYear(item).orEmpty()
     if (year.isNotEmpty()) {
         Text(year, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
             .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),

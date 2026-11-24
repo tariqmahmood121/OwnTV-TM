@@ -14,6 +14,9 @@ internal object XpCentralDataSync {
     private const val DIRTY_PREFS = "movioxp_central_dirty"
     private const val STATE_PREFS = "movioxp_central_state"
     private const val POSTER_PREFS = "moviotv_poster_grid_v75"
+    internal const val SORT_PREFS = "xp_catalog_sort"
+    private const val SORT_KEY = "catalog_sort"
+    private val sortLock = Any()
     private val syncMutex = Mutex()
 
     fun markFavorite(context: Context, localProfileId: Long, item: XpMeta, deleted: Boolean) =
@@ -28,6 +31,21 @@ internal object XpCentralDataSync {
         mark(context, localProfileId, "setting", "xp:$cloudKey", JSONObject().put("key", cloudKey).put("value", value))
         XpCentralEventSync.request(context, localProfileId)
     }
+
+    fun saveCatalogSort(context: Context, profileId: Long, mode: Int) {
+        synchronized(sortLock) {
+            if (profileId > 0L) {
+                mark(context, profileId, "setting", "xp:$SORT_KEY",
+                    JSONObject().put("key", SORT_KEY).put("value", mode))
+            }
+            context.getSharedPreferences(SORT_PREFS, Context.MODE_PRIVATE).edit()
+                .putInt(profileId.toString(), mode).apply()
+        }
+        if (profileId > 0L) XpCentralEventSync.request(context, profileId)
+    }
+
+    private fun <T> withRecordLock(type: String, key: String, action: () -> T): T =
+        if (type == "setting" && key == "xp:$SORT_KEY") synchronized(sortLock, action) else action()
 
     private fun mark(context: Context, profileId: Long, type: String, key: String, payload: JSONObject) {
         if (profileId <= 0L) return
@@ -87,15 +105,19 @@ internal object XpCentralDataSync {
             // A newer playhead/track choice can arrive during the HTTP request. Do not
             // remove or overwrite that still-pending local update.
             val pendingKey = dirtyKey(localProfileId, entry.type, entry.key)
-            if (dirtyPrefs.getString(pendingKey, null) == entry.payload.toString()) {
-                dirtyPrefs.edit().remove(pendingKey).apply()
+            withRecordLock(entry.type, entry.key) {
+                if (dirtyPrefs.getString(pendingKey, null) == entry.payload.toString()) {
+                    dirtyPrefs.edit().remove(pendingKey).apply()
+                }
             }
         }
 
         // Clean remote records can be applied. Pending local changes win until uploaded.
         remote.values.forEach { record ->
-            if (!dirtyPrefs.contains(dirtyKey(localProfileId, record.type, record.key))) {
-                applyRemote(context, localProfileId, record)
+            withRecordLock(record.type, record.key) {
+                if (!dirtyPrefs.contains(dirtyKey(localProfileId, record.type, record.key))) {
+                    applyRemote(context, localProfileId, record)
+                }
             }
         }
         state.edit().putString(ownerKey, owner).putBoolean(seedKey, true).apply()
@@ -127,6 +149,13 @@ internal object XpCentralDataSync {
             if (cloudKey != null && value != null) add(
                 Record("setting", "xp:$cloudKey", JSONObject().put("key", cloudKey).put("value", value), 0)
             )
+        }
+        val sortPrefs = context.getSharedPreferences(SORT_PREFS, Context.MODE_PRIVATE)
+        val sortProfile = profileId.toString()
+        if (sortPrefs.contains(sortProfile)) {
+            val mode = sortPrefs.getInt(sortProfile, 1)
+            if (mode in 0..6) add(Record("setting", "xp:$SORT_KEY",
+                JSONObject().put("key", SORT_KEY).put("value", mode), 0))
         }
         // Retain independent poster sizes for each authenticated profile across phone and TV.
         val posterPrefs = context.getSharedPreferences(POSTER_PREFS, Context.MODE_PRIVATE)
@@ -177,6 +206,14 @@ internal object XpCentralDataSync {
             "setting" -> {
                 val cloudKey = record.payload.optString("key")
                 val value = record.payload.opt("value")
+                if (cloudKey == SORT_KEY) {
+                    val number = value as? Number ?: return
+                    val mode = number.toInt().takeIf { it in 0..6 && it.toDouble() == number.toDouble() }
+                        ?: return
+                    context.getSharedPreferences(SORT_PREFS, Context.MODE_PRIVATE)
+                        .edit().putInt(profileId.toString(), mode).apply()
+                    return
+                }
                 if (cloudKey == "poster_zoom:library" || cloudKey == "poster_zoom:home") {
                     val zoom = (value as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return
                     val page = cloudKey.removePrefix("poster_zoom:")
