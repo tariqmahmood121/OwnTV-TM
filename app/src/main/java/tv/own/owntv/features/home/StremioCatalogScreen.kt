@@ -689,7 +689,7 @@ fun StremioCatalogScreen(
     var genrePickerOpen by remember { mutableStateOf(false) }
     val sortPrefs = remember(context) { context.getSharedPreferences("xp_catalog_sort", Context.MODE_PRIVATE) }
     var sortMode by remember(favoritesProfileId) { mutableStateOf(sortPrefs.getInt(favoritesProfileId.toString(), 1)) }
-    val sortLabels = listOf("Default", "Newest first", "Oldest first", "Name A–Z", "Name Z–A", "Highest rating", "Lowest rating")
+    val sortLabels = listOf(stringResource(R.string.xp_catalog_sort_default), stringResource(R.string.xp_catalog_sort_newest), stringResource(R.string.xp_catalog_sort_oldest), stringResource(R.string.xp_catalog_sort_name_asc), stringResource(R.string.xp_catalog_sort_name_desc), stringResource(R.string.xp_catalog_sort_rating_desc), stringResource(R.string.xp_catalog_sort_rating_asc))
     fun changeSort(mode: Int) { sortMode = mode; sortPrefs.edit().putInt(favoritesProfileId.toString(), mode).apply() }
     fun sortedTitles(titles: List<XpMeta>, mode: Int = sortMode): List<XpMeta> = when (mode) {
         1 -> titles.sortedByDescending { xpReleaseKey(it) }
