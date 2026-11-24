@@ -397,8 +397,7 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	name
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	profiles
 1	empty	app/src/main/java/tv/own/owntv/features/home/XpSettingsSections.kt	\0
-2	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
-2	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	
+4	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	$PREFIX${source.identity}:${source.provider}
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	%02x
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	SHA-256
