@@ -6,7 +6,7 @@ import java.util.Locale
 import tv.own.owntv.BuildConfig
 
 internal fun xpDebug(event: String) {
-    if (BuildConfig.DEBUG) runCatching { Log.d("MovioXP", event) }
+    if (BuildConfig.DEBUG || BuildConfig.DIAGNOSTIC_BUILD) runCatching { Log.d("MovioXP", event) }
 }
 
 internal object XpPlaybackIdentity {
@@ -31,8 +31,12 @@ internal object XpPlaybackIdentity {
 
     fun exactImdbMatch(item: XpMeta, candidates: List<XpMeta>): String? {
         val date = xpFullReleaseDate(item) ?: return null
-        return matchingTitleCandidates(item, candidates)
-            .filter { xpFullReleaseDate(it) == date }.singleOrNull()?.id
+        val possible = matchingTitleCandidates(item, candidates).filter { candidate ->
+            val year = xpReleaseYear(candidate)?.toIntOrNull()
+            year == null || year == date.year || xpFullReleaseDate(candidate) != null
+        }
+        if (possible.any { xpFullReleaseDate(it) == null }) return null
+        return possible.filter { xpFullReleaseDate(it) == date }.singleOrNull()?.id
     }
 
     suspend fun resolve(

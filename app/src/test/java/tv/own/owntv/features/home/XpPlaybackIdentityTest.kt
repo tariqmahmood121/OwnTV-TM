@@ -16,6 +16,8 @@ class XpPlaybackIdentityTest {
         assertNull(XpPlaybackIdentity.exactImdbMatch(central.copy(releaseInfo = "2025"), listOf(cinemeta)))
         assertNull(XpPlaybackIdentity.exactImdbMatch(central, listOf(cinemeta.copy(releaseInfo = "2025-02-04"))))
         assertNull(XpPlaybackIdentity.exactImdbMatch(central, listOf(cinemeta, cinemeta.copy(id = "tt7654321"))))
+        assertNull(XpPlaybackIdentity.exactImdbMatch(central, listOf(cinemeta,
+            cinemeta.copy(id = "tt7654321", releaseInfo = "2025"))))
     }
 
     @Test fun verifiedAliasesMatchSavedTitlesAndAreOrderedForPlayback() {
@@ -25,6 +27,20 @@ class XpPlaybackIdentityTest {
         assertTrue(XpPlaybackIdentity.sameTitle(enriched, central))
         assertFalse(XpPlaybackIdentity.sameTitle(enriched, cinemeta.copy(type = "series")))
         assertFalse(XpPlaybackIdentity.sameTitle(central, cinemeta))
+    }
+
+    @Test fun centralCatalogueCardResolvesToIdsSupportedByEachAddon() {
+        val parsed = XpCentralMetadata.parseCatalog(JSONObject("""
+            {"metas":[{"id":"tmdb:42","type":"movie","name":"A Movie","released":"2025-02-03","rating":7.1}]}
+        """))!!.single()
+        val imdbOnly = XpResource("stream", listOf("movie"), listOf("tt"))
+        val tmdbOnly = XpResource("stream", listOf("movie"), listOf("tmdb:"))
+        assertFalse(imdbOnly.supports(parsed.type, parsed.id))
+        val verified = XpPlaybackIdentity.exactImdbMatch(parsed, listOf(cinemeta))
+        val ids = XpPlaybackIdentity.ids(parsed, verified)
+        assertEquals(listOf(cinemeta.id), ids.filter { imdbOnly.supports(parsed.type, it) })
+        assertEquals(listOf(parsed.id), ids.filter { tmdbOnly.supports(parsed.type, it) })
+        assertEquals(ids.size, ids.toSet().size)
     }
 
     @Test fun storedMetadataRetainsLegacyIdentityProgressAndRatingSource() {
@@ -37,6 +53,7 @@ class XpPlaybackIdentityTest {
         assertNull(XpCentralMetadata.parsePage(JSONObject("""{"metas":[],"fallback":true}"""), 1))
         assertEquals(2, XpCentralMetadata.parsePage(JSONObject("""{"metas":[],"next_page":2}"""), 1)?.next)
         assertNull(XpCentralMetadata.parsePage(JSONObject("""{"metas":[],"next_page":7}"""), 1)?.next)
+        assertTrue(XpCentralMetadata.parsePage(JSONObject("""{"metas":[],"fallback":false,"error":"Unavailable"}"""), 1)?.failed == true)
     }
 
     @Test fun explicitSortingOverridesCatalogueDefaults() {

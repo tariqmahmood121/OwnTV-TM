@@ -89,6 +89,7 @@ import tv.own.owntv.features.profiles.ProfilesViewModel
 import tv.own.owntv.core.database.entity.ChannelEntity
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -155,7 +156,7 @@ private data class XpAddonListing(
     val types: List<String>,
     val logo: String?,
 )
-private data class XpResource(val name: String, val types: List<String>, val idPrefixes: List<String>) {
+internal data class XpResource(val name: String, val types: List<String>, val idPrefixes: List<String>) {
     fun supports(type: String, id: String): Boolean =
         name == "stream" && (types.isEmpty() || type in types) &&
             (idPrefixes.isEmpty() || idPrefixes.any(id::startsWith))
@@ -786,6 +787,7 @@ fun StremioCatalogScreen(
     var selectedSeason by remember { mutableIntStateOf(1) }
     var seasonMenu by remember { mutableStateOf(false) }
     var episodeMenu by remember { mutableStateOf(false) }
+    val streamRequests = remember(catalogueProfile) { mutableMapOf<List<String>, Deferred<List<XpStream>>>() }
     var selectedStreams by remember { mutableStateOf<List<XpStream>>(emptyList()) }
     var streamsLoading by remember { mutableStateOf(false) }
     var directoryLoading by remember { mutableStateOf(false) }
@@ -798,11 +800,11 @@ fun StremioCatalogScreen(
     var expandedSettingsGroup by remember { mutableStateOf<Int?>(null) }
     var showPreferredAddons by remember { mutableStateOf(false) }
     var showXpAbout by remember { mutableStateOf(false) }
-    var returnPage by rememberSaveable(catalogueProfile, initialPage) { mutableStateOf(initialPage) }
-    var searchText by rememberSaveable(catalogueProfile) { mutableStateOf("") }
-    var discoveryType by rememberSaveable(catalogueProfile) { mutableStateOf("all") }
-    var discoveryCatalog by rememberSaveable(catalogueProfile) { mutableStateOf("all") }
-    var discoveryGenre by rememberSaveable(catalogueProfile) { mutableStateOf("all") }
+    var returnPage by key(catalogueProfile, initialPage) { rememberSaveable { mutableStateOf(initialPage) } }
+    var searchText by key(catalogueProfile) { rememberSaveable { mutableStateOf("") } }
+    var discoveryType by key(catalogueProfile) { rememberSaveable { mutableStateOf("all") } }
+    var discoveryCatalog by key(catalogueProfile) { rememberSaveable { mutableStateOf("all") } }
+    var discoveryGenre by key(catalogueProfile) { rememberSaveable { mutableStateOf("all") } }
     var genrePickerOpen by remember { mutableStateOf(false) }
     val sortPrefs = remember(context) { context.getSharedPreferences(XpCentralDataSync.SORT_PREFS, Context.MODE_PRIVATE) }
     val sortKey = favoritesProfileId.toString()
@@ -861,11 +863,12 @@ fun StremioCatalogScreen(
     val yearKey = "xp_show_year_$favoritesProfileId"
     val displayPrefs = remember(context) { context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE) }
     var showRating by remember(ratingKey) { mutableStateOf(displayPrefs.getBoolean(ratingKey, true)) }
-    var showYear by remember(yearKey) { mutableStateOf(displayPrefs.getBoolean(yearKey, true)) }
-    DisposableEffect(ratingKey, yearKey) {
+    val legacyShowYear = MovioMoviePrefs.get(context, favoritesProfileId).showYear
+    var showYear by remember(yearKey, legacyShowYear) { mutableStateOf(displayPrefs.getBoolean(yearKey, legacyShowYear)) }
+    DisposableEffect(ratingKey, yearKey, legacyShowYear) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
             if (changed == ratingKey) showRating = displayPrefs.getBoolean(ratingKey, true)
-            if (changed == yearKey) showYear = displayPrefs.getBoolean(yearKey, true)
+            if (changed == yearKey) showYear = displayPrefs.getBoolean(yearKey, legacyShowYear)
         }
         displayPrefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { displayPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -1153,6 +1156,8 @@ fun StremioCatalogScreen(
     }
 
     fun resetEpisodeSelection() {
+        streamRequests.values.forEach { it.cancel() }
+        streamRequests.clear()
         episodes = emptyList()
         selectedEpisode = null
         seasonMenu = false
@@ -1415,7 +1420,7 @@ fun StremioCatalogScreen(
                 val detailed = matches.map { candidate ->
                     if (xpFullReleaseDate(candidate) != null) candidate else {
                         val meta = XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, candidate.id)?.optJSONObject("meta")
-                        candidate.copy(releaseInfo = meta?.optString("released")?.takeIf(String::isNotBlank))
+                        candidate.copy(releaseInfo = meta?.optString("released")?.takeIf(String::isNotBlank) ?: candidate.releaseInfo)
                     }
                 }
                 XpPlaybackIdentity.exactImdbMatch(item, detailed)
@@ -1436,14 +1441,22 @@ fun StremioCatalogScreen(
             if (ids.isEmpty()) null else addon to ids
         }
         selectedStreams = providers.map { (addon, ids) -> async {
-            xpDebug("Requesting streams from a compatible add-on")
             ids.firstNotNullOfOrNull { id ->
-                runCatching { XpAddonProtocol.loadStreams(addon, item, id) }
-                    .getOrElse { error ->
-                        if (error is kotlinx.coroutines.CancellationException) throw error
-                        xpDebug("Add-on stream request failed")
-                        emptyList()
-                    }.filter { it.url != null }.takeIf { it.isNotEmpty() }
+                val requestKey = listOf(addon.url, item.type, id)
+                val result = streamRequests.getOrPut(requestKey) {
+                    scope.async {
+                        xpDebug("Requesting streams from a compatible add-on")
+                        try {
+                            XpAddonProtocol.loadStreams(addon, item, id).filter { it.url != null }
+                        } catch (error: kotlinx.coroutines.CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            xpDebug("Add-on stream request failed")
+                            emptyList()
+                        }
+                    }
+                }.await()
+                result.takeIf { it.isNotEmpty() }
             }.orEmpty()
         } }.awaitAll().flatten().distinctBy { it.url }
         streamsLoading = false
