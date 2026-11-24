@@ -485,7 +485,6 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	romance
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	sci-fi
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	science-fiction
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	stale
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	thriller
 1	regex	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	tmdb:[0-9]+
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	trending

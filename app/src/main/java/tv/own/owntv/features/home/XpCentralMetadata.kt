@@ -55,7 +55,7 @@ internal object XpCentralMetadata {
     ) = repository.observe(
         XpCatalogueRepository.Key(profile, connection.apiBase, category),
         refreshAfter,
-        cacheable = { body -> JSONObject(body).let { it.has("metas") && !it.optBoolean("fallback") && !it.optBoolean("stale") } },
+        cacheable = { body -> JSONObject(body).let { it.optJSONArray("metas") != null && !it.optBoolean("fallback") } },
     ) {
         XpCentralAddonSync.request(connection.apiBase, "metadata/catalog/$category", connection.token).toString()
     }.map { body -> body?.let { parseCatalog(JSONObject(it)) } }.flowOn(Dispatchers.IO)

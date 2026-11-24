@@ -714,7 +714,7 @@ fun StremioCatalogScreen(
         if (index >= 0) addons[index] = addon else addons.add(addon)
     }
     val homeListState = key(catalogueProfile) { rememberLazyListState() }
-    var lastHomePoster by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
+    var lastHomePoster by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
     var returnHomePoster by remember(catalogueProfile) {
         mutableStateOf(lastHomePoster.takeIf { restoreHomePosterFocus })
     }
@@ -722,8 +722,8 @@ fun StremioCatalogScreen(
         lastHomePoster = poster
         if (returnHomePoster == poster) returnHomePoster = null
     }
-    var savedHomeAnchor by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
-    var savedHomeOffset by rememberSaveable(catalogueProfile) { mutableIntStateOf(0) }
+    var savedHomeAnchor by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
+    var savedHomeOffset by key(catalogueProfile) { rememberSaveable { mutableIntStateOf(0) } }
     var returnHomeAnchor by remember(catalogueProfile) { mutableStateOf(savedHomeAnchor) }
     val returnHomeOffset = remember(catalogueProfile) { savedHomeOffset }
     var homeSettings by remember(favoritesProfileId) {
