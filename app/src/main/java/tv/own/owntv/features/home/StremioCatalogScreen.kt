@@ -845,8 +845,6 @@ fun StremioCatalogScreen(
         centralSyncMessage = null
         showAccountMenu = false
         addons.clear()
-        rows.clear()
-        metas.clear()
         continueTitles = emptyList()
         favoriteTitles = emptyList()
         page = "central"
