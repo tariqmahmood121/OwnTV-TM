@@ -10,4 +10,6 @@
     <string name="movioxp_switch_profile">Switch profile</string>
     <string name="movioxp_guest_label">Guest</string>
     <string name="movioxp_account_profiles">Choose a profile for %1$s</string>
+    <string name="movioxp_account_menu">Account and profiles</string>
+    <string name="movioxp_logout_central">Log out of Central</string>
 </resources>

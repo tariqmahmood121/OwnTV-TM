@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -617,8 +618,24 @@ fun StremioCatalogScreen(
     val libraryTitles = (continueTitles + favoriteTitles).distinctBy { it.type to it.id }
     val libraryPrefs = remember(context) { context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE) }
     val libraryZoomKey = "xp_library_zoom_$favoritesProfileId"
+    val homeZoomKey = "xp_home_zoom_$favoritesProfileId"
     var libraryScale by remember(libraryZoomKey) {
         mutableStateOf(libraryPrefs.getFloat(libraryZoomKey, 1f).coerceIn(0.65f, 1.85f))
+    }
+    var homeScale by remember(homeZoomKey) {
+        mutableStateOf(libraryPrefs.getFloat(homeZoomKey, 1f).coerceIn(0.65f, 1.85f))
+    }
+    val libraryScaleNow by rememberUpdatedState(libraryScale)
+    val homeScaleNow by rememberUpdatedState(homeScale)
+    DisposableEffect(libraryPrefs, libraryZoomKey, homeZoomKey) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            when (key) {
+                libraryZoomKey -> libraryScale = prefs.getFloat(libraryZoomKey, 1f).coerceIn(0.65f, 1.85f)
+                homeZoomKey -> homeScale = prefs.getFloat(homeZoomKey, 1f).coerceIn(0.65f, 1.85f)
+            }
+        }
+        libraryPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { libraryPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     val playbackPrefs = remember(context) { context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE) }
     var autoSelectSource by remember { mutableStateOf(playbackPrefs.getBoolean("auto_select_source", true)) }
@@ -628,6 +645,7 @@ fun StremioCatalogScreen(
     var centralApiBase by remember { mutableStateOf(centralConnection?.apiBase?.removeSuffix("/") ?: "https://moviotv.opticalzoo.com/movio/api/index.php") }
     var centralUsername by remember { mutableStateOf(centralConnection?.username.orEmpty()) }
     var centralPassword by remember { mutableStateOf("") }
+    var showAccountMenu by remember { mutableStateOf(false) }
     var centralSyncBusy by remember { mutableStateOf(false) }
     // Installing an add-on during an existing Central refresh must never drop its upload.
     var centralSyncAgain by remember { mutableStateOf(false) }
@@ -637,6 +655,24 @@ fun StremioCatalogScreen(
     val firstGridFocus = remember { FocusRequester() }
     val categoryRailFocus = remember { FocusRequester() }
     val bottomNavigationFocus = remember { FocusRequester() }
+
+    // Retain account-scoped Room data on logout; old bearer token is invalidated locally first.
+    fun signOutCentral() {
+        val previous = centralConnection
+        XpCentralEventSync.clear()
+        XpCentralConnectionStore.clear(context)
+        centralConnection = null
+        centralPassword = ""
+        centralSyncMessage = null
+        showAccountMenu = false
+        addons.clear()
+        rows.clear()
+        metas.clear()
+        continueTitles = emptyList()
+        favoriteTitles = emptyList()
+        page = "central"
+        scope.launch { runCatching { previous?.let { XpCentralAddonSync.signOut(it) } } }
+    }
 
     DisposableEffect(context, favoritesProfileId) {
         val preferences = context.getSharedPreferences("movioxp_catalogues", Context.MODE_PRIVATE)
@@ -1069,10 +1105,7 @@ fun StremioCatalogScreen(
                     displayName = activeProfileName,
                     signedIn = centralConnection != null,
                     compact = compactPhone,
-                    onClick = {
-                        if (centralConnection != null && onSwitchProfile != null) onSwitchProfile()
-                        else page = "central"
-                    },
+                    onClick = { showAccountMenu = true },
                 )
             } else Row(
                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 20.dp),
@@ -1088,10 +1121,7 @@ fun StremioCatalogScreen(
                     displayName = activeProfileName,
                     signedIn = centralConnection != null,
                     compact = false,
-                    onClick = {
-                        if (centralConnection != null && onSwitchProfile != null) onSwitchProfile()
-                        else page = "central"
-                    },
+                    onClick = { showAccountMenu = true },
                 )
                 if (page != "settings") XpAction(stringResource(R.string.moviotv_xp_nav_settings), false) { page = "settings"; adding = false }
                 if (showBottomNavigation) XpAction(stringResource(R.string.moviotv_nav_more), false) {
@@ -1509,15 +1539,8 @@ fun StremioCatalogScreen(
                     } else {
                         Text(stringResource(R.string.moviotv_xp_central_connected_as, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
                         XpAction(stringResource(R.string.moviotv_xp_central_sync_now), centralSyncBusy) { syncAddonsWithCentral() }
-                        XpAction(stringResource(R.string.moviotv_xp_central_disconnect), centralSyncBusy) {
-                            val oldConnection = centralConnection
-                            scope.launch {
-                                runCatching { oldConnection?.let { XpCentralAddonSync.signOut(it) } }
-                                XpCentralConnectionStore.clear(context)
-                                centralConnection = null
-                                centralPassword = ""
-                                centralSyncMessage = null
-                            }
+                        XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy) {
+                            signOutCentral()
                         }
                     }
                     centralSyncMessage?.let { Text(it, color = XpAccent, fontSize = 14.sp) }
@@ -1645,14 +1668,7 @@ fun StremioCatalogScreen(
                         if (centralConnection != null) {
                             XpSettingsOption(stringResource(R.string.moviotv_xp_central_disconnect),
                                 enabled = !centralSyncBusy) {
-                                val oldConnection = centralConnection
-                                scope.launch {
-                                    runCatching { oldConnection?.let { XpCentralAddonSync.signOut(it) } }
-                                    XpCentralConnectionStore.clear(context)
-                                    centralConnection = null
-                                    centralPassword = ""
-                                    centralSyncMessage = null
-                                }
+                                signOutCentral()
                             }
                         }
                         if (centralSyncBusy) Text(stringResource(R.string.moviotv_xp_central_syncing),
@@ -1697,10 +1713,11 @@ fun StremioCatalogScreen(
                                         do {
                                             val event = awaitPointerEvent()
                                             if (event.changes.count { it.pressed } >= 2) {
-                                                val next = (libraryScale * event.calculateZoom()).coerceIn(0.65f, 1.85f)
-                                                if (kotlin.math.abs(next - libraryScale) > 0.003f) {
+                                                val next = (libraryScaleNow * event.calculateZoom()).coerceIn(0.65f, 1.85f)
+                                                if (kotlin.math.abs(next - libraryScaleNow) > 0.003f) {
                                                     libraryScale = next
                                                     libraryPrefs.edit().putFloat(libraryZoomKey, next).apply()
+                                                    XpCentralDataSync.markSetting(context, favoritesProfileId, libraryZoomKey, next)
                                                     event.changes.forEach { it.consume() }
                                                 }
                                             }
@@ -1765,7 +1782,23 @@ fun StremioCatalogScreen(
                 }
             } else {
                 LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
+                    Modifier.weight(1f).fillMaxWidth()
+                        .pointerInput(homeZoomKey, showBottomNavigation) {
+                            if (showBottomNavigation) awaitEachGesture {
+                                do {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.count { it.pressed } >= 2) {
+                                        val next = (homeScaleNow * event.calculateZoom()).coerceIn(0.65f, 1.85f)
+                                        if (kotlin.math.abs(next - homeScaleNow) > 0.003f) {
+                                            homeScale = next
+                                            libraryPrefs.edit().putFloat(homeZoomKey, next).apply()
+                                            XpCentralDataSync.markSetting(context, favoritesProfileId, homeZoomKey, next)
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        },
                     contentPadding = PaddingValues(bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -1776,7 +1809,9 @@ fun StremioCatalogScreen(
                                     modifier = Modifier.padding(start = 24.dp, top = 2.dp))
                                 LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     items(continueTitles, key = { "continue:${it.type}:${it.id}" }) { title ->
-                                        XpPoster(title, onLongClick = { openDetails(title, false) }, onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                                        XpPoster(title, width = 142.dp * homeScale,
+                                            onLongClick = { openDetails(title, false) },
+                                            onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
                                     }
                                 }
                             }
@@ -1812,7 +1847,9 @@ fun StremioCatalogScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                        XpPoster(item, onLongClick = { openDetails(item, false) }, onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
+                                        XpPoster(item, width = 142.dp * homeScale,
+                                            onLongClick = { openDetails(item, false) },
+                                            onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
                                     }
                                 }
                             }
@@ -1837,6 +1874,48 @@ fun StremioCatalogScreen(
                             compact = compactPhone, focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
                             page = if (key == "app_settings") "settings" else key
                             if (key == "addons") adding = false
+                    }
+                }
+            }
+        }
+        if (showAccountMenu) {
+            Dialog(onDismissRequest = { showAccountMenu = false }) {
+                Column(
+                    Modifier.widthIn(min = 270.dp, max = 420.dp).clip(RoundedCornerShape(18.dp))
+                        .background(XpBackground).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(stringResource(R.string.movioxp_account_menu),
+                        color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    if (centralConnection != null) {
+                        Text(
+                            stringResource(R.string.moviotv_xp_central_connected_as,
+                                centralConnection?.username.orEmpty()),
+                            color = XpAccent, fontSize = 15.sp,
+                        )
+                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null) {
+                            showAccountMenu = false
+                            onSwitchProfile?.invoke()
+                        }
+                        XpAction(stringResource(R.string.moviotv_xp_central_account_title), false) {
+                            showAccountMenu = false
+                            page = "central"
+                        }
+                        XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy) {
+                            signOutCentral()
+                        }
+                    } else {
+                        XpAction(stringResource(R.string.moviotv_xp_central_login), false) {
+                            showAccountMenu = false
+                            page = "central"
+                        }
+                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null) {
+                            showAccountMenu = false
+                            onSwitchProfile?.invoke()
+                        }
+                    }
+                    XpAction(stringResource(R.string.moviotv_xp_back), false) {
+                        showAccountMenu = false
                     }
                 }
             }
@@ -2113,8 +2192,7 @@ private fun XpAccountProfileBadge(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val label = if (signedIn) stringResource(R.string.movioxp_switch_profile)
-        else stringResource(R.string.moviotv_xp_central_login)
+    val label = stringResource(R.string.movioxp_account_menu)
     val letter = displayName.ifBlank { stringResource(R.string.movioxp_guest_label) }
         .take(1).uppercase()
     val shape = RoundedCornerShape(if (compact) 15.dp else 20.dp)
