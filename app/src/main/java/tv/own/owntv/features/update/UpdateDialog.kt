@@ -54,6 +54,18 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun UpdateDialog(onDismiss: () -> Unit, checkOnOpen: Boolean = false) {
+    if (tv.own.owntv.BuildConfig.MOVIOXP_RELEASE) {
+        tv.own.owntv.ui.stage.StagePopup(
+            onDismiss = onDismiss,
+            title = stringResource(R.string.movioxp_update_channel_unavailable),
+            buttons = {
+                tv.own.owntv.ui.stage.StagePopupButton(stringResource(R.string.common_back), onClick = onDismiss)
+            },
+        ) {
+            Text(stringResource(R.string.movioxp_update_channel_hint), color = StageColors.Muted)
+        }
+        return
+    }
     val manager: UpdateManager = koinInject()
     val state by manager.state.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }

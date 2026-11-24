@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -67,6 +68,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import kotlinx.coroutines.Job
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -203,7 +205,8 @@ private data class XpDiscoverSource(
 
 private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDiscoverSource? {
     val candidates = addons.sortedByDescending { it.builtIn }.flatMap { addon ->
-        addon.catalogs.filter { it.type == "movie" }.map { XpCatalogRow(addon, it) }
+        addon.catalogs.filter { it.type == "movie" && !XpCatalogueVisibility.hidden(addon.id, it.id, it.name) }
+            .map { XpCatalogRow(addon, it) }
     }
     fun genre(terms: List<String>): XpDiscoverSource? {
         for (row in candidates) {
@@ -932,6 +935,18 @@ fun StremioCatalogScreen(
     var centralUsername by remember { mutableStateOf(centralConnection?.username.orEmpty()) }
     var centralPassword by remember { mutableStateOf("") }
     var showAccountMenu by remember { mutableStateOf(false) }
+    var showLogoMenu by remember { mutableStateOf(false) }
+    var confirmExit by remember { mutableStateOf(false) }
+    var addProfileOpen by remember { mutableStateOf(false) }
+    var centralProfileName by remember { mutableStateOf("") }
+    var profileWorking by remember { mutableStateOf(false) }
+    var profileError by remember { mutableStateOf(false) }
+    var manageCentralProfiles by remember { mutableStateOf(false) }
+    var showCredits by remember { mutableStateOf(false) }
+    var detailsMetadata by remember { mutableStateOf<XpDetailMetadata?>(null) }
+    val searchListState = key(catalogueProfile) { rememberLazyListState() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val activity = androidx.activity.compose.LocalActivity.current
     var centralSyncBusy by remember { mutableStateOf(false) }
     // Installing an add-on during an existing Central refresh must never drop its upload.
     var centralSyncAgain by remember { mutableStateOf(false) }
@@ -943,7 +958,7 @@ fun StremioCatalogScreen(
     val bottomNavigationFocus = remember { FocusRequester() }
     val topNavigationFocus = remember { FocusRequester() }
     val shortcutsEnabled = television && showBottomNavigation && !playbackActive &&
-        page in setOf("home", "discover", "library") && selected == null && !showAccountMenu &&
+        page in setOf("home", "discover", "library") && selected == null && !showAccountMenu && !showLogoMenu && !confirmExit && !addProfileOpen && !manageCentralProfiles &&
         !headerEditing && !gridEditing
     val canJump by rememberUpdatedState(shortcutsEnabled)
     LaunchedEffect(page) {
@@ -961,6 +976,14 @@ fun StremioCatalogScreen(
     }
 
     // Retain account-scoped Room data on logout; old bearer token is invalidated locally first.
+    var openCentralAfterLogout by remember { mutableStateOf(false) }
+    LaunchedEffect(centralConnection, openCentralAfterLogout) {
+        if (centralConnection == null && openCentralAfterLogout) {
+            page = "central"
+            openCentralAfterLogout = false
+        }
+    }
+
     fun signOutCentral() {
         val previous = centralConnection
         XpCentralEventSync.clear()
@@ -972,6 +995,7 @@ fun StremioCatalogScreen(
         addons.clear()
         continueTitles = emptyList()
         favoriteTitles = emptyList()
+        openCentralAfterLogout = true
         page = "central"
         scope.launch { runCatching { previous?.let { XpCentralAddonSync.signOut(it) } } }
     }
@@ -1045,7 +1069,10 @@ fun StremioCatalogScreen(
         configuredRows.associateWith { XpHomeConfig.externalRowId(it.addon.url, it.catalog.type, it.catalog.id) }
     }
     fun externalRowId(row: XpCatalogRow) = externalIds.getValue(row)
-    val externalRows = configuredRows.filterNot { it.addon.builtIn && it.catalog.type == "movie" && it.catalog.id == "imdbRating" }
+    val externalRows = configuredRows.filterNot {
+        (it.addon.builtIn && it.catalog.type == "movie" && it.catalog.id == "imdbRating") ||
+            XpCatalogueVisibility.hidden(it.addon.id, it.catalog.id, it.catalog.name)
+    }
     val rows = (if (page == "home") externalRows.filter {
         XpHomeConfig.externalVisible(homeSettings, externalRowId(it), it.addon.builtIn)
     } else configuredRows).filter { row ->
@@ -1085,10 +1112,11 @@ fun StremioCatalogScreen(
         }
     }
 
-    LaunchedEffect(page, visibleHomeIds, rows, returnHomeAnchor) {
+    val visibleRows = if (page == "home") rows.filter { metas[rowKey(it) to it].orEmpty().isNotEmpty() } else rows
+    LaunchedEffect(page, visibleHomeIds, visibleRows, returnHomeAnchor) {
         val anchor = returnHomeAnchor ?: return@LaunchedEffect
         if (page != "home") return@LaunchedEffect
-        val keys = listOf("xp-continue-watching") + visibleHomeIds.map { "discover:$it" } + rows.map(::rowKey)
+        val keys = listOf("xp-continue-watching") + visibleHomeIds.map { "discover:$it" } + visibleRows.map(::rowKey)
         val index = keys.indexOf(anchor)
         if (index >= 0) {
             homeListState.scrollToItem(index, returnHomeOffset)
@@ -1110,7 +1138,9 @@ fun StremioCatalogScreen(
         }
     }
 
-    val availableCatalogRows = installedAddons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
+    val availableCatalogRows = configuredRows.filterNot {
+        XpCatalogueVisibility.hidden(it.addon.id, it.catalog.id, it.catalog.name)
+    }
     val availableHomeGenres = availableCatalogRows
         .filter { it.catalog.type == "movie" }
         .filter { it.catalog.id == "top" || it.catalog.name.contains("genre", true) }
@@ -1191,6 +1221,7 @@ fun StremioCatalogScreen(
     }
 
     fun closeDetails() {
+        showCredits = false
         selected = null
         manualSourceSelection = false
         showManualSources = false
@@ -1198,6 +1229,8 @@ fun StremioCatalogScreen(
     }
 
     fun resetEpisodeSelection() {
+        showCredits = false
+        detailsMetadata = null
         streamRequests.values.forEach { it.cancel() }
         streamRequests.clear()
         episodes = emptyList()
@@ -1213,7 +1246,7 @@ fun StremioCatalogScreen(
     fun openItem(item: XpMeta) {
         resetEpisodeSelection()
         manualSourceSelection = false
-        showManualSources = true
+        showManualSources = false
         selected = withSavedResume(item)
     }
 
@@ -1465,6 +1498,15 @@ fun StremioCatalogScreen(
         }
     }
 
+    LaunchedEffect(selected?.id, selectedImdbId, catalogueProfile) {
+        val item = selected ?: return@LaunchedEffect
+        val imdb = listOfNotNull(selectedImdbId, item.imdbId, item.id).firstOrNull(XpPlaybackIdentity::isImdbId)
+            ?: return@LaunchedEffect
+        detailsMetadata = withContext(Dispatchers.IO) {
+            XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, imdb)
+                ?.optJSONObject("meta")?.let(XpDetailMetadata::parse)
+        }
+    }
     LaunchedEffect(selected?.id, selected?.type, selectedEpisode?.id, installedAddons.map { it.url }) {
         val item = selected ?: return@LaunchedEffect
         val episode = selectedEpisode
@@ -1569,7 +1611,7 @@ fun StremioCatalogScreen(
     }
     BackHandler(enabled = !playbackActive && (selected != null || adding || page != initialPage)) {
         when {
-            selected != null -> { selected = null; manualSourceSelection = false; showManualSources = false }
+            selected != null -> closeDetails()
             adding -> adding = false
             else -> page = if (page == "search" && returnPage.isNotBlank()) returnPage else initialPage
         }
@@ -1627,16 +1669,15 @@ fun StremioCatalogScreen(
     ) {
         CompositionLocalProvider(LocalXpPosterDisplay provides (showRating to showYear), LocalXpTvControls provides television) {
         Column(Modifier.fillMaxSize()) {
-            if (showBottomNavigation) Row(
+            Row(
                 Modifier.fillMaxWidth().padding(horizontal = if (compactPhone) 12.dp else 22.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 14.dp),
             ) {
-                Image(
-                    painter = androidx.compose.ui.res.painterResource(R.drawable.moviotv_launcher),
-                    contentDescription = stringResource(R.string.moviotv_xp_title),
-                    modifier = Modifier.size(if (compactPhone) 34.dp else 42.dp).clickable { page = "home" },
-                )
+                XpHeaderControl(compactPhone, stringResource(R.string.movioxp_account_menu), topNavigationFocus,
+                    onClick = { showAccountMenu = true }) { color ->
+                    DrawOwnTVIcon(OwnTVIcon.PERSON, color, Modifier.size(24.dp))
+                }
                 if (page == "discover" || page == "library") {
                     Text(
                         stringResource(if (page == "discover") R.string.moviotv_xp_nav_discover else R.string.moviotv_xp_nav_library),
@@ -1675,29 +1716,17 @@ fun StremioCatalogScreen(
                     }
                     DrawOwnTVIcon(OwnTVIcon.SEARCH, if (television && headerEditing) XpRemotePink else XpText, Modifier.size(if (compactPhone) 19.dp else 24.dp))
                 }
-                XpAccountProfileBadge(
-                    displayName = activeProfileName,
-                    signedIn = centralConnection != null,
-                    compact = compactPhone,
-                    focusRequester = topNavigationFocus,
-                    onClick = { showAccountMenu = true },
-                )
-            } else Row(
-                Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 20.dp),
+                XpHeaderControl(compactPhone, stringResource(R.string.moviotv_xp_title),
+                    onClick = { showLogoMenu = true }) {
+                    Image(painter = androidx.compose.ui.res.painterResource(R.drawable.moviotv_launcher),
+                        contentDescription = null, modifier = Modifier.size(if (compactPhone) 32.dp else 38.dp))
+                }
+            }
+            if (!showBottomNavigation) Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.moviotv_xp_title), color = XpText, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                    if (activeProfileName.isNotBlank()) Text(activeProfileName, color = XpMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(stringResource(when (page) { "movies" -> R.string.moviotv_nav_movies; "series" -> R.string.moviotv_nav_series; "live" -> R.string.moviotv_nav_live_tv; "search" -> R.string.moviotv_xp_nav_search; "library" -> R.string.moviotv_xp_nav_library; "addons" -> R.string.moviotv_xp_nav_addons; "settings" -> R.string.moviotv_xp_nav_settings; "home" -> R.string.moviotv_nav_home; else -> R.string.moviotv_xp_nav_discover }), color = XpAccent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                }
-                XpAccountProfileBadge(
-                    displayName = activeProfileName,
-                    signedIn = centralConnection != null,
-                    compact = false,
-                    onClick = { showAccountMenu = true },
-                )
                 if (page != "settings") XpAction(stringResource(R.string.moviotv_xp_nav_settings), false) { page = "settings"; adding = false }
                 if (showBottomNavigation) XpAction(stringResource(R.string.moviotv_nav_more), false) {
                     runCatching { bottomNavigationFocus.requestFocus() }
@@ -2327,7 +2356,6 @@ fun StremioCatalogScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                 }
-                if (showXpAbout) XpAboutDialog(onDismiss = { showXpAbout = false })
             } else if (page == "library" || page == "discover") {
                 val library = page == "library"
                 val category = if (library) libraryCategory else discoverCategory
@@ -2506,9 +2534,20 @@ fun StremioCatalogScreen(
                                 val hits = searchHits.associateBy { it.meta }
                                 sortXpTitles(searchHits.map { it.meta }, sortMode).mapNotNull(hits::get)
                             }
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 14.dp)) {
+                            LaunchedEffect(returnHomePoster, ordered) {
+                                val target = returnHomePoster ?: return@LaunchedEffect
+                                val index = xpRestoredPosterIndex("search", ordered.map { it.meta }, target)
+                                if (index >= 0 && searchListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                                    searchListState.scrollToItem(index)
+                                }
+                            }
+                            LazyColumn(state = searchListState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 14.dp)) {
                                 items(ordered, key = { "${it.addon.url}|${it.meta.type}:${it.meta.id}" }) { hit ->
-                                    XpSearchResultCard(hit, returnHomePoster, ::trackHomePoster) { openItem(hit.meta) }
+                                    XpSearchResultCard(hit, returnHomePoster, ::trackHomePoster) {
+                                        trackHomePoster(homePosterKey("search", hit.meta))
+                                        keyboard?.hide()
+                                        openItem(hit.meta)
+                                    }
                                 }
                             }
                         }
@@ -2620,7 +2659,7 @@ fun StremioCatalogScreen(
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp))
                         }
                     }
-                    items(rows, key = { rowKey(it) }) { row ->
+                    items(visibleRows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
                         val titles = sortedTitles(metas[key to row].orEmpty())
                         Column {
@@ -2681,44 +2720,126 @@ fun StremioCatalogScreen(
             }
         }
         if (showAccountMenu) {
-            Dialog(onDismissRequest = { showAccountMenu = false }) {
-                Column(
-                    Modifier.widthIn(min = 270.dp, max = 420.dp).clip(RoundedCornerShape(18.dp))
-                        .background(XpBackground).padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(stringResource(R.string.movioxp_account_menu),
-                        color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    if (centralConnection != null) {
-                        Text(
-                            stringResource(R.string.moviotv_xp_central_connected_as,
-                                centralConnection?.username.orEmpty()),
-                            color = XpAccent, fontSize = 15.sp,
-                        )
-                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null) {
+            XpQa5Dialog(activeProfileName.ifBlank { stringResource(R.string.movioxp_guest_label) },
+                stringResource(R.string.movioxp_close), { showAccountMenu = false }) {
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val connection = centralConnection
+                    Text(
+                        if (connection == null) stringResource(R.string.movioxp_local_profile_status)
+                        else stringResource(R.string.moviotv_xp_central_connected_as, connection.username),
+                        color = XpMuted, fontSize = 14.sp,
+                    )
+                    XpDialogActions {
+                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null, compact = true) {
                             showAccountMenu = false
                             onSwitchProfile?.invoke()
                         }
-                        XpAction(stringResource(R.string.moviotv_xp_central_account_title), false) {
+                        XpAction(stringResource(R.string.movioxp_add_profile), false, compact = true) {
+                            showAccountMenu = false
+                            centralProfileName = ""
+                            profileError = false
+                            addProfileOpen = true
+                        }
+                        XpAction(stringResource(R.string.movioxp_manage_profile), false, compact = true) {
+                            showAccountMenu = false
+                            profileError = false
+                            if (connection != null) manageCentralProfiles = true
+                            else if (onOpenSettingsGroup != null) onOpenSettingsGroup.invoke(
+                                tv.own.owntv.features.shell.components.SettingsGroup.PROFILE.ordinal)
+                            else page = "settings"
+                        }
+                        if (connection != null) {
+                            XpAction(stringResource(R.string.movioxp_switch_account), centralSyncBusy, compact = true) { signOutCentral() }
+                            XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy, compact = true) { signOutCentral() }
+                        } else XpAction(stringResource(R.string.moviotv_xp_central_login), false, compact = true) {
                             showAccountMenu = false
                             page = "central"
                         }
-                        XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy) {
-                            signOutCentral()
-                        }
-                    } else {
-                        XpAction(stringResource(R.string.moviotv_xp_central_login), false) {
-                            showAccountMenu = false
-                            page = "central"
-                        }
-                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null) {
-                            showAccountMenu = false
-                            onSwitchProfile?.invoke()
-                        }
                     }
-                    XpAction(stringResource(R.string.moviotv_xp_back), false) {
-                        showAccountMenu = false
+                }
+            }
+        }
+        if (addProfileOpen) {
+            val connection = centralConnection
+            if (connection == null) {
+                tv.own.owntv.features.profiles.ProfileEditorDialog(
+                    initial = null, onDismiss = { addProfileOpen = false },
+                    takenNames = profileList.map { it.name.trim().lowercase() }.toSet(),
+                    onConfirm = { name, avatar, child, pin, picture ->
+                        addProfileOpen = false
+                        profiles.create(name, avatar, child, pin, name, picture)
+                    },
+                )
+            } else {
+                XpQa5Dialog(stringResource(R.string.movioxp_add_profile), stringResource(R.string.movioxp_close),
+                    { if (!profileWorking) addProfileOpen = false },
+                    primaryAction = {
+                        XpAction(stringResource(R.string.profiles_create), profileWorking ||
+                            centralProfileName.isBlank() || centralProfileName.trim().length > 80, compact = true) {
+                            val name = centralProfileName.trim()
+                            profileWorking = true
+                            profileError = false
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        val existing = XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token).getJSONArray("profiles")
+                                        require((0 until existing.length()).none {
+                                            existing.optJSONObject(it)?.optString("name").equals(name, ignoreCase = true)
+                                        })
+                                        XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token, "POST",
+                                            JSONObject().put("name", name).put("is_child", false))
+                                    }
+                                    XpCentralProfileScope.refresh(context, connection, profiles)
+                                }.onSuccess { addProfileOpen = false }.onFailure { profileError = true }
+                                profileWorking = false
+                            }
+                        }
+                    }) {
+                    XpCentralField(centralProfileName, stringResource(R.string.movioxp_profile_name), { centralProfileName = it })
+                    if (profileError) Text(stringResource(R.string.movioxp_profile_create_failed), color = XpMuted)
+                }
+            }
+        }
+        if (manageCentralProfiles) {
+            XpQa5Dialog(stringResource(R.string.movioxp_manage_profile), stringResource(R.string.movioxp_close),
+                { manageCentralProfiles = false }) {
+                Text(stringResource(R.string.movioxp_central_profile_management), color = XpMuted)
+                XpAction(stringResource(R.string.moviotv_xp_refresh), profileWorking, compact = true) {
+                    val connection = centralConnection ?: return@XpAction
+                    profileWorking = true
+                    scope.launch {
+                        runCatching { XpCentralProfileScope.refresh(context, connection, profiles) }
+                            .onSuccess { manageCentralProfiles = false }.onFailure { profileError = true }
+                        profileWorking = false
                     }
+                }
+                if (profileError) Text(stringResource(R.string.moviotv_xp_central_sync_failed), color = XpMuted)
+            }
+        }
+        if (showLogoMenu) {
+            XpQa5Dialog(stringResource(R.string.moviotv_xp_title), stringResource(R.string.common_cancel),
+                { showLogoMenu = false }) {
+                XpDialogActions {
+                    XpAction(stringResource(R.string.moviotv_xp_about_heading), false, compact = true) {
+                        showLogoMenu = false
+                        showXpAbout = true
+                    }
+                    XpAction(stringResource(R.string.movioxp_exit), false, compact = true) {
+                        showLogoMenu = false
+                        confirmExit = true
+                    }
+                }
+            }
+        }
+        if (showXpAbout) XpAboutDialog(onDismiss = { showXpAbout = false })
+        if (confirmExit) {
+            XpQa5Dialog(stringResource(R.string.movioxp_exit), stringResource(R.string.common_cancel),
+                { confirmExit = false }) {
+                Text(stringResource(R.string.movioxp_exit_confirm), color = XpMuted)
+                XpAction(stringResource(R.string.movioxp_exit), false, compact = true) {
+                    confirmExit = false
+                    activity?.finish()
                 }
             }
         }
@@ -2773,44 +2894,119 @@ fun StremioCatalogScreen(
             }
         }
         selected?.let { item ->
-            Dialog(onDismissRequest = ::closeDetails) {
-            Column(
-                Modifier.fillMaxWidth(0.94f).widthIn(max = 620.dp).heightIn(max = 700.dp).clip(RoundedCornerShape(22.dp))
-                    .background(XpBackground).verticalScroll(rememberScrollState()).focusGroup().padding(28.dp),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(item.name, color = XpText, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                XpAction(
-                    stringResource(if (favoriteTitles.any { XpPlaybackIdentity.sameTitle(it, item.copy(imdbId = selectedImdbId ?: item.imdbId)) }) R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite),
-                    disabled = false,
-                    focusRequester = detailFocus,
-                ) { toggleFavorite(item) }
-                val collectionItem = item.copy(imdbId = selectedImdbId ?: item.imdbId)
-                val savedWatch = watchlistTitles.firstOrNull { XpPlaybackIdentity.sameTitle(it, collectionItem) }
-                XpAction(stringResource(if (savedWatch == null) R.string.movioxp_watchlist_add else R.string.movioxp_watchlist_remove), false) {
-                    XpPersonalCollections.change(context, favoritesProfileId, XpCollection.WATCHLIST,
-                        savedWatch ?: collectionItem, deleted = savedWatch != null)
-                }
-                if (historyTitles.any { XpPlaybackIdentity.sameTitle(it, collectionItem) }) {
-                    XpAction(stringResource(R.string.movioxp_history_remove), false) {
-                        historyTitles.filter { XpPlaybackIdentity.sameTitle(it, collectionItem) }.forEach {
-                            XpPersonalCollections.change(context, favoritesProfileId, XpCollection.HISTORY, it, deleted = true)
+            val metadata = detailsMetadata
+            if (showCredits) {
+                XpQa5Dialog(stringResource(R.string.movioxp_credits), stringResource(R.string.movioxp_close),
+                    { showCredits = false }, width = 620.dp) {
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val credits = listOf(
+                            R.string.movioxp_cast to metadata?.cast.orEmpty(),
+                            R.string.movioxp_directors to metadata?.directors.orEmpty(),
+                            R.string.movioxp_writers to metadata?.writers.orEmpty(),
+                        )
+                        if (credits.all { it.second.isEmpty() }) {
+                            Text(stringResource(R.string.movioxp_credits_unavailable), color = XpMuted)
+                        }
+                        credits.forEach { (heading, people) ->
+                            if (people.isNotEmpty()) {
+                                Text(stringResource(heading), color = XpText, fontWeight = FontWeight.Bold)
+                                Text(people.joinToString(), color = XpMuted)
+                            }
                         }
                     }
                 }
-                Text(
-                    listOfNotNull(item.type.replaceFirstChar { it.uppercase() }, item.releaseInfo, xpRating(playbackMetadata(item))?.let { rating ->
-                        val value = String.format(java.util.Locale.US, "%.1f", rating)
-                        context.getString(when (playbackMetadata(item).ratingSource) {
-                            "TMDB" -> R.string.movioxp_tmdb_rating
-                            "IMDb" -> R.string.movioxp_imdb_rating
-                            else -> R.string.moviotv_xp_rating
-                        }, value)
-                    })
-                        .joinToString(stringResource(R.string.moviotv_xp_meta_separator)),
-                    color = XpAccent, fontSize = 17.sp, modifier = Modifier.padding(top = 8.dp),
-                )
-                item.description?.let { Text(it, color = XpMuted, fontSize = 17.sp, modifier = Modifier.padding(top = 16.dp)) }
+            } else if (showManualSources) {
+                XpQa5Dialog(stringResource(R.string.moviotv_xp_stream_sources), stringResource(R.string.common_back),
+                    { showManualSources = false; manualSourceSelection = true }, width = 660.dp) {
+                    Text(item.name, color = XpMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    when {
+                        streamsLoading -> Text(stringResource(R.string.moviotv_xp_loading_streams), color = XpMuted)
+                        selectedStreams.isEmpty() -> Text(stringResource(R.string.moviotv_xp_no_streams), color = XpMuted)
+                        else -> LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            itemsIndexed(selectedStreams) { index, stream ->
+                                val resultLabel = stringResource(R.string.moviotv_xp_stream_result, stream.label, stream.addon.name)
+                                val label = stream.detail?.let {
+                                    stringResource(R.string.moviotv_xp_stream_result_detail, resultLabel, it)
+                                } ?: resultLabel
+                                XpAction(label, stream.url == null, if (index == 0) firstSourceFocus else null, compact = true) {
+                                    stream.url?.let { playable ->
+                                    val playback = recordPlayback(item)
+                                    selected = null
+                                    manualSourceSelection = false
+                                    showManualSources = false
+                                    if (onPlayStreamCandidates != null) {
+                                        onPlayStreamCandidates(
+                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name,
+                                                XpSourcePreference.identity(stream.addon.url, stream.label),
+                                                userSelected = true,
+                                                legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail))),
+                                            playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs,
+                                        )
+                                    } else {
+                                        onPlayStream(playable, playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs)
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                val chooseEpisode = item.type == "series" && XpPlaybackIdentity.isImdbId(item.id) && selectedEpisode == null
+                XpQa5Dialog(item.name, stringResource(R.string.movioxp_close), ::closeDetails, width = 880.dp,
+                    primaryAction = {
+                        XpAction(stringResource(R.string.movioxp_find_sources),
+                            disabled = chooseEpisode, focusRequester = detailFocus, compact = true) {
+                            manualSourceSelection = true
+                            showManualSources = true
+                        }
+                    }) { wide ->
+                    val body: @Composable () -> Unit = {
+                        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            val rating = xpRating(playbackMetadata(item))?.let {
+                                val value = String.format(java.util.Locale.US, "%.1f", it)
+                                context.getString(when (playbackMetadata(item).ratingSource) {
+                                    "TMDB" -> R.string.movioxp_tmdb_rating
+                                    "IMDb" -> R.string.movioxp_imdb_rating
+                                    else -> R.string.moviotv_xp_rating
+                                }, value)
+                            }
+                            val runtime = metadata?.runtime?.let {
+                                if (it.toIntOrNull() != null) stringResource(R.string.movioxp_runtime_minutes, it.toInt()) else it
+                            }
+                            val line = listOfNotNull(xpReleaseYear(item), rating, runtime)
+                                .plus(metadata?.genres.orEmpty()).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
+                            if (line.isNotBlank()) Text(line, color = XpAccent, fontSize = 14.sp)
+                            item.description?.takeIf(String::isNotBlank)?.let { description ->
+                                var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
+                                Text(description, color = XpMuted, fontSize = 15.sp,
+                                    maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis)
+                                if (description.length > 140) {
+                                    XpAction(stringResource(if (expanded) R.string.movioxp_read_less else R.string.movioxp_read_more),
+                                        false, compact = true) { expanded = !expanded }
+                                }
+                            }
+                            val collectionItem = item.copy(imdbId = selectedImdbId ?: item.imdbId)
+                            val savedWatch = watchlistTitles.firstOrNull { XpPlaybackIdentity.sameTitle(it, collectionItem) }
+                            XpDialogActions {
+                                XpAction(stringResource(if (favoriteTitles.any { XpPlaybackIdentity.sameTitle(it, collectionItem) })
+                                    R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite), false, compact = true) {
+                                    toggleFavorite(item)
+                                }
+                                XpAction(stringResource(if (savedWatch == null) R.string.movioxp_watchlist_add else R.string.movioxp_watchlist_remove),
+                                    false, compact = true) {
+                                    XpPersonalCollections.change(context, favoritesProfileId, XpCollection.WATCHLIST,
+                                        savedWatch ?: collectionItem, deleted = savedWatch != null)
+                                }
+                                XpAction(stringResource(R.string.movioxp_credits), false, compact = true) { showCredits = true }
+                                val history = historyTitles.filter { XpPlaybackIdentity.sameTitle(it, collectionItem) }
+                                if (history.isNotEmpty()) XpAction(stringResource(R.string.movioxp_history_remove), false, compact = true) {
+                                    history.forEach { XpPersonalCollections.change(context, favoritesProfileId,
+                                        XpCollection.HISTORY, it, deleted = true) }
+                                }
+                            }
                 if (item.type == "series" && XpPlaybackIdentity.isImdbId(item.id)) {
                     val seasons = episodes.map { it.season }.distinct()
                     val seasonTitle = stringResource(R.string.movioxp_season, selectedSeason)
@@ -2841,52 +3037,29 @@ fun StremioCatalogScreen(
                         },
                     )
                 }
-                if (showManualSources) Spacer(Modifier.height(22.dp))
-                if (showManualSources) Text(stringResource(R.string.moviotv_xp_stream_sources), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                if (showManualSources) {
-                when {
-                    streamsLoading -> Text(stringResource(R.string.moviotv_xp_loading_streams), color = XpMuted, fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 8.dp))
-                    selectedStreams.isEmpty() -> Text(stringResource(R.string.moviotv_xp_no_streams), color = XpMuted, fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 8.dp))
-                    else -> androidx.compose.foundation.lazy.LazyColumn(
-                        Modifier.fillMaxWidth().heightIn(max = 250.dp).padding(top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        itemsIndexed(selectedStreams) { index, stream ->
-                            val resultLabel = stringResource(R.string.moviotv_xp_stream_result, stream.label, stream.addon.name)
-                            val action = when {
-                                stream.url == null -> stringResource(R.string.moviotv_xp_stream_torrent_unsupported, resultLabel)
-                                stream.detail != null -> stringResource(R.string.moviotv_xp_stream_result_detail, resultLabel, stream.detail)
-                                else -> resultLabel
+
+                        }
+                    }
+                    if (wide) {
+                        Row(Modifier.weight(1f, fill = false).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            item.poster?.let {
+                                AsyncImage(it, null, Modifier.width(156.dp).aspectRatio(.68f).clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop)
                             }
-                            XpAction(action, disabled = stream.url == null, focusRequester = if (index == 0) firstSourceFocus else null) {
-                                stream.url?.let { playable ->
-                                    val playback = recordPlayback(item)
-                                    selected = null
-                                    manualSourceSelection = false
-                                    showManualSources = false
-                                    if (onPlayStreamCandidates != null) {
-                                        onPlayStreamCandidates(
-                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name,
-                                                XpSourcePreference.identity(stream.addon.url, stream.label),
-                                                userSelected = true,
-                                                legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail))),
-                                            playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs,
-                                        )
-                                    } else {
-                                        onPlayStream(playable, playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs)
-                                    }
-                                }
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { body() }
+                        }
+                    } else {
+                        Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            item.poster?.let {
+                                AsyncImage(it, null, Modifier.width(96.dp).aspectRatio(.68f).clip(RoundedCornerShape(10.dp)),
+                                    contentScale = ContentScale.Crop)
                             }
+                            body()
                         }
                     }
                 }
-                }
-                XpAction(stringResource(R.string.moviotv_xp_back_to_catalogues), false) {
-                    closeDetails()
-                }
-            }
             }
         }
     }
@@ -3181,11 +3354,12 @@ private fun XpSearchResultCard(hit: XpSearchHit, restorePoster: String?, onFocus
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(if (focused) XpAccent.copy(alpha = .18f) else XpPanel)
-            .clickable(onClick = onClick).focusRequester(requester).onFocusChanged {
+            .background(XpPanel)
+            .border(if (focused) 3.dp else 0.dp, if (focused) XpRemotePink else Color.Transparent, RoundedCornerShape(14.dp))
+            .focusRequester(requester).onFocusChanged {
                 if (it.isFocused && !focused) onFocused(itemKey)
                 focused = it.isFocused
-            }.focusable()
+            }.clickable(onClick = onClick)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -3197,7 +3371,7 @@ private fun XpSearchResultCard(hit: XpSearchHit, restorePoster: String?, onFocus
             XpPosterBadges(hit.meta)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(hit.meta.name, color = XpText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+            Text(hit.meta.name, color = if (focused) XpRemotePink else XpText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(hit.meta.type.replaceFirstChar(Char::uppercase), hit.meta.releaseInfo, hit.addon.name)
@@ -3259,32 +3433,23 @@ private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRe
 }
 
 @Composable
-private fun XpAccountProfileBadge(
-    displayName: String,
-    signedIn: Boolean,
+private fun XpHeaderControl(
     compact: Boolean,
+    label: String,
+    requester: FocusRequester? = null,
     onClick: () -> Unit,
-    focusRequester: FocusRequester? = null,
+    icon: @Composable (Color) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val tv = LocalXpTvControls.current
-    val focusColor = if (tv) XpRemotePink else XpFocus
-    val label = stringResource(R.string.movioxp_account_menu)
-    val letter = displayName.ifBlank { stringResource(R.string.movioxp_guest_label) }
-        .take(1).uppercase()
-    val shape = RoundedCornerShape(if (compact) 15.dp else 20.dp)
-    Box(
-        Modifier.size(if (compact) 42.dp else 56.dp)
-            .clip(shape).background(if (focused && !tv) Color(0xFFFFD078) else Color(0xFFFFAB32))
-            .border(if (focused) 3.dp else 1.dp, if (focused) if (tv) focusColor else Color.White else Color(0xFFB5791A), shape)
-            .semantics { contentDescription = label }
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(letter, color = if (focused && tv) focusColor else Color(0xFF231609), fontWeight = FontWeight.Black,
-            fontSize = if (compact) 21.sp else 26.sp)
+    val pink = focused && LocalXpTvControls.current
+    val shape = RoundedCornerShape(14.dp)
+    Box(Modifier.size(if (compact) 44.dp else 50.dp).clip(shape)
+        .border(if (pink) 2.dp else 0.dp, if (pink) XpRemotePink else Color.Transparent, shape)
+        .then(if (requester == null) Modifier else Modifier.focusRequester(requester))
+        .semantics { contentDescription = label }
+        .onFocusChanged { focused = it.isFocused }
+        .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        icon(if (pink) XpRemotePink else XpText)
     }
 }
 
@@ -3463,7 +3628,8 @@ private fun XpAddonInfoCard(
 }
 
 @Composable
-private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
+internal fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null,
+    compact: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val tv = LocalXpTvControls.current
     val focusColor = if (tv) XpRemotePink else XpFocus
@@ -3471,13 +3637,13 @@ private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequ
         Modifier.clip(RoundedCornerShape(22.dp))
             .background(if (focused && !tv) XpFocus.copy(alpha = .28f) else XpPanel)
             .border(if (focused) 3.dp else 1.dp, if (focused) focusColor else Color(0xFF3A3144), RoundedCornerShape(22.dp))
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (compact) 44.dp else 56.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }.clickable(enabled = !disabled, onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 14.dp),
+            .padding(horizontal = if (compact) 12.dp else 22.dp, vertical = if (compact) 8.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = if (disabled) XpMuted else if (focused) focusColor else XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (disabled) XpMuted else if (focused) focusColor else XpText, fontSize = if (compact) 14.sp else 17.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

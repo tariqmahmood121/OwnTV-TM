@@ -648,7 +648,7 @@ internal fun AboutPage(vm: MoreCountsViewModel, entry: FocusRequester, onOpenLan
                 Row(Modifier.padding(top = 16.mpx), horizontalArrangement = Arrangement.spacedBy(14.mpx), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME), style = stageText(22, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     // Only what a real check said: no tag before one has run.
-                    val tag = when (updateState) {
+                    val tag = if (BuildConfig.MOVIOXP_RELEASE) null else when (updateState) {
                         UpdateManager.State.UpToDate -> stringResource(R.string.more_about_up_to_date)
                         is UpdateManager.State.Available -> stringResource(R.string.update_available)
                         else -> null

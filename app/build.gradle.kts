@@ -52,6 +52,8 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
 
+        buildConfigField("boolean", "MOVIOXP_RELEASE", (System.getenv("MOVIOXP_RELEASE") == "true").toString())
+
         // Opt-in local diagnostic APKs keep the rolling playback trace enabled even when they are
         // release-signed (so they can update an installed production build without changing its data).
         buildConfigField(

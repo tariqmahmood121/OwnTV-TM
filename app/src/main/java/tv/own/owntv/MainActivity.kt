@@ -100,7 +100,7 @@ open class MainActivity : ComponentActivity() {
      * process that is still alive waits again.
      */
     @Volatile
-    private var startupSettled = false
+    private var startupSettled by mutableStateOf(false)
 
     private val player: tv.own.owntv.player.OwnTVPlayer by inject()
     private val engines: tv.own.owntv.player.PlaybackEngines by inject()
@@ -222,6 +222,7 @@ open class MainActivity : ComponentActivity() {
         val splashDeadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS
         var readyAt = 0L
         splash.setKeepOnScreenCondition {
+            if (BuildConfig.MOVIOXP_RELEASE) return@setKeepOnScreenCondition false
             val now = SystemClock.uptimeMillis()
             if (!contentReady) return@setKeepOnScreenCondition now < splashDeadline
             if (readyAt == 0L) readyAt = now
@@ -277,6 +278,11 @@ open class MainActivity : ComponentActivity() {
             return
         }
         setContent {
+            var xpSplashTimedOut by remember { mutableStateOf(false) }
+            if (BuildConfig.MOVIOXP_RELEASE) LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(SPLASH_TIMEOUT_MS + STARTUP_SETTLE_TIMEOUT_MS)
+                xpSplashTimedOut = true
+            }
             // First composition pass — splits "process start → Compose is running" from
             // "Compose is running → the destination's data arrived".
             // Deliberately a Unit-returning remember: the point is the side effect happening DURING
@@ -343,7 +349,7 @@ open class MainActivity : ComponentActivity() {
             // Animations Off also stills the launch screen. Android shows it before the app runs, so the
             // choice can only be handed over for the next launch, and only from Android 13 on.
             LaunchedEffect(animationLevel) {
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                if (!BuildConfig.MOVIOXP_RELEASE && android.os.Build.VERSION.SDK_INT >= 33) {
                     val still = animationLevel == tv.own.owntv.core.theme.AnimationLevel.OFF
                     splashScreen.setSplashScreenTheme(
                         if (still) stillLaunchTheme(tv.own.owntv.core.brand.AppIconSwitcher.applied(this@MainActivity)) else 0,
@@ -629,6 +635,9 @@ open class MainActivity : ComponentActivity() {
                             else -> Unit
                         }
                         } // end foreground Box (above the background layer)
+                        if (BuildConfig.MOVIOXP_RELEASE) {
+                            tv.own.owntv.features.home.XpStartupScreen(!startupSettled && !xpSplashTimedOut)
+                        }
                     }
                     } // end LocalizedContent
                 }
