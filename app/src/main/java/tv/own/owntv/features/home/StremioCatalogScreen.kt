@@ -362,7 +362,8 @@ private object XpAddonProtocol {
                         name = name,
                         poster = item.optString("poster").takeIf { it.isNotBlank() },
                         description = item.optString("description").takeIf { it.isNotBlank() },
-                        releaseInfo = item.optString("releaseInfo").takeIf { it.isNotBlank() },
+                        releaseInfo = item.optString("released").take(10).takeIf { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
+                            ?: item.optString("releaseInfo").takeIf { it.isNotBlank() },
                         rating = item.optString("imdbRating").takeIf { it.isNotBlank() },
                     )
                 )
@@ -790,7 +791,7 @@ fun StremioCatalogScreen(
             if (valid || discoverLoading[cacheKey] == true) continue
             discoverLoading[cacheKey] = true
             launch {
-                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters) }
+                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters).let { titles -> if (id == "xp_trending") titles else titles.sortedByDescending { xpReleaseKey(it) } } }
                     .onSuccess {
                         discoverMetas[cacheKey] = it
                         discoverLastFetch[cacheKey] = System.currentTimeMillis()
@@ -875,7 +876,7 @@ fun StremioCatalogScreen(
     } else emptyList()
     val sectionTitles = (if (page == "favorites") favoriteTitles else localLiveTitles + rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
         .distinctBy { "${it.type}:${it.id}" }
-        .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedBy { meta -> meta.name.lowercase() } }
+        .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedWith(compareByDescending<XpMeta> { xpReleaseKey(it) }.thenBy { it.name.lowercase() }) }
     val gridState = rememberLazyGridState()
     LaunchedEffect(page, sectionTitles.size) {
         if (page in browsePages && sectionTitles.isNotEmpty()) {
@@ -2457,6 +2458,32 @@ private fun XpAccountProfileBadge(
     }
 }
 
+private fun xpReleaseKey(item: XpMeta): String {
+    val raw = item.releaseInfo.orEmpty()
+    val date = Regex("""\d{4}-\d{2}-\d{2}""").find(raw)?.value
+    return date ?: Regex("""\d{4}""").find(raw)?.value?.plus("-00-00").orEmpty()
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpMeta) {
+    if (item.type != "movie" && item.type != "series") return
+    val rating = item.rating?.toDoubleOrNull()?.takeIf { it > 0 && it <= 10 }
+    if (rating != null) {
+        Row(Modifier.align(Alignment.TopStart).padding(4.dp)
+            .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("★ ", color = Color(0xFFFFD54F), fontSize = 11.sp)
+            Text(String.format(java.util.Locale.US, "%.1f", rating), color = Color.White, fontSize = 11.sp)
+        }
+    }
+    val year = xpReleaseKey(item).take(4)
+    if (year.isNotEmpty()) {
+        Text(year, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+            .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),
+            color = Color.White, fontSize = 11.sp)
+    }
+}
+
 @Composable
 private fun XpPoster(
     item: XpMeta,
@@ -2508,6 +2535,7 @@ private fun XpPoster(
             item.poster?.let {
                 AsyncImage(model = it, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
+            XpPosterBadges(item)
             if (item.durationMs > 0L && item.positionMs > 0L) {
                 Box(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp)
