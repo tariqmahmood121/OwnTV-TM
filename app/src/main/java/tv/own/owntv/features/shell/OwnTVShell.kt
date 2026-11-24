@@ -700,7 +700,6 @@ fun OwnTVShell(
                 movioContext, player, mpvEngine, scope,
                 profileId, url, title, type, year, contentId, poster, resumePositionMs,
             )
-            onSelectSection(target)
             openFullscreen(target)
         }
     val onPlayMovioXpCandidates: (List<XpPlaybackSource>, String, String, String?, String, String?, Long) -> Unit =

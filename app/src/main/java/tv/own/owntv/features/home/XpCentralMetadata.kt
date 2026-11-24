@@ -64,16 +64,20 @@ internal object XpCentralMetadata {
     ) = repository.observe(
         XpCatalogueRepository.Key(profile, connection.apiBase, category + if (page == 1) "" else ":$page"),
         refreshAfter,
-        cacheable = { body -> JSONObject(body).let { it.optJSONArray("metas") != null && !it.optBoolean("fallback") } },
+        cacheable = { body -> JSONObject(body).let { it.optJSONArray("metas") != null && !it.optBoolean("fallback") && !it.has("error") } },
     ) {
         val path = "metadata/catalog/$category" + if (page == 1) "" else "?page=$page"
         XpCentralAddonSync.request(connection.apiBase, path, connection.token).toString()
     }.map { body -> body?.let { parsePage(JSONObject(it), page) } }.flowOn(Dispatchers.IO)
 
-    internal fun parsePage(response: JSONObject, page: Int): XpCatalogueSlice? =
-        parseCatalog(response)?.let { titles ->
+    internal fun parsePage(response: JSONObject, page: Int): XpCatalogueSlice? {
+        if (response.has("error") && !response.optBoolean("fallback", true)) {
+            return XpCatalogueSlice(emptyList(), null, failed = true)
+        }
+        return parseCatalog(response)?.let { titles ->
             XpCatalogueSlice(titles, response.optInt("next_page").takeIf { it == page + 1 && it <= 10 })
         }
+    }
 
     // Null means Central allows a provider fallback. An empty list is an authoritative empty row.
     internal fun parseCatalog(response: JSONObject): List<XpMeta>? {
@@ -105,7 +109,12 @@ internal object XpCentralMetadata {
     }
 }
 
-internal data class XpCatalogueSlice(val titles: List<XpMeta>, val next: Int?)
+internal data class XpCatalogueSlice(
+    val titles: List<XpMeta>,
+    val next: Int?,
+    val providerFallback: Boolean = false,
+    val failed: Boolean = false,
+)
 
 internal fun catalogueProfileKey(connection: XpCentralConnection?, localProfileId: Long): String =
     "${connection?.apiBase}|${connection?.accountId}|$localProfileId"

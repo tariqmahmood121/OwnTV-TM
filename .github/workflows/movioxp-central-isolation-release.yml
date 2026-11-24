@@ -35,6 +35,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Validate translation inventory and Android values
+        run: |
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          for resource in Path("app/src/main/res").glob("values*/*.xml"):
+              ElementTree.parse(resource)
+          PYTHON
+
       - name: Decode dedicated MovioXP release keystore
         env:
           MOVIOXP_KEYSTORE_BASE64: ${{ secrets.MOVIOXP_KEYSTORE_BASE64 }}

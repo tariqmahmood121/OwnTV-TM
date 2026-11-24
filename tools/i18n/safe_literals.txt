@@ -155,6 +155,7 @@
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt	moviotv_poster_grid_v75
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/MovioTouchBrowse.kt	poster_zoom_
 27	empty	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\0
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$catalogueProfile|$seriesId
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$page|$category
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$path/manifest.json
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	$route.json
@@ -165,7 +166,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${hit.meta.type}:${hit.meta.id}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${it.addon.url}|${it.meta.type}:${it.meta.id}
 4	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${it.type}:${it.id}
-1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${item.type}:${item.id}
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${media.type}:${media.id}
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${row.addon.url}|${row.catalog.type}|${row.catalog.id}
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${uri.scheme}://${uri.rawAuthority}$base/$resource
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	${uri.scheme}://${uri.rawAuthority}$endpoint
@@ -173,6 +174,7 @@
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	&
 3	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/manifest.json
+1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/meta/$type/$id.json
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	/stremio/v1
 2	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	?$it
 2	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	AES/GCM/NoPadding
@@ -184,11 +186,13 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Add-on stream request failed
 2	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	AndroidKeyStore
 2	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Bollywood
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Central add-on synchronization failed
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Central profile synchronization failed
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Enter a valid HTTPS add-on URL.
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Hindi
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Hindi Movies
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Horror
-1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	IMDb
+3	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	IMDb
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	In Cinemas
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Indian
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Latest
@@ -196,6 +200,7 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	New
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Now Playing
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Requesting streams from a compatible add-on
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Restoring catalogue poster focus
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Sci-Fi
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Science Fiction
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	TMDB
@@ -204,12 +209,14 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Trending
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Upcoming
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Use a secure HTTPS add-on URL.
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	Using catalogue provider fallback
 2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	[]
 2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	\\d{4}-\\d{2}-\\d{2}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	action
 14	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	addons
 14	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	all
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	all-movies
 3	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	app_settings
 1	mime	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	application/json
 3	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	auto_select_source
@@ -241,17 +248,18 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https://
 1	url	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https://moviotv.opticalzoo.com/movio/api/index.php
+1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https://v3-cinemeta.strem.io
 10	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	id
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	idPrefixes
-1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	imdbRating
+2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	imdbRating
 4	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	imdb_id
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	isRequired
-1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	latest
 5	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	library
 6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	live
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	manifest.json
+3	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	meta
 2	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	metas
-8	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movie
+10	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movie
 17	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movies
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	moviotv_poster_grid_v75
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_addons_aes_v1
@@ -267,22 +275,21 @@
 4	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	rating
 4	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	rating_source
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	releaseInfo
-1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	released
+2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	released
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	resources
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	science-fiction
 15	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	search
-15	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	series
+20	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	series
 6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	settings
 3	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	skip
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stream
 1	uri	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stream/${Uri.encode(item.type)}/${Uri.encode(streamId)}.json
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	streams
-1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stremio:${item.type}:$id
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	stremio:${media.type}:$id
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	thriller
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	title
 4	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	tmdb_id
 4	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	top
-1	regex	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	tt[0-9]+
 6	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	type
 5	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	types
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	url
@@ -349,6 +356,10 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogSort.kt	xp_upcoming
 1	empty	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	\0
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	%02x
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue cache hit, age ${now() - cached.timestamp} ms
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue cache miss
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue refresh completed in ${now() - started} ms
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue refresh failed after ${now() - started} ms
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	SHA-256
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	xp_catalogues
 2	empty	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	\0
@@ -364,6 +375,7 @@
 2	technical	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	AndroidKeyStore
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	Authorization
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	Bearer $token
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	Central response HTTP ${response.code}
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	DELETE
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	GET
 5	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralAddons.kt	POST
@@ -496,7 +508,8 @@
 1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	description
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	documentary
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	drama
-2	json	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	fallback
+2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	error
+3	json	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	fallback
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	family
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	fantasy
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	history
@@ -543,6 +556,14 @@
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	movioxp_central_profile_membership
 1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	name
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	profiles
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	$alias:$season:$number
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	$seriesId:$season:$number
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	episode
+1	json	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	id
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	meta
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	season
+2	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	title
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	videos
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpHomeConfig.kt	genre:
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpHomeConfig.kt	movioxp_playback
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpHomeConfig.kt	xp_action
@@ -565,6 +586,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	MovioXP
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	\\s+
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	cinemeta
+1	json	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	fallback
 1	json	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	imdb_id
 1	uri	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	metadata/resolve/$tmdbId
 1	uri	app/src/main/java/tv/own/owntv/features/home/XpPlaybackIdentity.kt	metadata/resolve/movie/${tmdbId.removePrefix("tmdb:")}

@@ -6,12 +6,14 @@ import java.util.Locale
 import tv.own.owntv.BuildConfig
 
 internal fun xpDebug(event: String) {
-    if (BuildConfig.DEBUG) Log.d("MovioXP", event)
+    if (BuildConfig.DEBUG) runCatching { Log.d("MovioXP", event) }
 }
 
 internal object XpPlaybackIdentity {
     private val imdb = Regex("tt[0-9]+")
     private val tmdb = Regex("tmdb:[1-9][0-9]*")
+
+    fun isImdbId(id: String): Boolean = imdb.matches(id)
 
     fun tmdbId(item: XpMeta): String? = listOfNotNull(item.tmdbId, item.id).firstOrNull(tmdb::matches)
 
@@ -23,13 +25,14 @@ internal object XpPlaybackIdentity {
 
     private fun titleKey(title: String) = title.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
 
+    fun matchingTitleCandidates(item: XpMeta, candidates: List<XpMeta>): List<XpMeta> =
+        candidates.filter { imdb.matches(it.id) && it.type == item.type && titleKey(it.name) == titleKey(item.name) }
+            .distinctBy(XpMeta::id)
+
     fun exactImdbMatch(item: XpMeta, candidates: List<XpMeta>): String? {
         val date = xpFullReleaseDate(item) ?: return null
-        val matches = candidates.filter {
-            imdb.matches(it.id) && it.type == item.type && titleKey(it.name) == titleKey(item.name) &&
-                xpFullReleaseDate(it) == date
-        }
-        return matches.map(XpMeta::id).distinct().singleOrNull()
+        return matchingTitleCandidates(item, candidates)
+            .filter { xpFullReleaseDate(it) == date }.singleOrNull()?.id
     }
 
     suspend fun resolve(
@@ -45,10 +48,12 @@ internal object XpPlaybackIdentity {
         val provider = connection?.apiBase ?: "cinemeta"
         val key = XpCatalogueRepository.Key(profile, provider, "metadata/resolve/$tmdbId")
         val value = repository.observe(key, cacheable = { imdb.matches(it) }) {
+            var allowFallback = true
             val central = connection?.let {
                 try {
                     val path = "metadata/resolve/movie/${tmdbId.removePrefix("tmdb:")}"
                     val response = XpCentralAddonSync.request(it.apiBase, path, it.token)
+                    allowFallback = response.optBoolean("fallback", true)
                     response.optString("imdb_id").takeIf(imdb::matches)
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
@@ -57,7 +62,7 @@ internal object XpPlaybackIdentity {
                     null
                 }
             }
-            val id = central ?: fallback()
+            val id = central ?: if (allowFallback) fallback() else null
             xpDebug(if (id == null) "IMDb identifier unresolved" else "IMDb identifier resolved")
             id.orEmpty()
         }.last()

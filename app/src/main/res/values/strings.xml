@@ -20,6 +20,10 @@
     <string name="movioxp_home_latest">Latest releases</string>
     <string name="movioxp_home_cinema">In Cinemas</string>
     <string name="movioxp_home_upcoming">Upcoming</string>
+    <string name="movioxp_season">Season %1$d</string>
+    <string name="movioxp_episode">Episode %1$d</string>
+    <string name="movioxp_choose_episode">Choose episode</string>
+    <string name="movioxp_episode_title">%1$s · %2$s</string>
     <string name="movioxp_imdb_rating">IMDb %1$s</string>
     <string name="movioxp_history">History</string>
     <string name="movioxp_history_remove">Remove from History</string>

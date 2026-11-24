@@ -206,6 +206,7 @@ internal object XpCentralAddonSync {
         } else if (method == "DELETE") builder.delete()
         else builder.get()
         client.newCall(builder.build()).execute().use { response ->
+            xpDebug("Central response HTTP ${response.code}")
             val raw = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
             if (!response.isSuccessful) throw IllegalStateException(json.optString("error"))

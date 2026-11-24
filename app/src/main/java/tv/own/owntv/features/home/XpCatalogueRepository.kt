@@ -38,7 +38,10 @@ internal class XpCatalogueRepository(
     private val lock = Mutex()
     private val requests = Semaphore(4)
     private val inFlight = mutableMapOf<Key, Deferred<String?>>()
-    private val failedAt = mutableMapOf<Key, Long>()
+    private val failedAt = object : LinkedHashMap<Key, Long>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Long>?): Boolean = size > 128
+    }
+    private var writesUntilSweep = 0
     private val memory = object : LinkedHashMap<Key, Cached>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Cached>?): Boolean = size > 64
     }
@@ -50,6 +53,7 @@ internal class XpCatalogueRepository(
         load: suspend () -> String,
     ) = flow {
         val cached = lock.withLock { read(key) }
+        xpDebug(if (cached == null) "Catalogue cache miss" else "Catalogue cache hit, age ${now() - cached.timestamp} ms")
         if (cached != null) emit(cached.body)
         val job = lock.withLock {
             inFlight[key]?.let { return@withLock it }
@@ -58,8 +62,10 @@ internal class XpCatalogueRepository(
             if (latest != null && latest.timestamp >= refreshAfter && age != null && age in 0 until ttlMillis) return@withLock null
             if (failedAt[key]?.let { it >= refreshAfter && now() - it in 0 until 60_000L } == true) return@withLock null
             scope.async {
+                val started = now()
                 try {
                     val body = requests.withPermit { load() }
+                    xpDebug("Catalogue refresh completed in ${now() - started} ms")
                     val valid = cacheable(body)
                     lock.withLock {
                         // Invalidation cancels the old request and removes its entry before allowing new writes.
@@ -76,6 +82,7 @@ internal class XpCatalogueRepository(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
+                    xpDebug("Catalogue refresh failed after ${now() - started} ms")
                     lock.withLock {
                         if (inFlight[key] === coroutineContext[Job]) failedAt[key] = now()
                     }
@@ -133,6 +140,16 @@ internal class XpCatalogueRepository(
         }
         val entries = parent.listFiles().orEmpty()
         if (entries.size > 128) entries.sortedByDescending(File::lastModified).drop(128).forEach(File::delete)
+        if (writesUntilSweep-- <= 0) {
+            writesUntilSweep = 8
+            val diskEntries = directory.walkTopDown().filter(File::isFile)
+                .sortedByDescending(File::lastModified).toList()
+            var bytes = 0L
+            diskEntries.forEach { entry ->
+                bytes += entry.length()
+                if (bytes > MAX_DISK_BYTES) entry.delete()
+            }
+        }
     }
 
     private fun providerDirectory(profile: String, provider: String) =
@@ -145,6 +162,7 @@ internal class XpCatalogueRepository(
 
     companion object {
         private const val MAX_ENTRY_BYTES = 2_000_000L
+        private const val MAX_DISK_BYTES = 64L * 1024 * 1024
         @Volatile private var instance: XpCatalogueRepository? = null
 
         fun get(context: Context): XpCatalogueRepository = instance ?: synchronized(this) {
