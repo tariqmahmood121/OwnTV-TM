@@ -39,6 +39,20 @@ internal object XpPlaybackIdentity {
         return possible.filter { xpFullReleaseDate(it) == date }.singleOrNull()?.id
     }
 
+    private fun mappingKey(profile: String, connection: XpCentralConnection?, tmdbId: String) =
+        XpCatalogueRepository.Key(profile, connection?.apiBase ?: "cinemeta", "metadata/resolve/$tmdbId")
+
+    suspend fun cachedImdb(
+        repository: XpCatalogueRepository,
+        profile: String,
+        connection: XpCentralConnection?,
+        item: XpMeta,
+    ): String? {
+        val id = tmdbId(item) ?: return null
+        if (item.type != "movie") return null
+        return repository.cachedBody(mappingKey(profile, connection, id))?.takeIf(imdb::matches)
+    }
+
     suspend fun resolve(
         repository: XpCatalogueRepository,
         profile: String,
@@ -49,8 +63,7 @@ internal object XpPlaybackIdentity {
         listOfNotNull(item.imdbId, item.id).firstOrNull(imdb::matches)?.let { return it }
         val tmdbId = tmdbId(item) ?: return null
         if (item.type != "movie") return null
-        val provider = connection?.apiBase ?: "cinemeta"
-        val key = XpCatalogueRepository.Key(profile, provider, "metadata/resolve/$tmdbId")
+        val key = mappingKey(profile, connection, tmdbId)
         val value = repository.observe(key, cacheable = { imdb.matches(it) }) {
             var allowFallback = true
             val central = connection?.let {

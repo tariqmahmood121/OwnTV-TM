@@ -17,6 +17,7 @@
     <string name="movioxp_home_settings_hint">Discover uses your Central catalogues and available add-on sources.</string>
     <string name="movioxp_home_default_rows">Show other add-on catalogue rows</string>
     <string name="movioxp_home_trending">Trending</string>
+    <string name="movioxp_home_cinemeta_featured">Cinemeta Featured</string>
     <string name="movioxp_home_latest">Latest releases</string>
     <string name="movioxp_home_cinema">In Cinemas</string>
     <string name="movioxp_home_upcoming">Upcoming</string>

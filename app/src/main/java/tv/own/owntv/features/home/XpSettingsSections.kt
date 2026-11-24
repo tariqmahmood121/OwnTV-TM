@@ -3,7 +3,6 @@ package tv.own.owntv.features.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,25 +62,28 @@ internal fun XpSettingsAccordion(
     val palette = OwnTVTheme.colors
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(17.dp)
+    val tv = LocalXpTvControls.current
+    val pink = focused && tv
     Column(modifier.fillMaxWidth().clip(shape).background(palette.surfaceContainerLow)
-        .border(if (focused) 2.dp else 1.dp,
-            if (focused) palette.primary else palette.outline.copy(alpha = .45f), shape)) {
+        .border(if (focused && !tv) 2.dp else 1.dp,
+            if (focused && !tv) palette.primary else palette.outline.copy(alpha = .45f), shape)) {
         Row(
-            Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }
-                .clickable(onClick = onToggle).focusable()
+            Modifier.fillMaxWidth().border(if (pink) 2.dp else 0.dp,
+                if (pink) XpRemotePink else Color.Transparent, shape)
+                .onFocusChanged { focused = it.isFocused }.clickable(onClick = onToggle)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, color = palette.onSurface, fontSize = 17.sp,
+                Text(title, color = if (pink) XpRemotePink else palette.onSurface, fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold, maxLines = 2)
-                Text(summary, color = palette.onSurfaceVariant, fontSize = 12.sp,
+                Text(summary, color = if (pink) XpRemotePink else palette.onSurfaceVariant, fontSize = 12.sp,
                     maxLines = if (expanded) 3 else 1, overflow = TextOverflow.Ellipsis)
             }
             Text(
                 stringResource(if (expanded) R.string.moviotv_xp_settings_collapse else R.string.moviotv_xp_settings_expand),
-                color = palette.primary, fontSize = 20.sp,
+                color = if (pink) XpRemotePink else palette.primary, fontSize = 20.sp,
             )
         }
         if (expanded) {
@@ -104,18 +106,20 @@ internal fun XpSettingsOption(
     val palette = OwnTVTheme.colors
     val shape = RoundedCornerShape(12.dp)
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val pink = focused && tv
     Text(
         title,
-        color = if (focused || selected) palette.primary else palette.onSurface,
+        color = if (pink) XpRemotePink else if (focused || selected) palette.primary else palette.onSurface,
         fontSize = 15.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         maxLines = 3,
         modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).clip(shape)
-            .background(if (selected || focused) palette.primary.copy(alpha = .15f) else palette.surfaceContainerHigh.copy(alpha = .45f))
+            .background(if (selected || (focused && !tv)) palette.primary.copy(alpha = .15f) else palette.surfaceContainerHigh.copy(alpha = .45f))
             .border(if (focused) 2.dp else 1.dp,
-                if (focused || selected) palette.primary else Color.Transparent, shape)
+                if (pink) XpRemotePink else if (focused || selected) palette.primary else Color.Transparent, shape)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(enabled = enabled, onClick = onClick).focusable(enabled)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     )
 }
@@ -163,22 +167,24 @@ private fun XpHomeButton(
 ) {
     val palette = OwnTVTheme.colors
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val pink = focused && tv
     val shape = RoundedCornerShape(10.dp)
     Text(
         label,
         color = if (!active) palette.onSurfaceVariant.copy(alpha = .55f)
-                else if (focused || selected) palette.primary else palette.onSurface,
+                else if (pink) XpRemotePink else if (focused || selected) palette.primary else palette.onSurface,
         fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         modifier = modifier.heightIn(min = 47.dp).clip(shape)
-            .background(if (focused || selected) palette.primary.copy(alpha = .15f)
+            .background(if (selected || (focused && !tv)) palette.primary.copy(alpha = .15f)
                 else palette.surfaceContainerHigh.copy(alpha = .45f))
             .border(if (focused) 2.dp else 1.dp,
-                if (focused) palette.primary else Color.Transparent, shape)
+                if (pink) XpRemotePink else if (focused) palette.primary else Color.Transparent, shape)
             .semantics { contentDescription = accessibility }
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = active, onClick = onClick)
-            .focusable(active)
+
             .padding(horizontal = 12.dp, vertical = 12.dp),
     )
 }
@@ -193,12 +199,14 @@ private fun XpChoice(title: String, selected: Boolean, onClick: () -> Unit) {
     val palette = OwnTVTheme.colors
     val shape = RoundedCornerShape(12.dp)
     var focused by remember { mutableStateOf(false) }
-    Text(title, color = if (selected || focused) palette.primary else palette.onSurface,
+    val tv = LocalXpTvControls.current
+    val pink = focused && tv
+    Text(title, color = if (pink) XpRemotePink else if (selected || focused) palette.primary else palette.onSurface,
         fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         modifier = Modifier.clip(shape)
-            .background(if (selected || focused) palette.primary.copy(alpha = .15f) else palette.surfaceContainerHigh)
-            .border(if (focused) 2.dp else 1.dp, if (selected || focused) palette.primary else Color.Transparent, shape)
-            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable()
+            .background(if (selected || (focused && !tv)) palette.primary.copy(alpha = .15f) else palette.surfaceContainerHigh)
+            .border(if (focused) 2.dp else 1.dp, if (pink) XpRemotePink else if (selected || focused) palette.primary else Color.Transparent, shape)
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 12.dp))
 }
 

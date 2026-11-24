@@ -65,6 +65,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import kotlinx.coroutines.Job
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -230,6 +233,10 @@ private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDisco
         }
         return null
     }
+
+    if (categoryId == "xp_cinemeta_featured") return candidates.firstOrNull {
+        it.addon.builtIn && it.catalog.id == "imdbRating"
+    }?.let { XpDiscoverSource(categoryId, it) }
 
     val customGenre = XpHomeConfig.genreName(categoryId)
     if (customGenre != null) {
@@ -728,6 +735,13 @@ fun StremioCatalogScreen(
 ) {
     val context = LocalContext.current
     val playbackActive = LocalXpPlaybackActive.current
+    val television = (androidx.compose.ui.platform.LocalConfiguration.current.uiMode and
+        android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    val focusManager = LocalFocusManager.current
+    var headerEditing by remember { mutableStateOf(false) }
+    var gridEditing by remember { mutableStateOf(false) }
+    val remoteHold = remember { XpRemoteHold() }
+    var remoteTimer by remember { mutableStateOf<Job?>(null) }
     val restorePosterFocus = LocalXpRestorePoster.current || restoreHomePosterFocus
     // Keep all five XP tab labels legible on narrow touch devices.
     val compactPhone = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
@@ -927,6 +941,24 @@ fun StremioCatalogScreen(
     val firstGridFocus = remember { FocusRequester() }
     val categoryRailFocus = remember { FocusRequester() }
     val bottomNavigationFocus = remember { FocusRequester() }
+    val topNavigationFocus = remember { FocusRequester() }
+    val shortcutsEnabled = television && showBottomNavigation && !playbackActive &&
+        page in setOf("home", "discover", "library") && selected == null && !showAccountMenu &&
+        !headerEditing && !gridEditing
+    val canJump by rememberUpdatedState(shortcutsEnabled)
+    LaunchedEffect(page) {
+        if (page != "home") headerEditing = false
+        if (page != "discover" && page != "library") gridEditing = false
+    }
+    LaunchedEffect(shortcutsEnabled, page) {
+        remoteTimer?.cancel()
+        remoteHold.cancel()
+    }
+
+    fun jump(direction: XpRemoteHold.Direction) {
+        val target = if (direction == XpRemoteHold.Direction.TOP) topNavigationFocus else bottomNavigationFocus
+        runCatching { target.requestFocus() }
+    }
 
     // Retain account-scoped Room data on logout; old bearer token is invalidated locally first.
     fun signOutCentral() {
@@ -1006,8 +1038,12 @@ fun StremioCatalogScreen(
 
     fun catalogKey(row: XpCatalogRow) = "${row.addon.url}|${row.catalog.type}|${row.catalog.id}"
     fun rowKey(row: XpCatalogRow) = "${catalogKey(row)}|${if (page == "discover" || page in browsePages) discoveryGenre else "all"}"
-    val rows = if (page == "home" && !homeSettings.showDefaultCatalogs) emptyList()
-        else installedAddons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }.filter { row ->
+    val configuredRows = installedAddons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
+    fun externalRowId(row: XpCatalogRow) = XpHomeConfig.externalRowId(row.addon.url, row.catalog.type, row.catalog.id)
+    val externalRows = configuredRows.filterNot { it.addon.builtIn && it.catalog.type == "movie" && it.catalog.id == "imdbRating" }
+    val rows = (if (page == "home") externalRows.filter {
+        XpHomeConfig.externalVisible(homeSettings, externalRowId(it), it.addon.builtIn)
+    } else configuredRows).filter { row ->
             val typeMatches = when (page) {
                 "movies" -> row.catalog.type.equals("movie", true)
                 "series" -> row.catalog.type.equals("series", true)
@@ -1376,7 +1412,11 @@ fun StremioCatalogScreen(
         val searchable = installedAddons
         searchableCatalogCount = searchable.sumOf { addon -> addon.catalogs.count { it.searchParameter != null } }
         val (hits, failures) = XpAddonProtocol.searchAll(searchable, query)
-        searchHits = hits
+        val resolvedHits = hits.map { hit ->
+            val imdb = XpPlaybackIdentity.cachedImdb(repository, catalogueProfile, centralConnection, hit.meta)
+            if (imdb == null) hit else hit.copy(meta = hit.meta.copy(imdbId = imdb))
+        }
+        searchHits = XpCataloguePaging.unique(resolvedHits) { it.meta }
         searchFailureCount = failures
         searchLoading = false
     }
@@ -1523,14 +1563,43 @@ fun StremioCatalogScreen(
 
     Box(
         modifier.fillMaxSize().background(XpBackground).onPreviewKeyEvent { event ->
-            if (showBottomNavigation && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
-                event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
-                runCatching { bottomNavigationFocus.requestFocus() }
-                true
-            } else false
+            val key = event.nativeKeyEvent
+            if (showBottomNavigation && !playbackActive && key.action == android.view.KeyEvent.ACTION_DOWN &&
+                key.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+                jump(XpRemoteHold.Direction.BOTTOM)
+                return@onPreviewKeyEvent true
+            }
+            if (!shortcutsEnabled) return@onPreviewKeyEvent false
+            val direction = when (key.keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_UP -> XpRemoteHold.Direction.TOP
+                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> XpRemoteHold.Direction.BOTTOM
+                else -> return@onPreviewKeyEvent false
+            }
+            when (key.action) {
+                android.view.KeyEvent.ACTION_DOWN -> {
+                    if (key.repeatCount == 0 && remoteHold.start(direction, key.downTime)) {
+                        remoteTimer?.cancel()
+                        remoteTimer = scope.launch {
+                            delay(XpRemoteHold.DELAY)
+                            if (canJump && remoteHold.trigger(direction, android.os.SystemClock.uptimeMillis())) jump(direction)
+                        }
+                    }
+                    true
+                }
+                android.view.KeyEvent.ACTION_UP -> {
+                    remoteTimer?.cancel()
+                    if (!key.isCanceled && remoteHold.trigger(direction, key.eventTime)) jump(direction)
+                    val released = remoteHold.release(direction)
+                    if (!key.isCanceled && released == XpRemoteHold.Release.STEP) {
+                        focusManager.moveFocus(if (direction == XpRemoteHold.Direction.TOP) FocusDirection.Up else FocusDirection.Down)
+                    }
+                    released != XpRemoteHold.Release.IGNORE
+                }
+                else -> false
+            }
         },
     ) {
-        CompositionLocalProvider(LocalXpPosterDisplay provides (showRating to showYear)) {
+        CompositionLocalProvider(LocalXpPosterDisplay provides (showRating to showYear), LocalXpTvControls provides television) {
         Column(Modifier.fillMaxSize()) {
             if (showBottomNavigation) Row(
                 Modifier.fillMaxWidth().padding(horizontal = if (compactPhone) 12.dp else 22.dp, vertical = 12.dp),
@@ -1573,7 +1642,7 @@ fun StremioCatalogScreen(
                             },
                             singleLine = true,
                             textStyle = TextStyle(color = XpText, fontSize = if (compactPhone) 16.sp else 20.sp),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().onFocusChanged { headerEditing = it.hasFocus },
                         )
                     }
                     DrawOwnTVIcon(OwnTVIcon.SEARCH, XpText, Modifier.size(if (compactPhone) 19.dp else 24.dp))
@@ -1582,6 +1651,7 @@ fun StremioCatalogScreen(
                     displayName = activeProfileName,
                     signedIn = centralConnection != null,
                     compact = compactPhone,
+                    focusRequester = topNavigationFocus,
                     onClick = { showAccountMenu = true },
                 )
             } else Row(
@@ -2038,6 +2108,19 @@ fun StremioCatalogScreen(
                                 }
                             }
                         }
+                        if (homeSettings.showDefaultCatalogs) externalRows.forEach { row ->
+                            val id = externalRowId(row)
+                            val enabled = XpHomeConfig.externalVisible(homeSettings, id, row.addon.builtIn)
+                            XpSettingsOption(
+                                stringResource(R.string.movioxp_home_row_toggle,
+                                    stringResource(R.string.moviotv_xp_filter_catalog_label, row.catalog.name, row.addon.name),
+                                    stringResource(if (enabled) R.string.movioxp_home_on else R.string.movioxp_home_off)),
+                                selected = enabled,
+                            ) {
+                                homeSettings = XpHomeConfig.toggleExternal(homeSettings, id, enabled)
+                                XpHomeConfig.save(context, favoritesProfileId, homeSettings)
+                            }
+                        }
                         XpSettingsOption(
                             title = stringResource(R.string.movioxp_home_add_category),
                             selected = showAddHomeCategory,
@@ -2269,6 +2352,7 @@ fun StremioCatalogScreen(
                     var pageLoading by remember { mutableStateOf(false) }
                     var pageFailed by remember { mutableStateOf(false) }
                     var reload by remember { mutableLongStateOf(0L) }
+                    var pageOneRefresh by remember { mutableLongStateOf(0L) }
                     LaunchedEffect(source, centralConnection, centralCategory, loadPage, refreshCatalogues, reload) {
                         if (firstPage != null) return@LaunchedEffect
                         val refresh = maxOf(refreshCatalogues, reload)
@@ -2276,27 +2360,30 @@ fun StremioCatalogScreen(
                         pageFailed = false
                         try {
                             // Rehydrate the already-viewed window from disk after a process recreation.
-                            for (index in 1..loadPage) {
+                            for (index in 1..loadPage.coerceIn(1, XpCataloguePaging.MAX_PAGES)) {
                                 if (index > 1 && pages[index - 1]?.next != index) break
+                                if (index in pages && (index != 1 || refresh <= pageOneRefresh)) continue
+                                val requestRefresh = if (index == 1 || index == loadPage) refresh else 0L
                                 suspend fun fallback() {
                                     if (source == null || (index > 1 && "skip" !in source.row.catalog.extraFields)) return
                                     val skipped = pages.filterKeys { it < index }.values.sumOf { it.titles.size }
                                     val overrides = if (index == 1) source.parameters else source.parameters + ("skip" to skipped.toString())
-                                    XpAddonProtocol.observeCatalog(repository, catalogueProfile, source.row, overrides, refresh).collect { titles ->
+                                    XpAddonProtocol.observeCatalog(repository, catalogueProfile, source.row, overrides, requestRefresh).collect { titles ->
                                         if (titles != null) {
-                                            val repeated = index > 1 && titles.all { title ->
+                                            val slice = titles.take(XpCataloguePaging.PAGE_SIZE)
+                                            val repeated = index > 1 && slice.all { title ->
                                                 pages[index - 1]?.titles?.any { XpPlaybackIdentity.sameTitle(it, title) } == true
                                             }
-                                            val next = (index + 1).takeIf {
-                                                it <= 10 && titles.isNotEmpty() && !repeated && "skip" in source.row.catalog.extraFields
+                                            val next = XpCataloguePaging.next(index, index + 1)?.takeIf {
+                                                slice.isNotEmpty() && !repeated && "skip" in source.row.catalog.extraFields
                                             }
-                                            pages[index] = XpCatalogueSlice(titles, next, providerFallback = true)
+                                            pages[index] = XpCatalogueSlice(slice, next, providerFallback = true)
                                         }
                                     }
                                 }
                                 val connection = centralConnection
                                 if (connection == null || centralCategory == null || pages[index - 1]?.providerFallback == true) fallback()
-                                else XpCentralMetadata.observePage(repository, catalogueProfile, connection, centralCategory, index, refresh)
+                                else XpCentralMetadata.observePage(repository, catalogueProfile, connection, centralCategory, index, requestRefresh)
                                     .collectLatest { data ->
                                         when {
                                             data?.failed == true -> pageFailed = true
@@ -2310,6 +2397,7 @@ fun StremioCatalogScreen(
                                             index == 1 -> fallback()
                                         }
                                     }
+                                if (index == 1) pageOneRefresh = refresh
                                 if (index !in pages) {
                                     pageFailed = true
                                     break
@@ -2319,11 +2407,13 @@ fun StremioCatalogScreen(
                             pageLoading = false
                         }
                     }
-                    val gridTitles = sortedTitles(firstPage ?: pages.toSortedMap().values.flatMap { it.titles }
-                        .fold(mutableListOf<XpMeta>()) { result, item ->
-                            if (result.none { XpPlaybackIdentity.sameTitle(it, item) }) result.add(item)
-                            result
-                        }, category)
+                    val loadedPages = pages.toMap()
+                    val gridTitles = remember(firstPage, loadedPages, sortMode, category) {
+                        val titles = firstPage ?: XpCataloguePaging.unique(
+                            loadedPages.toSortedMap().values.flatMap { it.titles },
+                        ) { it }.take(XpCataloguePaging.MAX_TITLES)
+                        sortedTitles(titles, category)
+                    }
                     XpBrowseGrid(
                         options = options,
                         category = category,
@@ -2333,6 +2423,7 @@ fun StremioCatalogScreen(
                         railState = railState,
                         restoreRailFocus = restoreRailFocus,
                         onRailFocusHandled = { restoreRailFocus = false },
+                        onEditing = { gridEditing = it },
                         sortLabels = sortLabels,
                         selectedSort = xpCategorySort(category.takeUnless { library }, sortMode.takeIf { it >= 0 }),
                         onSort = ::changeSort,
@@ -2546,7 +2637,9 @@ fun StremioCatalogScreen(
                         Triple("app_settings", R.string.moviotv_xp_nav_settings, OwnTVIcon.GEAR),
                     ).forEach { (key, labelRes, icon) ->
                         XpNavigationItem(stringResource(labelRes), icon, selected = page == (if (key == "app_settings") "settings" else key),
-                            compact = compactPhone, focusRequester = bottomNavigationFocus.takeIf { key == "home" }) {
+                            compact = compactPhone, focusRequester = bottomNavigationFocus.takeIf {
+                                key == if (page in setOf("home", "discover", "library", "addons")) page else "home"
+                            }) {
                             page = if (key == "app_settings") "settings" else key
                             if (key == "addons") adding = false
                     }
@@ -2776,19 +2869,23 @@ private fun RowScope.XpNavigationItem(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val focusColor = if (tv) XpRemotePink else XpFocus
     Column(
         Modifier.weight(1f).padding(horizontal = if (compact) 0.dp else 2.dp).clip(RoundedCornerShape(12.dp))
-            .background(if (focused || selected) (if (focused) XpFocus else XpAccent).copy(alpha = if (focused) .32f else .20f) else Color.Transparent)
-            .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
+            .background(if (selected && tv) XpAccent.copy(alpha = .20f)
+                else if (focused && !tv) XpFocus.copy(alpha = .32f)
+                else if (selected) XpAccent.copy(alpha = .20f) else Color.Transparent)
+            .border(if (focused) 3.dp else 1.dp, if (focused) focusColor else Color.Transparent, RoundedCornerShape(12.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .clickable(onClick = onClick).onFocusChanged { focused = it.isFocused }.focusable()
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
             .padding(horizontal = if (compact) 1.dp else 5.dp, vertical = if (compact) 7.dp else 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        DrawOwnTVIcon(icon, if (focused) XpFocus else if (selected) XpAccent else XpMuted, Modifier.size(if (compact) 21.dp else 23.dp))
+        DrawOwnTVIcon(icon, if (focused) focusColor else if (selected) XpAccent else XpMuted, Modifier.size(if (compact) 21.dp else 23.dp))
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (focused) XpFocus else if (selected) XpText else XpMuted, fontSize = if (compact) 10.sp else 12.sp, fontWeight = FontWeight.SemiBold,
+        Text(label, color = if (focused) focusColor else if (selected) XpText else XpMuted, fontSize = if (compact) 10.sp else 12.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -2803,17 +2900,21 @@ private fun XpFilterDropdown(
     onToggle: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
+    val pink = focused && LocalXpTvControls.current
     Column(modifier) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
-                .background(XpPanel).clickable(onClick = onToggle).focusable()
+                .background(XpPanel)
+                .border(if (pink) 2.dp else 0.dp, if (pink) XpRemotePink else Color.Transparent, RoundedCornerShape(12.dp))
+                .onFocusChanged { focused = it.isFocused }.clickable(onClick = onToggle)
                 .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(selectedLabel, color = XpText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            Text(selectedLabel, color = if (pink) XpRemotePink else XpText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(if (expanded) R.string.moviotv_xp_filter_expanded else R.string.moviotv_xp_filter_collapsed), color = XpMuted, fontSize = 13.sp)
+            Text(stringResource(if (expanded) R.string.moviotv_xp_filter_expanded else R.string.moviotv_xp_filter_collapsed), color = if (pink) XpRemotePink else XpMuted, fontSize = 13.sp)
         }
         if (expanded) {
             Column(
@@ -2823,10 +2924,7 @@ private fun XpFilterDropdown(
                 Text(title, color = XpMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
                 options.distinctBy { it.first }.forEach { (key, label) ->
-                    Text(label, color = if (label == selectedLabel) XpAccent else XpText, fontSize = 14.sp,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().clickable { onSelect(key) }
-                            .padding(horizontal = 12.dp, vertical = 9.dp))
+                    XpGenreRow(label, label == selectedLabel, null, null) { onSelect(key) }
                 }
             }
         }
@@ -2845,6 +2943,7 @@ private fun XpBrowseGrid(
     railState: androidx.compose.foundation.lazy.LazyListState,
     restoreRailFocus: Boolean,
     onRailFocusHandled: () -> Unit,
+    onEditing: (Boolean) -> Unit,
     sortLabels: List<String>,
     selectedSort: Int,
     onSort: (Int) -> Unit,
@@ -2868,6 +2967,8 @@ private fun XpBrowseGrid(
     val categoryFocus = remember { FocusRequester() }
     val gridFocus = remember { FocusRequester() }
     val filterFocus = remember { FocusRequester() }
+    val editingNow by rememberUpdatedState(onEditing)
+    DisposableEffect(Unit) { onDispose { editingNow(false) } }
     LaunchedEffect(restoreRailFocus) {
         if (restoreRailFocus) {
             withFrameNanos { }
@@ -2913,7 +3014,7 @@ private fun XpBrowseGrid(
                     if (!wide) MovioBrowseButton(stringResource(R.string.moviotv_categories), { sidebar = false },
                         background = XpBackground, foreground = XpText)
                     MovioTouchSearch(
-                        categoryQuery, onCategoryQuery, Modifier.fillMaxWidth(),
+                        categoryQuery, onCategoryQuery, Modifier.fillMaxWidth().onFocusChanged { onEditing(it.hasFocus) },
                         hint = stringResource(R.string.movioxp_filter_categories),
                         background = XpBackground, outline = XpAccent.copy(alpha = .45f), textColor = XpText, hintColor = XpMuted,
                     )
@@ -2948,7 +3049,7 @@ private fun XpBrowseGrid(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     MovioTouchSearch(
-                        titleQuery, { titleQuery = it }, Modifier.weight(1f),
+                        titleQuery, { titleQuery = it }, Modifier.weight(1f).onFocusChanged { onEditing(it.hasFocus) },
                         hint = stringResource(R.string.movioxp_filter_titles),
                         background = XpPanel, outline = XpAccent.copy(alpha = .55f), textColor = XpText, hintColor = XpMuted,
                     )
@@ -3098,16 +3199,18 @@ private fun XpGenreRail(
 @Composable
 private fun XpGenreRow(label: String, selected: Boolean, focusRequester: FocusRequester?, rightFocusRequester: FocusRequester?, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val focusColor = if (tv) XpRemotePink else XpFocus
     Text(
         label,
-        color = if (focused) XpFocus else if (selected) XpText else XpMuted,
+        color = if (focused) focusColor else if (selected) XpText else XpMuted,
         fontSize = 15.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(if (selected || focused) (if (focused) XpFocus else XpAccent).copy(alpha = .22f) else Color.Transparent)
-            .border(if (focused) 2.dp else 1.dp, if (focused) XpFocus else Color.Transparent, RoundedCornerShape(10.dp))
+            .background(if (selected || (focused && !tv)) (if (focused && !tv) XpFocus else XpAccent).copy(alpha = .22f) else Color.Transparent)
+            .border(if (focused) 2.dp else 1.dp, if (focused) focusColor else Color.Transparent, RoundedCornerShape(10.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onPreviewKeyEvent { event ->
                 if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
@@ -3127,23 +3230,26 @@ private fun XpAccountProfileBadge(
     signedIn: Boolean,
     compact: Boolean,
     onClick: () -> Unit,
+    focusRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val focusColor = if (tv) XpRemotePink else XpFocus
     val label = stringResource(R.string.movioxp_account_menu)
     val letter = displayName.ifBlank { stringResource(R.string.movioxp_guest_label) }
         .take(1).uppercase()
     val shape = RoundedCornerShape(if (compact) 15.dp else 20.dp)
     Box(
         Modifier.size(if (compact) 42.dp else 56.dp)
-            .clip(shape).background(if (focused) Color(0xFFFFD078) else Color(0xFFFFAB32))
-            .border(if (focused) 3.dp else 1.dp, if (focused) Color.White else Color(0xFFB5791A), shape)
+            .clip(shape).background(if (focused && !tv) Color(0xFFFFD078) else Color(0xFFFFAB32))
+            .border(if (focused) 3.dp else 1.dp, if (focused) if (tv) focusColor else Color.White else Color(0xFFB5791A), shape)
             .semantics { contentDescription = label }
-            .clickable(onClick = onClick)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
-            .focusable(),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(letter, color = Color(0xFF231609), fontWeight = FontWeight.Black,
+        Text(letter, color = if (focused && tv) focusColor else Color(0xFF231609), fontWeight = FontWeight.Black,
             fontSize = if (compact) 21.sp else 26.sp)
     }
 }
@@ -3325,18 +3431,19 @@ private fun XpAddonInfoCard(
 @Composable
 private fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val focusColor = if (tv) XpRemotePink else XpFocus
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))
-            .background(if (focused) XpFocus.copy(alpha = .28f) else XpPanel)
-            .border(if (focused) 3.dp else 1.dp, if (focused) XpFocus else Color(0xFF3A3144), RoundedCornerShape(22.dp))
+            .background(if (focused && !tv) XpFocus.copy(alpha = .28f) else XpPanel)
+            .border(if (focused) 3.dp else 1.dp, if (focused) focusColor else Color(0xFF3A3144), RoundedCornerShape(22.dp))
             .heightIn(min = 56.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .clickable(enabled = !disabled, onClick = onClick)
-            .onFocusChanged { focused = it.isFocused }.focusable(enabled = !disabled)
+            .onFocusChanged { focused = it.isFocused }.clickable(enabled = !disabled, onClick = onClick)
             .padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = if (disabled) XpMuted else if (focused) XpFocus else XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (disabled) XpMuted else if (focused) focusColor else XpText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

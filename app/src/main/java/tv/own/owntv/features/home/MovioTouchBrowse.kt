@@ -140,14 +140,16 @@ internal fun MovioBrowseButton(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val tv = LocalXpTvControls.current
+    val pink = focused && tv
     Box(
         modifier.clip(RoundedCornerShape(10.dp))
-            .background(if (focused) purple.copy(alpha = .32f) else background)
-            .border(if (focused) 2.dp else 1.dp, if (focused) purple else Color.Transparent, RoundedCornerShape(10.dp))
+            .background(if (focused && !tv) purple.copy(alpha = .32f) else background)
+            .border(if (focused) 2.dp else 1.dp, if (pink) XpRemotePink else if (focused) purple else Color.Transparent, RoundedCornerShape(10.dp))
             .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
-        Text(label, color = foreground, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium)
+        Text(label, color = if (pink) XpRemotePink else foreground, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium)
     }
 }
 

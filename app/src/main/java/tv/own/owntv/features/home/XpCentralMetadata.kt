@@ -75,7 +75,7 @@ internal object XpCentralMetadata {
             return XpCatalogueSlice(emptyList(), null, failed = true)
         }
         return parseCatalog(response)?.let { titles ->
-            XpCatalogueSlice(titles, response.optInt("next_page").takeIf { it == page + 1 && it <= 10 })
+            XpCatalogueSlice(titles.take(XpCataloguePaging.PAGE_SIZE), XpCataloguePaging.next(page, response.optInt("next_page")))
         }
     }
 

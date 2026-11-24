@@ -112,6 +112,10 @@ internal class XpCatalogueRepository(
         if (result == null && cached == null) emit(null)
     }.flowOn(Dispatchers.IO)
 
+    suspend fun cachedBody(key: Key): String? = withContext(Dispatchers.IO) {
+        lock.withLock { read(key)?.body }
+    }
+
     suspend fun invalidate(profile: String, provider: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             inFlight.keys.filter { it.profile == profile && it.provider == provider }.forEach { key ->
