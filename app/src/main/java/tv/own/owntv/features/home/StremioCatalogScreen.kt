@@ -803,7 +803,7 @@ fun StremioCatalogScreen(
             if (valid || discoverLoading[cacheKey] == true) continue
             discoverLoading[cacheKey] = true
             launch {
-                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters).let { titles -> if (id == "xp_trending") titles else titles.sortedByDescending { xpReleaseKey(it) } } }
+                runCatching { XpAddonProtocol.loadCatalog(source.row, source.parameters) }
                     .onSuccess {
                         discoverMetas[cacheKey] = it
                         discoverLastFetch[cacheKey] = System.currentTimeMillis()
@@ -1383,6 +1383,17 @@ fun StremioCatalogScreen(
                         onSelect = { discoveryGenre = it; expandedFilter = null },
                     )
                 }
+            }
+            if (page == "discover" || page in browsePages) {
+                XpFilterDropdown(
+                    title = sortLabels[sortMode],
+                    selectedLabel = sortLabels[sortMode],
+                    options = sortLabels.mapIndexed { index, label -> index.toString() to label },
+                    expanded = expandedFilter == sortLabels.first(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    onToggle = { expandedFilter = if (expandedFilter == sortLabels.first()) null else sortLabels.first() },
+                    onSelect = { changeSort(it.toInt()); expandedFilter = null },
+                )
             }
             if (page in browsePages) {
                 MovioTouchPosterBrowser(
