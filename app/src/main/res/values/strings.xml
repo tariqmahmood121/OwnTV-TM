@@ -33,4 +33,11 @@
     <string name="movioxp_home_no_categories">No additional movie genres are advertised by installed catalogues.</string>
     <string name="movioxp_home_arrow_up">↑</string>
     <string name="movioxp_home_arrow_down">↓</string>
+    <string name="xp_catalog_sort_default">Default</string>
+    <string name="xp_catalog_sort_newest">Newest first</string>
+    <string name="xp_catalog_sort_oldest">Oldest first</string>
+    <string name="xp_catalog_sort_name_asc">Name A–Z</string>
+    <string name="xp_catalog_sort_name_desc">Name Z–A</string>
+    <string name="xp_catalog_sort_rating_desc">Highest rating</string>
+    <string name="xp_catalog_sort_rating_asc">Lowest rating</string>
 </resources>
