@@ -2314,6 +2314,7 @@ fun StremioCatalogScreen(
                     XpBrowseGrid(
                         options = options,
                         category = category,
+                        focusScope = snapshotKey,
                         titles = gridTitles,
                         scale = if (library) libraryScale else discoverScale,
                         loading = pageLoading,
@@ -2354,8 +2355,12 @@ fun StremioCatalogScreen(
                                     color = XpMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 6.dp),
                                 )
                             }
+                            val ordered = remember(searchHits, sortMode) {
+                                val hits = searchHits.associateBy { it.meta }
+                                sortXpTitles(searchHits.map { it.meta }, sortMode).mapNotNull(hits::get)
+                            }
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 14.dp)) {
-                                items(searchHits, key = { "${it.addon.url}|${it.meta.type}:${it.meta.id}" }) { hit ->
+                                items(ordered, key = { "${it.addon.url}|${it.meta.type}:${it.meta.id}" }) { hit ->
                                     XpSearchResultCard(hit, returnHomePoster, ::trackHomePoster) { openItem(hit.meta) }
                                 }
                             }
@@ -2812,6 +2817,7 @@ private data class XpBrowseCategory(val id: String, val label: String, val group
 private fun XpBrowseGrid(
     options: List<XpBrowseCategory>,
     category: String,
+    focusScope: String,
     titles: List<XpMeta>,
     scale: Float,
     loading: Boolean,
@@ -2844,7 +2850,7 @@ private fun XpBrowseGrid(
     }
     LaunchedEffect(restorePoster, shown) {
         if (restorePoster != null) {
-            val index = shown.indexOfFirst { homePosterKey(category, it) == restorePoster }
+            val index = xpRestoredPosterIndex(focusScope, shown, restorePoster)
             if (index >= 0 && state.layoutInfo.visibleItemsInfo.none { it.index == index }) state.scrollToItem(index)
         }
     }
@@ -2922,9 +2928,9 @@ private fun XpBrowseGrid(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(shown.size, key = { index -> homePosterKey(category, shown[index]) }) { index ->
+                        items(shown.size, key = { index -> homePosterKey(focusScope, shown[index]) }) { index ->
                             val item = shown[index]
-                            HomeCataloguePoster(item, category, width, restorePoster, onFocused,
+                            HomeCataloguePoster(item, focusScope, width, restorePoster, onFocused,
                                 onLongClick = { onDetails(item, false) },
                                 onVeryLongClick = { onDetails(item, true) },
                             ) { onOpen(item) }
@@ -3082,14 +3088,17 @@ private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpM
     }
 }
 
-private fun homePosterKey(row: String, item: XpMeta) = "$row|${item.type}:${item.id}"
+internal fun homePosterKey(row: String, item: XpMeta) = "$row|${item.type}:${item.id}"
+
+internal fun xpRestoredPosterIndex(scope: String, titles: List<XpMeta>, target: String): Int =
+    titles.indexOfFirst { homePosterKey(scope, it) == target }
 
 @Composable
 private fun rememberHomeCatalogueRowState(row: String, titles: List<XpMeta>, returnPoster: String?): androidx.compose.foundation.lazy.LazyListState {
     val state = rememberLazyListState()
     LaunchedEffect(row, titles, returnPoster) {
         if (returnPoster == null) return@LaunchedEffect
-        val index = titles.indexOfFirst { homePosterKey(row, it) == returnPoster }
+        val index = xpRestoredPosterIndex(row, titles, returnPoster)
         if (index < 0) return@LaunchedEffect
         withFrameNanos { }
         if (state.layoutInfo.visibleItemsInfo.none { it.index == index }) state.scrollToItem(index)

@@ -94,6 +94,20 @@ class XpCatalogueRepositoryTest {
         }
     }
 
+    @Test fun reopeningAColdCatalogueRetainsExplicitFallbackPolicyDuringCooldown() = runBlocking {
+        val scope = repositoryScope()
+        try {
+            val repo = repository(scope)
+            val response = """{"fallback":false,"error":"Unavailable"}"""
+            assertEquals(listOf(response), repo.observe(key, cacheable = { false }) { response }.toList())
+            assertEquals(listOf(response), repo.observe(key, cacheable = { false }) {
+                throw AssertionError("retry cooldown must deduplicate requests")
+            }.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun repositoryScope() = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun repository(scope: CoroutineScope) = XpCatalogueRepository(folder.root, scope, now = { now })

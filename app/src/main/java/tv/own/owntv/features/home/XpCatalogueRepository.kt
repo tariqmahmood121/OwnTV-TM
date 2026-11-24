@@ -35,11 +35,12 @@ internal class XpCatalogueRepository(
     )
 
     private data class Cached(val body: String, val timestamp: Long)
+    private data class Retry(val timestamp: Long, val response: String?)
     private val lock = Mutex()
     private val requests = Semaphore(4)
     private val inFlight = mutableMapOf<Key, Deferred<String?>>()
-    private val failedAt = object : LinkedHashMap<Key, Long>(128, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Long>?): Boolean = size > 128
+    private val failedAt = object : LinkedHashMap<Key, Retry>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Retry>?): Boolean = size > 128
     }
     private var writesUntilSweep = 0
     private val memory = object : LinkedHashMap<Key, Cached>(64, 0.75f, true) {
@@ -55,12 +56,17 @@ internal class XpCatalogueRepository(
         val cached = lock.withLock { read(key) }
         xpDebug(if (cached == null) "Catalogue cache miss" else "Catalogue cache hit, age ${now() - cached.timestamp} ms")
         if (cached != null) emit(cached.body)
+        var retryResponse: String? = null
         val job = lock.withLock {
             inFlight[key]?.let { return@withLock it }
             val latest = read(key)
             val age = latest?.let { now() - it.timestamp }
             if (latest != null && latest.timestamp >= refreshAfter && age != null && age in 0 until ttlMillis) return@withLock null
-            if (failedAt[key]?.let { it >= refreshAfter && now() - it in 0 until 60_000L } == true) return@withLock null
+            val retry = failedAt[key]
+            if (retry != null && retry.timestamp >= refreshAfter && now() - retry.timestamp in 0 until 60_000L) {
+                retryResponse = retry.response
+                return@withLock null
+            }
             scope.async {
                 val started = now()
                 try {
@@ -74,7 +80,7 @@ internal class XpCatalogueRepository(
                                 write(key, body)
                                 failedAt.remove(key)
                             } else {
-                                failedAt[key] = now()
+                                failedAt[key] = Retry(now(), body)
                             }
                         }
                     }
@@ -84,7 +90,7 @@ internal class XpCatalogueRepository(
                 } catch (_: Exception) {
                     xpDebug("Catalogue refresh failed after ${now() - started} ms")
                     lock.withLock {
-                        if (inFlight[key] === coroutineContext[Job]) failedAt[key] = now()
+                        if (inFlight[key] === coroutineContext[Job]) failedAt[key] = Retry(now(), null)
                     }
                     null
                 } finally {
@@ -94,7 +100,7 @@ internal class XpCatalogueRepository(
                 }
             }.also { inFlight[key] = it }
         }
-        val result = if (job == null) lock.withLock { read(key)?.body } else {
+        val result = if (job == null) lock.withLock { read(key)?.body ?: retryResponse } else {
             try {
                 job.await()
             } catch (error: CancellationException) {

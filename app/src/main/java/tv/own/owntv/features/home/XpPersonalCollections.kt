@@ -13,9 +13,17 @@ internal object XpPersonalCollections {
 
     fun read(context: Context, profile: Long, collection: XpCollection): List<XpMeta> = runCatching {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key(profile, collection), null)
-        val entries = saved?.let(::JSONArray) ?: JSONArray()
-        List(entries.length()) { index -> entries.optJSONObject(index)?.let(XpCentralDataSync::parseMeta) }.filterNotNull()
+        decode(saved) {
+            if (collection == XpCollection.HISTORY && profile > 0) XpContinueStore.read(context, profile)
+            else emptyList()
+        }
     }.getOrDefault(emptyList())
+
+    internal fun decode(saved: String?, legacy: () -> List<XpMeta>): List<XpMeta> {
+        if (saved == null) return legacy()
+        val entries = JSONArray(saved)
+        return List(entries.length()) { index -> entries.optJSONObject(index)?.let(XpCentralDataSync::parseMeta) }.filterNotNull()
+    }
 
     @Synchronized
     fun update(context: Context, profile: Long, collection: XpCollection, item: XpMeta, deleted: Boolean) {

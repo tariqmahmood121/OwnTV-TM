@@ -56,6 +56,19 @@ class XpPlaybackIdentityTest {
         assertTrue(XpCentralMetadata.parsePage(JSONObject("""{"metas":[],"fallback":false,"error":"Unavailable"}"""), 1)?.failed == true)
     }
 
+    @Test fun legacyHistoryIsAvailableUntilAnExplicitCollectionIsSaved() {
+        assertEquals(listOf(central), XpPersonalCollections.decode(null) { listOf(central) })
+        assertEquals(emptyList<XpMeta>(), XpPersonalCollections.decode("[]") {
+            throw AssertionError("an explicit clear must not revive a legacy title")
+        })
+    }
+
+    @Test fun playbackReturnUsesTheOriginalGridAndStablePosterAfterReordering() {
+        val origin = homePosterKey("discover|favorites", central)
+        assertEquals(1, xpRestoredPosterIndex("discover|favorites", listOf(cinemeta, central), origin))
+        assertEquals(-1, xpRestoredPosterIndex("library|favorites", listOf(cinemeta, central), origin))
+    }
+
     @Test fun explicitSortingOverridesCatalogueDefaults() {
         assertEquals(0, xpCategorySort("xp_trending", null))
         assertEquals(2, xpCategorySort("xp_upcoming", null))
