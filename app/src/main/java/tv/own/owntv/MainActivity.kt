@@ -435,7 +435,9 @@ open class MainActivity : ComponentActivity() {
             val gateRequired = shouldShowProfileGate || switchProfileRequested ||
                 (centralAccountId != null && !authenticatedForActiveProfile)
             LaunchedEffect(centralAccountId) {
-                if (centralAccountId != null) gateSession.requestSwitchProfile()
+                // A new Central login must never be cancellable into an old profile session.
+                // Explicit in-app switching still uses requestSwitchProfile() and allows Back.
+                if (centralAccountId != null) gateSession.invalidateAuthentication()
             }
             val shellReady = activeProfileKnown && tv.own.owntv.features.profiles.shellMayCompose(
                 profileState = profileState,
