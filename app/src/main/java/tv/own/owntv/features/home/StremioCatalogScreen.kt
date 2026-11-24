@@ -95,6 +95,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.flowOn
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -271,17 +272,12 @@ private object XpAddonProtocol {
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS).build()
 
-    suspend fun loadManifest(raw: String): XpAddon = withContext(Dispatchers.IO) {
-        val url = manifestUrl(raw)
-        parseManifest(url, get(url))
-    }
+    fun manifestAddress(raw: String): String? = runCatching { manifestUrl(raw) }.getOrNull()
 
-    fun observeManifest(repository: XpCatalogueRepository, profile: String, raw: String) =
-        manifestUrl(raw).let { url ->
-            repository.observe(XpCatalogueRepository.Key(profile, url, url)) {
-                get(url).also { parseManifest(url, it) }.toString()
-            }.map { body -> body?.let { parseManifest(url, JSONObject(it)) } }.flowOn(Dispatchers.IO)
-        }
+    fun observeManifest(repository: XpCatalogueRepository, profile: String, url: String) =
+        repository.observe(XpCatalogueRepository.Key(profile, url, url)) {
+            get(url).also { parseManifest(url, it) }.toString()
+        }.map { body -> body?.let { parseManifest(url, JSONObject(it)) } }.flowOn(Dispatchers.IO)
 
     private fun parseManifest(url: String, json: JSONObject): XpAddon {
         val resourceSource = json.optJSONArray("resources") ?: JSONArray()
@@ -709,6 +705,14 @@ fun StremioCatalogScreen(
     var centralConnection by remember { mutableStateOf(XpCentralConnectionStore.read(context)) }
     val catalogueProfile = catalogueProfileKey(centralConnection, favoritesProfileId)
     val addons = remember(catalogueProfile) { mutableStateListOf<XpAddon>() }
+    val builtInUrl = stringResource(R.string.moviotv_xp_default_catalogue_manifest)
+    var providerUrls by remember(catalogueProfile) {
+        mutableStateOf(XpAddonStore.read(context, favoritesProfileId).filterNot { it == builtInUrl })
+    }
+    fun updateAddon(addon: XpAddon) {
+        val index = addons.indexOfFirst { it.url == addon.url }
+        if (index >= 0) addons[index] = addon else addons.add(addon)
+    }
     val homeListState = key(catalogueProfile) { rememberLazyListState() }
     var lastHomePoster by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
     var returnHomePoster by remember(catalogueProfile) {
@@ -870,7 +874,9 @@ fun StremioCatalogScreen(
     val discoverLoading = remember(catalogueProfile) { mutableStateMapOf<String, Boolean>() }
     val metas = remember(catalogueProfile) { mutableStateMapOf<Pair<String, XpCatalogRow>, List<XpMeta>>() }
     val loadingRows = remember(catalogueProfile) { mutableStateMapOf<String, Boolean>() }
-    val installedAddons = addons.toList()
+    val addonsByUrl = addons.associateBy { it.url }
+    val manifestAddresses = (listOf(builtInUrl) + providerUrls).mapNotNull(XpAddonProtocol::manifestAddress).distinct()
+    val installedAddons = manifestAddresses.mapNotNull(addonsByUrl::get)
     val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, installedAddons) }
 
     fun discoveryDataKey(id: String, source: XpDiscoverSource?) = id to source
@@ -972,7 +978,7 @@ fun StremioCatalogScreen(
         }
     }
 
-    val availableCatalogRows = addons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
+    val availableCatalogRows = installedAddons.flatMap { addon -> addon.catalogs.map { XpCatalogRow(addon, it) } }
     val availableHomeGenres = availableCatalogRows
         .filter { it.catalog.type == "movie" }
         .filter { it.catalog.id == "top" || it.catalog.name.contains("genre", true) }
@@ -1061,7 +1067,7 @@ fun StremioCatalogScreen(
         val localProfileId = favoritesProfileId
         val localProfileName = activeProfileName
         val childProfile = activeProfile?.isKids == true
-        val localAddons = addons.filterNot { it.builtIn }.map { addon ->
+        val localAddons = installedAddons.filterNot { it.builtIn }.map { addon ->
             XpCentralAddon(
                 addon.url,
                 addon.name,
@@ -1087,22 +1093,16 @@ fun StremioCatalogScreen(
             }.onSuccess { mergedUrls ->
                 // Central is authoritative on refresh: do not restore a disabled/removed
                 // add-on from the previous device cache (e.g. Comet).
-                val allUrls = mergedUrls.distinct()
+                val allUrls = mergedUrls.distinct().filterNot { it == builtInUrl }
                 val removedUrls = XpAddonStore.read(context, localProfileId) - allUrls.toSet()
                 XpAddonStore.write(context, allUrls, localProfileId)
-                if (localProfileId == favoritesProfileId && catalogueProfileKey(centralConnection, localProfileId) == catalogueProfile) {
-                    addons.removeAll { !it.builtIn && it.url !in allUrls }
-                    removedUrls.forEach { repository.invalidate(catalogueProfile, it) }
-                    allUrls.forEach { url ->
-                        launch {
-                            XpAddonProtocol.observeManifest(repository, catalogueProfile, url).collect { loaded ->
-                                if (loaded != null && url in XpAddonStore.read(context, localProfileId)) {
-                                    val index = addons.indexOfFirst { it.url == loaded.url }
-                                    if (index >= 0) addons[index] = loaded else addons.add(loaded)
-                                }
-                            }
-                        }
-                    }
+                if (catalogueProfileKey(centralConnection, localProfileId) == catalogueProfile) {
+                    providerUrls = allUrls
+                    val currentAddresses = allUrls.mapNotNull(XpAddonProtocol::manifestAddress).toSet()
+                    addons.removeAll { !it.builtIn && it.url !in currentAddresses }
+                    removedUrls.mapNotNull(XpAddonProtocol::manifestAddress)
+                        .filterNot { it == builtInUrl || it in currentAddresses }
+                        .forEach { repository.invalidate(catalogueProfile, it) }
                 }
                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_saved, localProfileName)
             }.onFailure {
@@ -1145,18 +1145,26 @@ fun StremioCatalogScreen(
     }
 
     fun installAddon(url: String) {
-        if (addons.any { it.url == url }) {
+        val manifestAddress = XpAddonProtocol.manifestAddress(url)
+        if (manifestAddress == null) {
+            notice = context.getString(R.string.moviotv_xp_addon_install_failed)
+            return
+        }
+        if (manifestAddress in manifestAddresses) {
             notice = context.getString(R.string.moviotv_xp_addon_already_installed)
             return
         }
         busy = true
         notice = null
         scope.launch {
-            runCatching { XpAddonProtocol.loadManifest(url) }
+            runCatching {
+                requireNotNull(XpAddonProtocol.observeManifest(repository, catalogueProfile, manifestAddress).last())
+            }
                 .onSuccess { addon ->
                     if (addons.none { it.url == addon.url }) {
-                        addons.add(addon)
-                        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
+                        providerUrls = (providerUrls + addon.url).distinct()
+                        XpAddonStore.write(context, providerUrls, favoritesProfileId)
+                        updateAddon(addon)
                         centralConnection?.let { conn ->
                             centralSyncMessage = context.getString(R.string.moviotv_xp_central_saving_profile)
                             runCatching {
@@ -1197,56 +1205,49 @@ fun StremioCatalogScreen(
     fun removeAddon(addon: XpAddon) {
         if (addon.builtIn) return
         addons.remove(addon)
+        val matchingUrls = providerUrls.filter { XpAddonProtocol.manifestAddress(it) == addon.url }
+        providerUrls = providerUrls - matchingUrls.toSet()
+        XpAddonStore.write(context, providerUrls, favoritesProfileId)
         scope.launch { repository.invalidate(catalogueProfile, addon.url) }
-        XpAddonStore.write(context, addons.filterNot { it.builtIn }.map { it.url }, favoritesProfileId)
         centralConnection?.let { connection ->
             scope.launch {
                 runCatching {
-                    XpCentralAddonSync.unlinkForProfile(context, connection, favoritesProfileId, addon.url)
+                    for (url in matchingUrls) XpCentralAddonSync.unlinkForProfile(context, connection, favoritesProfileId, url)
                 }.onSuccess { syncAddonsWithCentral() }
                     .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
             }
         }
     }
 
-    LaunchedEffect(catalogueProfile) {
-        addons.clear()
-        val builtInUrl = context.getString(R.string.moviotv_xp_default_catalogue_manifest)
-        val savedUrls = XpAddonStore.read(context, favoritesProfileId)
-        for (url in (listOf(builtInUrl) + savedUrls).distinct()) {
+    LaunchedEffect(catalogueProfile, manifestAddresses, builtInUrl) {
+        for (url in manifestAddresses) {
             val builtIn = url == builtInUrl
             launch {
                 XpAddonProtocol.observeManifest(repository, catalogueProfile, url).collect { addon ->
-                    if (addon != null && (builtIn || url in XpAddonStore.read(context, favoritesProfileId))) {
-                        val index = addons.indexOfFirst { it.url == addon.url }
-                        val updated = addon.copy(builtIn = builtIn)
-                        if (index >= 0) addons[index] = updated
-                        else if (builtIn) addons.add(0, updated)
-                        else addons.add(updated)
-                    }
+                    if (addon != null) updateAddon(addon.copy(builtIn = builtIn))
                 }
             }
         }
     }
-    LaunchedEffect(page, searchText, addons.size) {
+    LaunchedEffect(page, searchText, installedAddons) {
         val query = searchText.trim()
         if (page != "search" || query.length < 2) {
             searchLoading = false
             searchHits = emptyList()
             searchFailureCount = 0
-            searchableCatalogCount = addons.sumOf { addon -> addon.catalogs.count { it.searchParameter != null } }
+            searchableCatalogCount = installedAddons.sumOf { addon -> addon.catalogs.count { it.searchParameter != null } }
             return@LaunchedEffect
         }
         delay(400)
         searchLoading = true
-        val searchable = addons.toList()
+        val searchable = installedAddons
         searchableCatalogCount = searchable.sumOf { addon -> addon.catalogs.count { it.searchParameter != null } }
         val (hits, failures) = XpAddonProtocol.searchAll(searchable, query)
         searchHits = hits
         searchFailureCount = failures
         searchLoading = false
     }
-    LaunchedEffect(selected?.id, selected?.type, addons.size) {
+    LaunchedEffect(selected?.id, selected?.type, installedAddons.map { it.url }) {
         val item = selected ?: return@LaunchedEffect
         autoStartedItem = null
         selectedStreams = emptyList()
@@ -1254,7 +1255,7 @@ fun StremioCatalogScreen(
             streamsLoading = false
             return@LaunchedEffect
         }
-        val providers = addons.mapNotNull { addon ->
+        val providers = installedAddons.mapNotNull { addon ->
             val ids = listOfNotNull(item.id, item.tmdbId).distinct()
                 .filter { id -> addon.resources.any { it.supports(item.type, id) } }
             if (ids.isEmpty()) null else addon to ids
@@ -1292,7 +1293,7 @@ fun StremioCatalogScreen(
             }
         }.sortedWith(
             compareBy<XpPlaybackSource> { XpSourcePreference.score(saved, it) }
-                .thenBy { if (addons.firstOrNull { addon -> addon.name == it.provider }?.url == preferredAddonUrl) 0 else 1 },
+                .thenBy { if (installedAddons.firstOrNull { addon -> addon.name == it.provider }?.url == preferredAddonUrl) 0 else 1 },
         )
         if (candidates.isEmpty()) return@LaunchedEffect
         autoStartedItem = itemKey
@@ -1714,7 +1715,7 @@ fun StremioCatalogScreen(
                     Spacer(Modifier.height(10.dp))
                     val installed = addonCategory == "installed"
                     val addonEntries = if (installed) {
-                        addons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
+                        installedAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
                     } else {
                         directoryAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
                     }
@@ -1738,7 +1739,7 @@ fun StremioCatalogScreen(
                                     )
                                 }
                             } else if (installed) {
-                                items(addons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "installed:${it.url}" }) { addon ->
+                                items(installedAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "installed:${it.url}" }) { addon ->
                                     XpAddonInfoCard(
                                         name = addon.name,
                                         version = addon.version,
