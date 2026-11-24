@@ -687,7 +687,19 @@ fun StremioCatalogScreen(
     var discoveryCatalog by remember { mutableStateOf("all") }
     var discoveryGenre by remember { mutableStateOf("all") }
     var genrePickerOpen by remember { mutableStateOf(false) }
-    var reverseTitleSort by remember { mutableStateOf(false) }
+    val sortPrefs = remember(context) { context.getSharedPreferences("xp_catalog_sort", Context.MODE_PRIVATE) }
+    var sortMode by remember(favoritesProfileId) { mutableStateOf(sortPrefs.getInt(favoritesProfileId.toString(), 1)) }
+    val sortLabels = listOf("Default", "Newest first", "Oldest first", "Name A–Z", "Name Z–A", "Highest rating", "Lowest rating")
+    fun changeSort(mode: Int) { sortMode = mode; sortPrefs.edit().putInt(favoritesProfileId.toString(), mode).apply() }
+    fun sortedTitles(titles: List<XpMeta>, mode: Int = sortMode): List<XpMeta> = when (mode) {
+        1 -> titles.sortedByDescending { xpReleaseKey(it) }
+        2 -> titles.sortedBy { xpReleaseKey(it).ifBlank { "9999" } }
+        3 -> titles.sortedBy { it.name.lowercase() }
+        4 -> titles.sortedByDescending { it.name.lowercase() }
+        5 -> titles.sortedByDescending { it.rating?.toDoubleOrNull() ?: -1.0 }
+        6 -> titles.sortedBy { it.rating?.toDoubleOrNull() ?: Double.MAX_VALUE }
+        else -> titles
+    }
     var expandedFilter by remember { mutableStateOf<String?>(null) }
     var searchHits by remember { mutableStateOf<List<XpSearchHit>>(emptyList()) }
     var searchLoading by remember { mutableStateOf(false) }
@@ -695,7 +707,7 @@ fun StremioCatalogScreen(
     var searchFailureCount by remember { mutableStateOf(0) }
     var continueTitles by remember(favoritesProfileId) { mutableStateOf(XpContinueStore.read(context, favoritesProfileId)) }
     var favoriteTitles by remember(favoritesProfileId) { mutableStateOf(XpFavoritesStore.read(context, favoritesProfileId)) }
-    val libraryTitles = (continueTitles + favoriteTitles).distinctBy { it.type to it.id }
+    val libraryTitles = sortedTitles((continueTitles + favoriteTitles).distinctBy { it.type to it.id })
     val libraryPrefs = remember(context) { context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE) }
     val libraryZoomKey = "xp_library_zoom_$favoritesProfileId"
     val homeZoomKey = "xp_home_zoom_$favoritesProfileId"
@@ -876,7 +888,7 @@ fun StremioCatalogScreen(
     } else emptyList()
     val sectionTitles = (if (page == "favorites") favoriteTitles else localLiveTitles + rows.flatMap { row -> metas[rowKey(row)].orEmpty() })
         .distinctBy { "${it.type}:${it.id}" }
-        .let { if (reverseTitleSort) it.sortedByDescending { meta -> meta.name.lowercase() } else it.sortedWith(compareByDescending<XpMeta> { xpReleaseKey(it) }.thenBy { it.name.lowercase() }) }
+        .let { sortedTitles(it) }
     val gridState = rememberLazyGridState()
     LaunchedEffect(page, sectionTitles.size) {
         if (page in browsePages && sectionTitles.isNotEmpty()) {
@@ -1398,7 +1410,7 @@ fun StremioCatalogScreen(
                             onSelect = { discoveryGenre = it; genrePickerOpen = false },
                         )
                     },
-                    onSort = { reverseTitleSort = !reverseTitleSort },
+                    onSort = { changeSort((sortMode + 1) % sortLabels.size) },
                     itemCount = sectionTitles.size,
                     gridState = gridState,
                     categoryFocusRequester = categoryRailFocus,
@@ -1686,6 +1698,7 @@ fun StremioCatalogScreen(
                         onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 4) null else 4 },
                     ) {
                         Text(stringResource(R.string.movioxp_home_settings_hint), color = XpMuted, fontSize = 13.sp)
+                        sortLabels.forEachIndexed { index, label -> XpSettingsOption(title = label, selected = sortMode == index) { changeSort(index) } }
                         XpSettingsOption(
                             title = stringResource(R.string.movioxp_home_default_rows),
                             selected = homeSettings.showDefaultCatalogs,
@@ -2039,7 +2052,7 @@ fun StremioCatalogScreen(
                                         )
                                     } else {
                                         val cacheKey = "$id|${source.row.addon.url}|${source.row.catalog.id}|${source.parameters}"
-                                        val titles = discoverMetas[cacheKey].orEmpty()
+                                        val titles = sortedTitles(discoverMetas[cacheKey].orEmpty())
                                         if (titles.isEmpty()) {
                                             Text(
                                                 stringResource(if (discoverLoading[cacheKey] == true)
@@ -2072,7 +2085,7 @@ fun StremioCatalogScreen(
                     }
                     items(rows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
-                        val titles = metas[key].orEmpty()
+                        val titles = sortedTitles(metas[key].orEmpty())
                         Column {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 4.dp),
