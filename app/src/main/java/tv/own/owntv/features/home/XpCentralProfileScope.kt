@@ -1,6 +1,7 @@
 package tv.own.owntv.features.home
 
 import android.content.Context
+import tv.own.owntv.R
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,7 +69,7 @@ internal object XpCentralProfileScope {
             val item = remote.getJSONObject(index)
             val cloudId = item.getLong("id")
             require(cloudId > 0L)
-            val name = item.optString("name").ifBlank { "Profile" }
+            val name = item.optString("name").ifBlank { context.getString(R.string.movioxp_default_profile_name) }
             val child = item.optBoolean("is_child")
             val key = bindingKey(connection.accountId, cloudId)
             var localId = prefs.getLong(key, 0L)

@@ -1,6 +1,7 @@
 package tv.own.owntv.features.home
 
 import android.content.Context
+import tv.own.owntv.R
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -182,13 +183,13 @@ internal object XpCentralAddonSync {
     ): Long {
         require(localProfileId > 0)
         val remoteId = XpCentralProfileScope.remoteIdFor(context, connection.accountId, localProfileId)
-            ?: throw IllegalStateException("Central profile is not linked to this account")
+            ?: throw IllegalStateException(context.getString(R.string.movioxp_profile_not_linked))
         val remote = request(connection.apiBase, "profiles", connection.token)
             .getJSONArray("profiles")
         for (index in 0 until remote.length()) {
             if (remote.optJSONObject(index)?.optLong("id") == remoteId) return remoteId
         }
-        throw IllegalStateException("Central profile is no longer available for this account")
+        throw IllegalStateException(context.getString(R.string.movioxp_profile_unavailable))
     }
 
     internal fun request(

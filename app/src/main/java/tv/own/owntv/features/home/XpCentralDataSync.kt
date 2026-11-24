@@ -1,6 +1,7 @@
 package tv.own.owntv.features.home
 
 import android.content.Context
+import tv.own.owntv.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -46,7 +47,7 @@ internal object XpCentralDataSync {
         // NEVER wipe its saved favourites/history/resume on account switch: old accounts must remain
         // intact and dormant. Refuse a cross-account mapping rather than migrating private data.
         if (previousOwner != null && previousOwner != owner) {
-            throw IllegalStateException("Local profile belongs to a different Central account")
+            throw IllegalStateException(context.getString(R.string.movioxp_profile_wrong_account))
         }
 
         val response = XpCentralAddonSync.request(connection.apiBase, "sync?profile_id=$centralProfileId", connection.token)
