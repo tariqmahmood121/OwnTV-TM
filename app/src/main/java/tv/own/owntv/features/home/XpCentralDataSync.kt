@@ -25,6 +25,22 @@ internal object XpCentralDataSync {
     fun markResume(context: Context, localProfileId: Long, item: XpMeta, deleted: Boolean) =
         mark(context, localProfileId, "resume", titleKey(item.type, item.id), itemJson(item).put("deleted", deleted))
 
+    fun markCollection(context: Context, profile: Long, collection: XpCollection, item: XpMeta, deleted: Boolean) {
+        val record = collectionRecord(collection, item, deleted)
+        mark(context, profile, record.type, record.key, record.payload)
+        XpCentralEventSync.request(context, profile)
+    }
+
+    private fun collectionRecord(collection: XpCollection, item: XpMeta, deleted: Boolean): Record {
+        val payload = itemJson(item).put("deleted", deleted)
+        val title = titleKey(item.type, item.id)
+        return when (collection) {
+            XpCollection.HISTORY -> Record("history", "xp:$title", payload, 0)
+            XpCollection.WATCHLIST -> Record("setting", "xp:watchlist:$title",
+                JSONObject().put("key", "watchlist").put("value", payload), 0)
+        }
+    }
+
     fun markSetting(context: Context, localProfileId: Long, key: String, value: Any) {
         if (localProfileId <= 0L) return
         val cloudKey = canonicalPreferenceKey(key, localProfileId) ?: return
@@ -143,6 +159,11 @@ internal object XpCentralDataSync {
 
     private fun localRecords(context: Context, profileId: Long): List<Record> = buildList {
         XpFavoritesStore.read(context, profileId).forEach { add(Record("favorite", titleKey(it.type, it.id), itemJson(it), 0)) }
+        XpCollection.entries.forEach { collection ->
+            XpPersonalCollections.read(context, profileId, collection).forEach {
+                add(collectionRecord(collection, it, false))
+            }
+        }
         XpContinueStore.read(context, profileId).forEach { add(Record("resume", titleKey(it.type, it.id), itemJson(it), 0)) }
         context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE).all.forEach { (key, value) ->
             val cloudKey = canonicalPreferenceKey(key, profileId)
@@ -159,7 +180,7 @@ internal object XpCentralDataSync {
         }
         // Retain independent poster sizes for each authenticated profile across phone and TV.
         val posterPrefs = context.getSharedPreferences(POSTER_PREFS, Context.MODE_PRIVATE)
-        for (page in listOf("library", "home")) {
+        for (page in listOf("library", "home", "discover")) {
             val key = "xp_${page}_zoom_$profileId"
             if (posterPrefs.contains(key)) {
                 val zoom = posterPrefs.getFloat(key, 1f)
@@ -192,6 +213,10 @@ internal object XpCentralDataSync {
 
     private fun applyRemote(context: Context, profileId: Long, record: Record) {
         when (record.type) {
+            "history" -> if (record.key.startsWith("xp:")) {
+                val item = parseMeta(record.payload) ?: return
+                XpPersonalCollections.update(context, profileId, XpCollection.HISTORY, item, record.payload.optBoolean("deleted"))
+            }
             "favorite", "resume" -> {
                 val item = parseMeta(record.payload) ?: return
                 val deleted = record.payload.optBoolean("deleted")
@@ -206,6 +231,12 @@ internal object XpCentralDataSync {
             "setting" -> {
                 val cloudKey = record.payload.optString("key")
                 val value = record.payload.opt("value")
+                if (cloudKey == "watchlist" && record.key.startsWith("xp:watchlist:")) {
+                    val entry = value as? JSONObject ?: return
+                    val item = parseMeta(entry) ?: return
+                    XpPersonalCollections.update(context, profileId, XpCollection.WATCHLIST, item, entry.optBoolean("deleted"))
+                    return
+                }
                 if (cloudKey == SORT_KEY) {
                     val number = value as? Number ?: return
                     val mode = number.toInt().takeIf { it in 0..6 && it.toDouble() == number.toDouble() }
@@ -214,7 +245,7 @@ internal object XpCentralDataSync {
                         .edit().putInt(profileId.toString(), mode).apply()
                     return
                 }
-                if (cloudKey == "poster_zoom:library" || cloudKey == "poster_zoom:home") {
+                if (cloudKey in setOf("poster_zoom:library", "poster_zoom:home", "poster_zoom:discover")) {
                     val zoom = (value as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return
                     val page = cloudKey.removePrefix("poster_zoom:")
                     context.getSharedPreferences(POSTER_PREFS, Context.MODE_PRIVATE)
@@ -242,6 +273,9 @@ internal object XpCentralDataSync {
         key == XpHomeConfig.defaultsKey(profileId) -> "home:defaults"
         key == "xp_library_zoom_$profileId" -> "poster_zoom:library"
         key == "xp_home_zoom_$profileId" -> "poster_zoom:home"
+        key == "xp_discover_zoom_$profileId" -> "poster_zoom:discover"
+        key == "xp_show_rating_$profileId" -> "poster:rating"
+        key == "xp_show_year_$profileId" -> "poster:year"
         key == "auto_select_source" || key == "preferred_addon" -> key
         key.startsWith("last_source_${profileId}_") -> "last_source:" + key.removePrefix("last_source_${profileId}_")
         key.startsWith("xp_audio_${profileId}_") -> "audio:" + key.removePrefix("xp_audio_${profileId}_")
@@ -255,6 +289,8 @@ internal object XpCentralDataSync {
         key == "home:order" -> XpHomeConfig.orderKey(profileId)
         key == "home:hidden" -> XpHomeConfig.hiddenKey(profileId)
         key == "home:defaults" -> XpHomeConfig.defaultsKey(profileId)
+        key == "poster:rating" -> "xp_show_rating_$profileId"
+        key == "poster:year" -> "xp_show_year_$profileId"
         key == "auto_select_source" || key == "preferred_addon" -> key
         key.startsWith("last_source:") -> "last_source_${profileId}_" + key.removePrefix("last_source:")
         key.startsWith("audio:") -> "xp_audio_${profileId}_" + key.removePrefix("audio:")
@@ -264,7 +300,7 @@ internal object XpCentralDataSync {
         else -> null
     }
 
-    private fun parseMeta(payload: JSONObject): XpMeta? {
+    internal fun parseMeta(payload: JSONObject): XpMeta? {
         val id = payload.optString("id")
         val name = payload.optString("name")
         if (id.isBlank() || name.isBlank()) return null
@@ -277,14 +313,16 @@ internal object XpCentralDataSync {
             payload.optLong("positionMs", 0L), payload.optLong("durationMs", 0L),
             payload.optString("tmdb_id").takeIf(String::isNotBlank),
             payload.optString("rating_source").takeIf(String::isNotBlank),
+            payload.optString("imdb_id").takeIf(String::isNotBlank),
         )
     }
 
-    private fun itemJson(item: XpMeta) = JSONObject()
+    internal fun itemJson(item: XpMeta) = JSONObject()
         .put("id", item.id).put("type", item.type).put("name", item.name)
         .put("poster", item.poster ?: "").put("description", item.description ?: "")
         .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: "")
         .put("tmdb_id", item.tmdbId.orEmpty()).put("rating_source", item.ratingSource.orEmpty())
+        .put("imdb_id", item.imdbId.orEmpty())
         .put("positionMs", item.positionMs).put("durationMs", item.durationMs)
 
     private fun titleKey(type: String, id: String) = "$type:$id"

@@ -52,13 +52,28 @@ internal object XpCentralMetadata {
         connection: XpCentralConnection,
         category: String,
         refreshAfter: Long,
+    ) = observePage(repository, profile, connection, category, 1, refreshAfter).map { it?.titles }
+
+    fun observePage(
+        repository: XpCatalogueRepository,
+        profile: String,
+        connection: XpCentralConnection,
+        category: String,
+        page: Int,
+        refreshAfter: Long,
     ) = repository.observe(
-        XpCatalogueRepository.Key(profile, connection.apiBase, category),
+        XpCatalogueRepository.Key(profile, connection.apiBase, category + if (page == 1) "" else ":$page"),
         refreshAfter,
         cacheable = { body -> JSONObject(body).let { it.optJSONArray("metas") != null && !it.optBoolean("fallback") } },
     ) {
-        XpCentralAddonSync.request(connection.apiBase, "metadata/catalog/$category", connection.token).toString()
-    }.map { body -> body?.let { parseCatalog(JSONObject(it)) } }.flowOn(Dispatchers.IO)
+        val path = "metadata/catalog/$category" + if (page == 1) "" else "?page=$page"
+        XpCentralAddonSync.request(connection.apiBase, path, connection.token).toString()
+    }.map { body -> body?.let { parsePage(JSONObject(it), page) } }.flowOn(Dispatchers.IO)
+
+    internal fun parsePage(response: JSONObject, page: Int): XpCatalogueSlice? =
+        parseCatalog(response)?.let { titles ->
+            XpCatalogueSlice(titles, response.optInt("next_page").takeIf { it == page + 1 && it <= 10 })
+        }
 
     // Null means Central allows a provider fallback. An empty list is an authoritative empty row.
     internal fun parseCatalog(response: JSONObject): List<XpMeta>? {
@@ -82,12 +97,15 @@ internal object XpCentralMetadata {
                     releaseInfo = field("released") ?: field("releaseInfo"),
                     rating = field("rating"),
                     tmdbId = tmdb,
+                    imdbId = imdb,
                     ratingSource = field("rating_source") ?: if (tmdb != null) "TMDB" else null,
                 ))
             }
         }.distinctBy { it.type to it.id }
     }
 }
+
+internal data class XpCatalogueSlice(val titles: List<XpMeta>, val next: Int?)
 
 internal fun catalogueProfileKey(connection: XpCentralConnection?, localProfileId: Long): String =
     "${connection?.apiBase}|${connection?.accountId}|$localProfileId"

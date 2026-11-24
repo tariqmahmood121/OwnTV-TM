@@ -29,8 +29,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -214,8 +214,8 @@ fun OwnTVShell(
     var restoreFocus by remember { mutableStateOf(false) }
     val movioHomeState = rememberSaveableStateHolder()
     var returnToMovioPoster by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedSection) {
-        if (selectedSection != MainSection.HOME) returnToMovioPoster = false
+    LaunchedEffect(playerMode) {
+        if (playerMode == PlayerMode.FULLSCREEN) returnToMovioPoster = false
     }
     var searchReturn by remember { mutableStateOf<MainSection?>(null) }
     var restoreTrendingSearchFocus by remember { mutableStateOf(false) }
@@ -786,17 +786,16 @@ fun OwnTVShell(
         liveVm.hideCategoryBrowser()
         liveVm.onFullscreenExited() // no longer full-screen on ExoPlayer → let the preview re-take the engine
         player.stop()
-        if (wasMovioXp != null) {
-            returnToMovioPoster = true
-            onSelectSection(MainSection.HOME)
-        }
+        if (wasMovioXp != null) returnToMovioPoster = true
         subtitleController.clear() // leaving the player drops the OpenSubtitles item context
         if (selectedSection != MainSection.LIVE_TV) liveVm.clearLiveOnExo()
         // Closing back into a guide: it focuses the channel that was playing (zapped-to included).
         epgVm.playerClosed = selectedSection == MainSection.EPG ||
             (selectedSection == MainSection.LIVE_TV && liveVm.liveView.value == tv.own.owntv.core.settings.SettingsRepository.LiveView.GUIDE)
-        restoreFocus = true
-        focusRail()
+        if (wasMovioXp == null) {
+            restoreFocus = true
+            focusRail()
+        }
         Unit
     }
     SealedPlaybackEffect(shellVm, liveVm, movieVm, seriesVm, player, { currentMultiview }, exitPlayer)
@@ -1339,9 +1338,9 @@ fun OwnTVShell(
       // emitted a single multi-thousand-line OwnTVShell, rejected by ART VerifyError on API 37.
       val browseUi: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
       // Browse UI — hidden while the player is fullscreen (stays visible behind the docked mini-player).
-      if (playerMode != PlayerMode.FULLSCREEN) {
+      if (playerMode != PlayerMode.FULLSCREEN || movioXpPlayback != null) {
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().alpha(if (playerMode == PlayerMode.FULLSCREEN) 0f else 1f)
                 // One group with a restorer: leaving for the mini player and coming back lands on the
                 // exact control that was focused, without every screen having to remember its own.
                 .focusRequester(shellContentFocus)
@@ -2434,7 +2433,11 @@ fun OwnTVShell(
             }
         }
       }
-      browseUi()
+      CompositionLocalProvider(
+          tv.own.owntv.features.home.LocalXpPlaybackActive provides
+              (playerMode == PlayerMode.FULLSCREEN && movioXpPlayback != null),
+          tv.own.owntv.features.home.LocalXpRestorePoster provides (returnToMovioPoster && !movioTouch),
+      ) { browseUi() }
       multiviewUi()
       playerUi()
       dialogsUi()
