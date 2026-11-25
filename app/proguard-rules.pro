@@ -22,3 +22,8 @@
 #     EpgAutoRefresh, PlaylistAutoRefresh, ...) round-trip through Enum.name/valueOf.
 #     Renaming a constant would silently reset settings and break old backups. ---
 -keep enum tv.own.owntv.** { *; }
+
+# ART rejected a wide register in an R8-optimized MovioXP catalogue method on API 37.
+# Preserve the catalogue's method boundaries and prevent folding the new dialogs into it.
+-keep,allowshrinking,allowobfuscation class tv.own.owntv.features.home.StremioCatalogScreenKt* { *; }
+-keep,allowshrinking,allowobfuscation class tv.own.owntv.features.home.XpCentralPairingKt* { *; }

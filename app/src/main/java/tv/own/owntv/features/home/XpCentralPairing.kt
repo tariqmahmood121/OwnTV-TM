@@ -157,3 +157,19 @@ internal fun XpCentralPairingDialog(apiBase: String, onDismiss: () -> Unit, onCo
         }
     }
 }
+
+@Composable
+internal fun XpCentralSignOutDialog(action: Int, enabled: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
+    val cancelFocus = remember { FocusRequester() }
+    val label = stringResource(action)
+    XpQa5Dialog(label, stringResource(R.string.common_cancel), onCancel) {
+        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
+        Text(stringResource(R.string.movioxp_confirm_account_logout), color = OwnTVTheme.colors.onSurface)
+        XpDialogActions {
+            XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
+                requester = cancelFocus, onClick = onCancel)
+            XpDialogButton(label, if (action == R.string.movioxp_switch_account) OwnTVIcon.SWAP else OwnTVIcon.POWER,
+                enabled = enabled, onClick = onConfirm)
+        }
+    }
+}

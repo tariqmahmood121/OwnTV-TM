@@ -2789,23 +2789,17 @@ fun StremioCatalogScreen(
                 }
             }
         }
-        centralSignOutAction?.let { action ->
-            val cancelFocus = remember { FocusRequester() }
-            val cancel = { centralSignOutAction = null }
-            val label = stringResource(action)
-            XpQa5Dialog(label, stringResource(R.string.common_cancel), cancel) {
-                LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-                Text(stringResource(R.string.movioxp_confirm_account_logout), color = XpText)
-                XpDialogActions {
-                    XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
-                        requester = cancelFocus, onClick = cancel)
-                    XpDialogButton(label, if (action == R.string.movioxp_switch_account) OwnTVIcon.SWAP else OwnTVIcon.POWER,
-                        enabled = !centralSyncBusy) {
-                        cancel()
-                        signOutCentral()
-                    }
-                }
-            }
+        val signOutAction = centralSignOutAction
+        if (signOutAction != null) {
+            XpCentralSignOutDialog(
+                action = signOutAction,
+                enabled = !centralSyncBusy,
+                onCancel = { centralSignOutAction = null },
+                onConfirm = {
+                    centralSignOutAction = null
+                    signOutCentral()
+                },
+            )
         }
         if (centralMobileLogin) {
             XpCentralPairingDialog(centralApiBase, onDismiss = { centralMobileLogin = false }) { connection ->
