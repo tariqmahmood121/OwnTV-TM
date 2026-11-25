@@ -99,7 +99,6 @@ open class MainActivity : ComponentActivity() {
      * stays up until then and Home never flashes on the way. Owned by this activity, so a relaunch in a
      * process that is still alive waits again.
      */
-    @Volatile
     private var startupSettled by mutableStateOf(false)
 
     private val player: tv.own.owntv.player.OwnTVPlayer by inject()

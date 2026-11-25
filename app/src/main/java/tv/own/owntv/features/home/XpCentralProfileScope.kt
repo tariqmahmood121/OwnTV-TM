@@ -60,7 +60,7 @@ internal object XpCentralProfileScope {
         }?.key?.substringAfterLast('_')?.toLongOrNull()
     }
 
-    suspend fun refresh(context: Context, connection: XpCentralConnection, vm: ProfilesViewModel) = refreshLock.withLock {
+    suspend fun refresh(context: Context, connection: XpCentralConnection, vm: ProfilesViewModel): Unit = refreshLock.withLock {
         if (accountMutable.value != connection.accountId) return@withLock
         val remote: JSONArray = withContext(Dispatchers.IO) {
             XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token)
