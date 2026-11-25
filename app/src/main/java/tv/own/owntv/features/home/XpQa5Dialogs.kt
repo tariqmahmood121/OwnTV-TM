@@ -91,10 +91,10 @@ private val LocalXpDialogCellWidth = staticCompositionLocalOf<Dp?> { null }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun XpDialogActions(content: @Composable () -> Unit) {
+internal fun XpDialogActions(stacked: Boolean = false, content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 8.dp
-        val count = if (maxWidth >= 570.dp) 3 else if (maxWidth >= 250.dp) 2 else 1
+        val count = if (stacked) 1 else if (maxWidth >= 570.dp) 3 else if (maxWidth >= 250.dp) 2 else 1
         val itemWidth = with(LocalDensity.current) {
             val available = constraints.maxWidth - gap.roundToPx() * (count - 1)
             (available / count).toDp()

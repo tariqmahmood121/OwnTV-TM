@@ -636,6 +636,63 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpQa5Dialogs.kt	runtime
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpQa5Dialogs.kt	writer
 1	empty	app/src/main/java/tv/own/owntv/features/home/XpSettingsSections.kt	\0
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	\0
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	%02x
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	-qa
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.apk
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.fileprovider
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.part
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK checksum mismatch
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK package, version or signature mismatch
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Accept
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Cannot create update directory
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Could not finalise APK
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	DEPRECATION
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Download HTTP
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Downloaded too much data
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	GET
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	HTTPS APK required
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Incomplete APK
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid APK size
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid SHA-256
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid manifest length
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid minimum version
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid version code
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Invalid version name
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Manifest HTTP
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Manifest too large
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	MovioXP
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	SHA-256
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Size mismatch
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Wrong application
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Wrong package
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Wrong release channel
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	[0-9a-f]{64}
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	apkSizeBytes
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	apkUrl
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	app
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	application/json
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	application/vnd.android.package-archive
+2	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	auto_check
+2	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	cached_manifest
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	channel
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https://moviotv.opticalzoo.com/downloads/movioxp-version.json
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https://moviotv.opticalzoo.com/downloads/qa/movioxp-version.json
+2	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	last_success
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	minSupportedVersionCode
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	movioxp-
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	movioxp_software_updates
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	package:
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	packageName
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	publishedAt
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	qa
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	releaseNotes
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	sha256
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	stable
+1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	updates
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	versionCode
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	versionName
 6	empty	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	\0
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	$PREFIX${source.identity}:${source.provider}
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSourcePreference.kt	%02x
