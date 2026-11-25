@@ -640,7 +640,7 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	-qa
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.apk
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.fileprovider
-1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.part
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	.pending.apk
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK checksum mismatch
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK package, version or signature mismatch
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Accept
@@ -679,6 +679,7 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https://moviotv.opticalzoo.com/downloads/movioxp-version.json
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	https://moviotv.opticalzoo.com/downloads/qa/movioxp-version.json
+2	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	last_attempt
 2	preference-key	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	last_success
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	minSupportedVersionCode
 2	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	movioxp-

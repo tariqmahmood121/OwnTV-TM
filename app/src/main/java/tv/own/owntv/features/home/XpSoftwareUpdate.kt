@@ -92,6 +92,8 @@ internal class XpSoftwareUpdater(private val context: Context) {
         private set
     var lastChecked by mutableStateOf(prefs.getLong("last_success", 0L))
         private set
+    // Restrict automatic attempts even during server outages; manual checks remain available.
+    private var lastAttempt = prefs.getLong("last_attempt", 0L)
     var status by mutableStateOf(XpUpdateStatus.IDLE)
         private set
     var info by mutableStateOf<XpUpdateManifest?>(null)
@@ -111,11 +113,13 @@ internal class XpSoftwareUpdater(private val context: Context) {
         prefs.edit().putBoolean("auto_check", enabled).apply()
     }
     suspend fun checkIfDue() {
-        if (XpUpdatePolicy.due(System.currentTimeMillis(), lastChecked, automatic)) check(false)
+        if (XpUpdatePolicy.due(System.currentTimeMillis(), lastAttempt, automatic)) check(false)
     }
     suspend fun check(force: Boolean = true) {
         if (status == XpUpdateStatus.DOWNLOADING || status == XpUpdateStatus.CHECKING) return
-        if (!force && !XpUpdatePolicy.due(System.currentTimeMillis(), lastChecked, automatic)) return
+        if (!force && !XpUpdatePolicy.due(System.currentTimeMillis(), lastAttempt, automatic)) return
+        lastAttempt = System.currentTimeMillis()
+        prefs.edit().putLong("last_attempt", lastAttempt).apply()
         status = XpUpdateStatus.CHECKING
         error = null
         try {
@@ -158,7 +162,7 @@ internal class XpSoftwareUpdater(private val context: Context) {
         progress = 0
         error = null
         val directory = File(context.filesDir, "updates")
-        val temporary = File(directory, "movioxp-" + offered.versionCode + ".part")
+        val temporary = File(directory, "movioxp-" + offered.versionCode + ".pending.apk")
         val target = File(directory, "movioxp-" + offered.versionCode + ".apk")
         try {
             withContext(Dispatchers.IO) {
