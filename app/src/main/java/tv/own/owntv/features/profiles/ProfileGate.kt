@@ -44,7 +44,13 @@ import tv.own.owntv.ui.components.OwnTVIcon
  * profile id and proceeds into the shell.
  */
 @Composable
-fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
+fun ProfileGate(
+    onEnter: (Long) -> Unit,
+    onAddProfile: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+) {
+    if (onBack != null) androidx.activity.compose.BackHandler(onBack = onBack)
     val vm: ProfilesViewModel = koinViewModel()
     val allProfiles by vm.profiles.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -100,7 +106,7 @@ fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Mod
                         onClick = { choose(p) },
                     )
                 }
-                if (centralAccountId == null) item { AddTile(onClick = onAddProfile) }
+                if (centralAccountId == null && onAddProfile != null) item { AddTile(onClick = onAddProfile) }
             }
             if (centralAccountId != null && profiles.isEmpty()) {
                 Spacer(Modifier.height(18.dp))

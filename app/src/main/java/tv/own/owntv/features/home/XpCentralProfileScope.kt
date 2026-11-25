@@ -2,13 +2,12 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import tv.own.owntv.R
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -87,10 +86,11 @@ internal object XpCentralProfileScope {
             var localId = prefs.getLong(key, 0L)
             if (localId <= 0L || localId !in existing) {
                 // Do not claim an unrelated local profile, even when both names are "V10".
-                val result = CompletableDeferred<Long>()
-                vm.create(name, 0, child, null, name, onCreated = { result.complete(it) })
-                localId = withTimeout(30_000L) { result.await() }
-                prefs.edit().putLong(key, localId).apply()
+                localId = withContext(NonCancellable) {
+                    vm.createCentralProfile(name, child).also { id ->
+                        prefs.edit().putLong(key, id).apply()
+                    }
+                }
                 val updated = vm.profileState.first {
                     it is ProfileLoadState.Loaded && it.profiles.any { p -> p.id == localId }
                 } as ProfileLoadState.Loaded

@@ -401,6 +401,7 @@ open class MainActivity : ComponentActivity() {
             val linkedLocalIds = remember(centralMembershipRevision) {
                 XpCentralProfileScope.linkedLocalIds(this@MainActivity)
             }
+            var showLocalProfilesAfterLogout by remember(centralAccountId, activeProfileId) { mutableStateOf(false) }
             val profiles = if (centralAccountId == null) localProfiles.filterNot { it.id in linkedLocalIds } else {
                 val ids = XpCentralProfileScope.allowedLocalIds(this@MainActivity, centralAccountId!!)
                 localProfiles.filter { it.id in ids }
@@ -561,12 +562,20 @@ open class MainActivity : ComponentActivity() {
                         when {
                             profile == null || !profilesLoaded -> Unit // active id / Room list loading
                             centralAccountId == null && profile in linkedLocalIds -> {
-                                val localProfile = profiles.firstOrNull()
-                                tv.own.owntv.features.setup.CentralAccountStep(
-                                    registering = false,
-                                    onBack = localProfile?.let { local -> { profilesVm.switchTo(local) } },
-                                    onConnected = {},
-                                )
+                                if (showLocalProfilesAfterLogout && profiles.isNotEmpty()) {
+                                    ProfileGate(
+                                        onEnter = { profileId -> gateSession.authenticateProfile(profileId) },
+                                        onAddProfile = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onBack = { showLocalProfilesAfterLogout = false },
+                                    )
+                                } else {
+                                    tv.own.owntv.features.setup.CentralAccountStep(
+                                        registering = false,
+                                        onBack = if (profiles.isEmpty()) null else { { showLocalProfilesAfterLogout = true } },
+                                        onConnected = {},
+                                    )
+                                }
                             }
                             // Adding a profile from the gate → onboard the new profile.
                             addingProfile -> Onboarding(

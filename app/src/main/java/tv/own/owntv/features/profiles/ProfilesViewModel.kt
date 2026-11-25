@@ -86,6 +86,10 @@ class ProfilesViewModel(
         }
     }
 
+    /** Central restores its own sources after profile selection. */
+    internal suspend fun createCentralProfile(name: String, isKids: Boolean): Long =
+        profileDao.insert(ProfileEntity(name = name, avatarColor = 0, avatarId = 0, isKids = isKids))
+
     /** Give the profile [profileId] the picture in [source]; core copies and scales it. */
     fun setPicture(profileId: Long, source: java.io.File) {
         viewModelScope.launch { setPictureNow(profileId, source) }
