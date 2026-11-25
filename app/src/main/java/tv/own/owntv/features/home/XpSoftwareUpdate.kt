@@ -108,7 +108,7 @@ internal class XpSoftwareUpdater(private val context: Context) {
             XpUpdateManifest.parse(it, context.packageName, channel)
         } }.getOrNull()
     }
-    fun setAutomatic(enabled: Boolean) {
+    fun changeAutomatic(enabled: Boolean) {
         automatic = enabled
         prefs.edit().putBoolean("auto_check", enabled).apply()
     }
@@ -312,6 +312,6 @@ internal fun XpSoftwareUpdatePanel(
             model.status != XpUpdateStatus.DOWNLOADING, onClick = onCheck)
     XpSettingsOption(stringResource(
         if (model.automatic) R.string.movioxp_update_auto_on else R.string.movioxp_update_auto_off),
-        selected = model.automatic) { model.setAutomatic(!model.automatic) }
+        selected = model.automatic) { model.changeAutomatic(!model.automatic) }
     Text(stringResource(R.string.movioxp_update_secure_install), color = muted, fontSize = 12.sp)
 }
