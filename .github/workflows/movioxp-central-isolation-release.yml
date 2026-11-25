@@ -92,7 +92,7 @@ jobs:
           "$SDK_APKSIGNER" verify "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           [ -n "$AAPT" ] || { echo "::error::aapt missing"; exit 1; }
-          BADGING=$("$AAPT" dump badging "$APK" | head -1)
+          BADGING=$("$AAPT" dump badging "$APK")
           [[ "$BADGING" == *"name='com.oakstudios.movioxp'"* ]] || { echo "::error::Package mismatch"; exit 1; }
           [[ "$BADGING" == *"versionCode='$VERSION_CODE'"* ]] || { echo "::error::Version code mismatch"; exit 1; }
           [[ "$BADGING" == *"versionName='$VERSION_NAME'"* ]] || { echo "::error::Version name mismatch"; exit 1; }
