@@ -1,5 +1,6 @@
 package tv.own.owntv.features.settings
 
+import tv.own.owntv.ui.theme.MovioAppearanceDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -86,7 +87,7 @@ fun FontSettingsScreen(
             desc = null,
             value = null,
             // Popup size has its own row in Appearance; Reset leaves it alone.
-            onClick = { onSet(FontCustomization(popupSizePercent = current.popupSizePercent)) },
+            onClick = { onSet(FontCustomization(sizePercent = MovioAppearanceDefaults.fontSize, popupSizePercent = current.popupSizePercent)) },
             help = SettingHelp(reset, stringResource(R.string.settings_font_customization_description), hints = settingHints(null, pinnable = false)),
         )
 
@@ -100,7 +101,7 @@ fun FontSettingsScreen(
                 onDismiss = { editing = null },
             )
             FontEdit.SIZE -> panelEditor({ editing = null }) {
-                PanelStepper(percent(current.sizePercent), onStep = stepSize, onReset = { onSet(current.copy(sizePercent = UiFontScale.DEFAULT)) }, onDone = { editing = null })
+                PanelStepper(percent(current.sizePercent), onStep = stepSize, onReset = { onSet(current.copy(sizePercent = MovioAppearanceDefaults.fontSize)) }, onDone = { editing = null })
             }
             FontEdit.POPUP -> panelEditor({ editing = null }) {
                 PanelStepper(

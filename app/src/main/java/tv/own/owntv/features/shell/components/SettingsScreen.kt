@@ -1,5 +1,6 @@
 package tv.own.owntv.features.shell.components
 
+import tv.own.owntv.ui.theme.MovioAppearanceDefaults
 import tv.own.owntv.ui.theme.StageColors
 import tv.own.owntv.features.settings.SettingValue
 import tv.own.owntv.features.settings.menuLabelsSummary
@@ -2126,7 +2127,7 @@ private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit
                 val next = UiZoom.clamp(current + d * UiZoom.STEP)
                 if (d < 0 && next < UiZoom.LOW_RAM_WARN && !lowZoomAccepted) pendingLowZoom = next else onSet(next)
             },
-            onReset = { onSet(UiZoom.DEFAULT) },
+            onReset = { onSet(MovioAppearanceDefaults.screenZoom) },
             onDone = onDismiss,
         )
     }

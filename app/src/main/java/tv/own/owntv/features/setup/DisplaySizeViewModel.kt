@@ -1,5 +1,6 @@
 package tv.own.owntv.features.setup
 
+import tv.own.owntv.ui.theme.MovioAppearanceDefaults
 import tv.own.owntv.core.brand.AppIcon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,11 +24,11 @@ import tv.own.owntv.core.theme.UiZoom
 class DisplaySizeViewModel(private val settings: SettingsRepository) : ViewModel() {
 
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiZoom.DEFAULT)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MovioAppearanceDefaults.screenZoom)
 
     val fontSizePercent: StateFlow<Int> = settings.fontCustomization
         .map { it.sizePercent }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiFontScale.DEFAULT)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MovioAppearanceDefaults.fontSize)
 
     /**
      * The full [UiZoom.MIN]..[UiZoom.MAX] range, exactly as Settings offers it. Stepping below
@@ -51,8 +52,8 @@ class DisplaySizeViewModel(private val settings: SettingsRepository) : ViewModel
     fun setAppIcon(icon: AppIcon) = viewModelScope.launch { settings.setAppIcon(icon) }
 
     fun reset() = viewModelScope.launch {
-        settings.setUiZoomPercent(UiZoom.DEFAULT)
+        settings.setUiZoomPercent(MovioAppearanceDefaults.screenZoom)
         val current = settings.fontCustomization.first()
-        settings.setFontCustomization(current.copy(sizePercent = UiFontScale.DEFAULT))
+        settings.setFontCustomization(current.copy(sizePercent = MovioAppearanceDefaults.fontSize))
     }
 }

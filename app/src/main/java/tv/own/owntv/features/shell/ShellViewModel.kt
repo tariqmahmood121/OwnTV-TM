@@ -1,5 +1,6 @@
 package tv.own.owntv.features.shell
 
+import tv.own.owntv.ui.theme.MovioAppearanceDefaults
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
@@ -145,10 +146,10 @@ class ShellViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.DARK)
 
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent
-        .stateIn(viewModelScope, SharingStarted.Eagerly, UiZoom.DEFAULT)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, MovioAppearanceDefaults.screenZoom)
 
     val fontCustomization: StateFlow<FontCustomization> = settings.fontCustomization
-        .stateIn(viewModelScope, SharingStarted.Eagerly, FontCustomization())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, FontCustomization(sizePercent = MovioAppearanceDefaults.fontSize))
 
     val animationLevel: StateFlow<tv.own.owntv.core.theme.AnimationLevel> = settings.animationLevel
         .stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.core.theme.AnimationLevel.FULL)

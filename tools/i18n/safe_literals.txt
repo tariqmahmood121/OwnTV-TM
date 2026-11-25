@@ -30,6 +30,7 @@
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	OwnTVHome
 1	technical	app/src/main/java/tv/own/owntv/MainActivity.kt	PURPLE
 1	compiler	app/src/main/java/tv/own/owntv/MainActivity.kt	RememberReturnType
+2	protocol	app/src/main/java/tv/own/owntv/MainActivity.kt	appearance_defaults_v3
 1	log	app/src/main/java/tv/own/owntv/MainActivity.kt	database probe failed: $error
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	db-probed
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	destination-ready
@@ -2098,5 +2099,7 @@
 1	technical	app/src/main/java/tv/own/owntv/ui/stage/StageComponents.kt	−
 1	technical	app/src/main/java/tv/own/owntv/ui/stage/StagePopup.kt	$value ›
 1	technical	app/src/main/java/tv/own/owntv/ui/theme/Glass.kt	glassPosition
+1	json	app/src/main/java/tv/own/owntv/ui/theme/MovioAppearanceDefaults.kt	font_size_percent
+1	json	app/src/main/java/tv/own/owntv/ui/theme/MovioAppearanceDefaults.kt	ui_zoom_percent
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/OwnTVColors.kt	\0
 2	empty	app/src/main/java/tv/own/owntv/ui/theme/Theme.kt	\0

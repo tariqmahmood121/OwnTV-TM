@@ -330,6 +330,10 @@ open class MainActivity : ComponentActivity() {
             // later user selections remain untouched, including after app restarts.
             LaunchedEffect(Unit) {
                 val prefs = getSharedPreferences("moviotv_visual_v7", MODE_PRIVATE)
+                if (BuildConfig.MOVIOXP_RELEASE && !prefs.getBoolean("appearance_defaults_v3", false)) {
+                    tv.own.owntv.ui.theme.MovioAppearanceDefaults.applyMissing(movioVisualSettings)
+                    prefs.edit().putBoolean("appearance_defaults_v3", true).apply()
+                }
                 if (!prefs.getBoolean("palette_initialised", false)) {
                     val savedAccent = movioVisualSettings.accent.first()
                     val savedCustom = movioVisualSettings.customAccent.first()

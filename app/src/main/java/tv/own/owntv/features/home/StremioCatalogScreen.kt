@@ -794,6 +794,7 @@ fun StremioCatalogScreen(
     val activeProfileName = activeProfile?.name.orEmpty()
     val favoritesProfileId = activeProfileId ?: -1L
     var centralConnection by remember { mutableStateOf(XpCentralConnectionStore.read(context)) }
+    var centralReachable by remember(centralConnection) { mutableStateOf(false) }
     val catalogueProfile = catalogueProfileKey(centralConnection, favoritesProfileId)
     val addons = remember(catalogueProfile) { mutableStateListOf<XpAddon>() }
     val builtInUrl = stringResource(R.string.moviotv_xp_default_catalogue_manifest)
@@ -1398,9 +1399,14 @@ fun StremioCatalogScreen(
             runCatching {
                 XpCentralDataSync.sync(context, connection, favoritesProfileId, activeProfileName, activeProfile?.isKids == true)
             }.onSuccess {
+                centralReachable = true
                 favoriteTitles = XpFavoritesStore.read(context, favoritesProfileId)
                 continueTitles = XpContinueStore.read(context, favoritesProfileId)
-            }.onFailure { xpDebug("Central profile synchronization failed") }
+            }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                centralReachable = false
+                xpDebug("Central profile synchronization failed")
+            }
             delay(90_000L)
         }
     }
@@ -1736,7 +1742,17 @@ fun StremioCatalogScreen(
             ) {
                 XpHeaderControl(compactPhone, stringResource(R.string.movioxp_account_menu), topNavigationFocus,
                     onClick = { showAccountMenu = true }) { color ->
-                    DrawOwnTVIcon(OwnTVIcon.PERSON, color, Modifier.size(24.dp))
+                    Box(Modifier.size(26.dp)) {
+                        DrawOwnTVIcon(OwnTVIcon.PERSON, color, Modifier.size(24.dp).align(Alignment.Center))
+                        val ledColor = when {
+                            centralConnection == null -> Color(0xFF9A9AA3)
+                            centralReachable -> Color(0xFF36D68A)
+                            else -> Color(0xFFF54C55)
+                        }
+                        val ledShape = androidx.compose.foundation.shape.CircleShape
+                        Box(Modifier.align(Alignment.BottomEnd).size(8.dp)
+                            .background(ledColor, ledShape).border(1.dp, XpBackground, ledShape))
+                    }
                 }
                 if (page == "discover" || page == "library") {
                     Text(
@@ -2110,7 +2126,7 @@ fun StremioCatalogScreen(
                                             centralConnection = it
                                             centralApiBase = it.apiBase.removeSuffix("/")
                                             centralPassword = ""
-                                            centralSyncMessage = context.getString(R.string.moviotv_xp_central_connected_as, it.username)
+                                            centralSyncMessage = null
                                             centralSyncBusy = false
                                             syncAddonsWithCentral()
                                         }
@@ -2142,7 +2158,7 @@ fun StremioCatalogScreen(
                             color = XpMuted, fontSize = 14.sp,
                         )
                     } else {
-                        Text(stringResource(R.string.moviotv_xp_central_connected_as, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
+                        Text(stringResource(R.string.movioxp_account_name, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
                         XpAction(stringResource(R.string.moviotv_xp_central_sync_now), centralSyncBusy) { syncAddonsWithCentral() }
                         XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy) {
                             signOutCentral()
@@ -2345,7 +2361,7 @@ fun StremioCatalogScreen(
                                 password = true,
                             )
                         } else {
-                            Text(stringResource(R.string.moviotv_xp_central_connected_as,
+                            Text(stringResource(R.string.movioxp_account_name,
                                 centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 15.sp)
                         }
                         XpSettingsOption(
@@ -2769,15 +2785,8 @@ fun StremioCatalogScreen(
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val connection = centralConnection
-                    if (connection == null) {
-                        Text(stringResource(R.string.movioxp_local_profile_status), color = XpMuted, fontSize = 14.sp)
-                    } else {
+                    if (connection != null) {
                         Text(stringResource(R.string.movioxp_account_name, connection.username), color = XpText, fontSize = 15.sp)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            val connected = Color(0xFF70D5AC)
-                            Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(connected))
-                            Text(stringResource(R.string.movioxp_central_status_connected), color = connected, fontSize = 14.sp)
-                        }
                     }
                     XpDialogActions {
                         XpDialogButton(stringResource(R.string.movioxp_switch_profile), OwnTVIcon.PERSON, enabled = onSwitchProfile != null) {

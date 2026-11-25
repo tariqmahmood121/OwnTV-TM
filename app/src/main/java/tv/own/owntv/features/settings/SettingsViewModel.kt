@@ -2,6 +2,7 @@
 
 package tv.own.owntv.features.settings
 
+import tv.own.owntv.ui.theme.MovioAppearanceDefaults
 import tv.own.owntv.core.brand.AppIcon
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -903,7 +904,7 @@ class SettingsViewModel(
     val dynamicCaps: StateFlow<Set<tv.own.owntv.core.nav.MainSection>> = navVisibility.dynamicCaps()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), tv.own.owntv.core.nav.MainSection.allBrowse)
 
-    val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiZoom.DEFAULT)
+    val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MovioAppearanceDefaults.screenZoom)
     fun setUiZoom(percent: Int) { viewModelScope.launch { settings.setUiZoomPercent(UiZoom.clamp(percent)) } }
 
     val appIcon: StateFlow<AppIcon> = settings.appIcon.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppIcon.DEFAULT)
