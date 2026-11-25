@@ -71,7 +71,7 @@ internal fun WizardFrame(
     next: WizardAction?,
     onBack: (() -> Unit)? = back?.onClick,
     width: Dp = 1040.mpx,
-    /** Adapt Central sign-in/register to a touch-sized card without changing the normal TV wizard. */
+    /** Adapt Central sign-in to a touch-sized card without changing the normal TV wizard. */
     compactOnPhone: Boolean = false,
     /** More buttons beside Back (the display step's Reset). */
     extraLeft: List<WizardAction> = emptyList(),

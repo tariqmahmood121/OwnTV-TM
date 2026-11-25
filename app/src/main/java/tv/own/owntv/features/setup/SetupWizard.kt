@@ -113,7 +113,6 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
     val defaultPlaylistName = stringResource(R.string.setup_name_default_playlist)
     val defaultPortalName = stringResource(R.string.setup_default_portal)
     var step by rememberSaveable(firstRun) { mutableStateOf(if (firstRun) { if (savedCentralConnection == null) Step.CENTRAL_GATE else Step.CENTRAL_PROFILES } else Step.CREATE_PROFILE) }
-    var centralRegistering by remember { mutableStateOf(false) }
     var centralProfiles by remember { mutableStateOf<List<CentralProfileChoice>>(emptyList()) }
     var centralProfilesBusy by remember { mutableStateOf(false) }
     var centralProfilesError by remember { mutableStateOf<String?>(null) }
@@ -183,15 +182,13 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
             ) {
                 WizardCards(
                     listOf(
-                        WizardCard(OwnTVIcon.PERSON, stringResource(R.string.moviotv_xp_central_login), stringResource(R.string.moviotv_xp_central_login_line)) { centralRegistering = false; step = Step.CENTRAL_ACCOUNT },
-                        WizardCard(OwnTVIcon.SPARKLE, stringResource(R.string.moviotv_xp_central_register), stringResource(R.string.moviotv_xp_central_register_line)) { centralRegistering = true; step = Step.CENTRAL_ACCOUNT },
+                        WizardCard(OwnTVIcon.PERSON, stringResource(R.string.moviotv_xp_central_login), stringResource(R.string.moviotv_xp_central_login_line)) { step = Step.CENTRAL_ACCOUNT },
                         WizardCard(OwnTVIcon.PLAY, stringResource(R.string.moviotv_xp_guest), stringResource(R.string.moviotv_xp_guest_line)) { step = Step.WELCOME },
                     ),
                     rememberFirstFocus(),
                 )
             }
             Step.CENTRAL_ACCOUNT -> CentralAccountStep(
-                registering = centralRegistering,
                 onBack = { step = Step.CENTRAL_GATE },
                 onConnected = { step = Step.CENTRAL_PROFILES },
             )
@@ -413,7 +410,7 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
 }
 
 @Composable
-private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConnected: () -> Unit) {
+private fun CentralAccountStep(onBack: () -> Unit, onConnected: () -> Unit) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
@@ -422,25 +419,22 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
     var message by remember { mutableStateOf<String?>(null) }
     val usernameLabel = stringResource(R.string.moviotv_xp_central_username_label)
     val passwordLabel = stringResource(R.string.moviotv_xp_central_password_label)
-    val valid = username.trim().isNotEmpty() && password.isNotEmpty() && (!registering || (username.trim().length >= 3 && password.length >= 12))
+    val valid = username.trim().isNotEmpty() && password.isNotEmpty()
     WizardFrame(
         step = WizardStep.PROFILE,
-        title = stringResource(if (registering) R.string.moviotv_xp_central_register else R.string.moviotv_xp_central_login),
-        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_short_help else R.string.moviotv_xp_central_login_short_help),
+        title = stringResource(R.string.moviotv_xp_central_login),
+        sub = stringResource(R.string.moviotv_xp_central_login_short_help),
         compactOnPhone = true,
         back = WizardAction(stringResource(R.string.common_back), onBack),
         next = WizardAction(
-            stringResource(if (busy) R.string.moviotv_xp_central_connecting else if (registering) R.string.moviotv_xp_central_create_short else R.string.moviotv_xp_central_login_short),
+            stringResource(if (busy) R.string.moviotv_xp_central_connecting else R.string.moviotv_xp_central_login_short),
             onClick = {
                 if (valid && !busy) {
                     busy = true
                     message = null
                     scope.launch {
                         val apiBase = context.getString(R.string.moviotv_xp_central_api_default)
-                        runCatching {
-                            if (registering) XpCentralAddonSync.register(apiBase, username, password)
-                            XpCentralAddonSync.signIn(apiBase, username, password)
-                        }.onSuccess { connection ->
+                        runCatching { XpCentralAddonSync.signIn(apiBase, username, password) }.onSuccess { connection ->
                             XpCentralConnectionStore.write(context, connection)
                             busy = false
                             onConnected()
@@ -470,10 +464,6 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
             onValueChange = { password = it; message = null },
             password = true,
         )
-        if (registering) {
-            Text(stringResource(R.string.moviotv_xp_central_register_requirements),
-                style = stageText(13, 500), color = StageColors.Muted)
-        }
         message?.let { Text(it, style = stageText(14, 600), color = StageColors.Warn) }
     }
 }
