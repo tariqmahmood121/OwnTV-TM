@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import tv.own.owntv.features.profiles.ProfileLoadState
 import tv.own.owntv.features.profiles.ProfilesViewModel
@@ -24,6 +26,8 @@ internal object XpCentralProfileScope {
     val accountId = accountMutable.asStateFlow()
     private val revisionMutable = MutableStateFlow(0)
     val revision = revisionMutable.asStateFlow()
+
+    private val refreshLock = Mutex()
 
     fun initialize(context: Context) {
         accountMutable.value = XpCentralConnectionStore.read(context)?.accountId
@@ -56,16 +60,19 @@ internal object XpCentralProfileScope {
         }?.key?.substringAfterLast('_')?.toLongOrNull()
     }
 
-    suspend fun refresh(context: Context, connection: XpCentralConnection, vm: ProfilesViewModel) {
+    suspend fun refresh(context: Context, connection: XpCentralConnection, vm: ProfilesViewModel) = refreshLock.withLock {
+        if (accountMutable.value != connection.accountId) return@withLock
         val remote: JSONArray = withContext(Dispatchers.IO) {
             XpCentralAddonSync.request(connection.apiBase, "profiles", connection.token)
                 .getJSONArray("profiles")
         }
+        if (accountMutable.value != connection.accountId) return@withLock
         val loaded = vm.profileState.first { it is ProfileLoadState.Loaded } as ProfileLoadState.Loaded
         val existing = loaded.profiles.associateBy { it.id }.toMutableMap()
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val linked = linkedSetOf<Long>()
         for (index in 0 until remote.length()) {
+            if (accountMutable.value != connection.accountId) return@withLock
             val item = remote.getJSONObject(index)
             val cloudId = item.getLong("id")
             require(cloudId > 0L)
@@ -89,6 +96,7 @@ internal object XpCentralProfileScope {
             }
             linked += localId
         }
+        if (accountMutable.value != connection.accountId) return@withLock
         // Replace instead of union: a deleted Central profile must lose membership.
         prefs.edit().putStringSet(membershipKey(connection.accountId), linked.map(Long::toString).toSet()).apply()
         revisionMutable.value += 1

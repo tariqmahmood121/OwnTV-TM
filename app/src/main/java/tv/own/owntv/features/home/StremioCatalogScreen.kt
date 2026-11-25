@@ -945,6 +945,13 @@ fun StremioCatalogScreen(
     var showCredits by remember { mutableStateOf(false) }
     var detailsMetadata by remember { mutableStateOf<XpDetailMetadata?>(null) }
     val searchListState = key(catalogueProfile) { rememberLazyListState() }
+    var previousSearchQuery by key(catalogueProfile) { rememberSaveable { mutableStateOf(searchText.trim()) } }
+    LaunchedEffect(searchText.trim(), catalogueProfile) {
+        if (previousSearchQuery != searchText.trim()) {
+            previousSearchQuery = searchText.trim()
+            searchListState.scrollToItem(0)
+        }
+    }
     val keyboard = LocalSoftwareKeyboardController.current
     val activity = androidx.activity.compose.LocalActivity.current
     var centralSyncBusy by remember { mutableStateOf(false) }
@@ -2653,7 +2660,7 @@ fun StremioCatalogScreen(
                             }
                         }
                     }
-                    if (page == "home" && rows.isEmpty() && visibleHomeIds.isEmpty() && continueTitles.isEmpty()) {
+                    if (page == "home" && visibleRows.isEmpty() && visibleHomeIds.isEmpty() && continueTitles.isEmpty()) {
                         item(key = "xp-home-empty") {
                             Text(stringResource(R.string.moviotv_xp_empty_description), color = XpMuted, fontSize = 16.sp,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp))
@@ -2958,7 +2965,7 @@ fun StremioCatalogScreen(
                 XpQa5Dialog(item.name, stringResource(R.string.movioxp_close), ::closeDetails, width = 880.dp,
                     primaryAction = {
                         XpAction(stringResource(R.string.movioxp_find_sources),
-                            disabled = chooseEpisode, focusRequester = detailFocus, compact = true) {
+                            disabled = chooseEpisode, focusRequester = detailFocus, compact = true, primary = true) {
                             manualSourceSelection = true
                             showManualSources = true
                         }
@@ -2967,11 +2974,12 @@ fun StremioCatalogScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             val rating = xpRating(playbackMetadata(item))?.let {
                                 val value = String.format(java.util.Locale.US, "%.1f", it)
-                                context.getString(when (playbackMetadata(item).ratingSource) {
-                                    "TMDB" -> R.string.movioxp_tmdb_rating
-                                    "IMDb" -> R.string.movioxp_imdb_rating
-                                    else -> R.string.moviotv_xp_rating
-                                }, value)
+                                val sourceLabel = when (playbackMetadata(item).ratingSource) {
+                                    "TMDB" -> context.getString(R.string.movioxp_tmdb_rating, value)
+                                    "IMDb" -> context.getString(R.string.movioxp_imdb_rating, value)
+                                    else -> value
+                                }
+                                context.getString(R.string.moviotv_xp_rating, sourceLabel)
                             }
                             val runtime = metadata?.runtime?.let {
                                 if (it.toIntOrNull() != null) stringResource(R.string.movioxp_runtime_minutes, it.toInt()) else it
@@ -3629,13 +3637,17 @@ private fun XpAddonInfoCard(
 
 @Composable
 internal fun XpAction(label: String, disabled: Boolean, focusRequester: FocusRequester? = null,
-    compact: Boolean = false, onClick: () -> Unit) {
+    compact: Boolean = false, primary: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val tv = LocalXpTvControls.current
     val focusColor = if (tv) XpRemotePink else XpFocus
     Row(
         Modifier.clip(RoundedCornerShape(22.dp))
-            .background(if (focused && !tv) XpFocus.copy(alpha = .28f) else XpPanel)
+            .background(when {
+                focused && !tv -> XpFocus.copy(alpha = .28f)
+                primary && !disabled -> XpAccent.copy(alpha = .27f)
+                else -> XpPanel
+            })
             .border(if (focused) 3.dp else 1.dp, if (focused) focusColor else Color(0xFF3A3144), RoundedCornerShape(22.dp))
             .heightIn(min = if (compact) 44.dp else 56.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
