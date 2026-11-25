@@ -1,0 +1,104 @@
+:root {
+    color-scheme: dark;
+    font-family: system-ui, sans-serif;
+    background: #08070b;
+    color: #fff;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    justify-items: center;
+    align-items: center;
+    padding: clamp(.75rem, 4vw, 2rem);
+    background: radial-gradient(ellipse at 50% 0, #25122d, #08070b 60%);
+}
+
+main {
+    width: min(100%, 32rem);
+    padding: clamp(1rem, 5vw, 2.5rem);
+    border-radius: 1.5rem;
+    background: #0c0a10;
+    border: 1px solid #342241;
+}
+
+.brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .6rem;
+    color: #eca9ff;
+    font-size: clamp(1.85rem, 8vw, 2.75rem);
+    font-weight: 850;
+}
+
+.play {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #efc4ff;
+    color: #502569;
+    font-size: .9rem;
+}
+
+h1 {
+    margin: 1.1rem 0 .6rem;
+    font-size: clamp(1.55rem, 6.5vw, 2.15rem);
+    text-align: center;
+}
+
+p { color: #cdc4d2; line-height: 1.45; margin: 0 0 1rem; }
+#status[data-error="true"] { color: #ff9bc9; }
+label { display: block; margin: .8rem 0 .4rem; font-weight: 650; }
+
+input, button {
+    min-height: 3rem;
+    border-radius: .75rem;
+    font: inherit;
+}
+
+input {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #806193;
+    color: #fff;
+    background: #191420;
+    padding: .7rem .9rem;
+    font-size: 1rem;
+}
+
+button { cursor: pointer; }
+button:disabled { cursor: wait; opacity: .65; }
+:focus-visible { outline: 3px solid #f5a0e7; outline-offset: 3px; }
+
+.password-field { position: relative; }
+.password-field input { padding-inline-end: 5.25rem; }
+
+#visibility {
+    position: absolute;
+    inset: 2px 2px 2px auto;
+    min-height: 0;
+    padding: 0 .65rem;
+    border: 0;
+    background: #2b2036;
+    color: #f4d5ff;
+}
+
+.submit {
+    width: 100%;
+    margin-top: 1.25rem;
+    padding: .65rem 1rem;
+    border: 0;
+    background: #8936b5;
+    color: #fff;
+    font-weight: 750;
+}
+
+.secure { margin: 1.4rem 0 .4rem; color: #eca9ff; font-weight: 700; text-align: center; }
+.hint { margin: 0; text-align: center; }

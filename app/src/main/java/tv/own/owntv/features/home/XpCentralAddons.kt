@@ -5,7 +5,9 @@ import tv.own.owntv.R
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -104,8 +106,11 @@ internal object XpCentralAddonSync {
         response.optString("message")
     }
 
-    suspend fun signOut(connection: XpCentralConnection) = withContext(Dispatchers.IO) {
-        request(connection.apiBase, "logout", connection.token, "POST", JSONObject())
+    fun signOut(connection: XpCentralConnection) {
+        // The profile gate can replace the shell immediately after local logout.
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { request(connection.apiBase, "logout", connection.token, "POST", JSONObject()) }
+        }
     }
 
     /**
@@ -214,7 +219,7 @@ internal object XpCentralAddonSync {
         }
     }
 
-    private fun normalizeApiBase(raw: String): String {
+    internal fun normalizeApiBase(raw: String): String {
         val entered = raw.trim().trimEnd('/')
         val uri = URI(entered)
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank())

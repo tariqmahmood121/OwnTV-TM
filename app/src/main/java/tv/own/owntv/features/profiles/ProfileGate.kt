@@ -50,7 +50,8 @@ fun ProfileGate(onEnter: (Long) -> Unit, onAddProfile: () -> Unit, modifier: Mod
     val context = LocalContext.current
     val centralAccountId by XpCentralProfileScope.accountId.collectAsStateWithLifecycle()
     val membershipRevision by XpCentralProfileScope.revision.collectAsStateWithLifecycle()
-    val profiles = if (centralAccountId == null) allProfiles else {
+    val linkedLocalIds = remember(membershipRevision) { XpCentralProfileScope.linkedLocalIds(context) }
+    val profiles = if (centralAccountId == null) allProfiles.filterNot { it.id in linkedLocalIds } else {
         val allowed = XpCentralProfileScope.allowedLocalIds(context, centralAccountId!!)
         allProfiles.filter { it.id in allowed }
     }

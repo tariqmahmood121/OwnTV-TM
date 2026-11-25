@@ -979,6 +979,8 @@ fun StremioCatalogScreen(
     var centralUsername by remember { mutableStateOf(centralConnection?.username.orEmpty()) }
     var centralPassword by remember { mutableStateOf("") }
     var showAccountMenu by remember { mutableStateOf(false) }
+    var centralSignOutAction by remember { mutableStateOf<Int?>(null) }
+    var centralMobileLogin by remember { mutableStateOf(false) }
     var showLogoMenu by remember { mutableStateOf(false) }
     var confirmExit by remember { mutableStateOf(false) }
     var addProfileOpen by remember { mutableStateOf(false) }
@@ -1009,7 +1011,7 @@ fun StremioCatalogScreen(
     val bottomNavigationFocus = remember { FocusRequester() }
     val topNavigationFocus = remember { FocusRequester() }
     val shortcutsEnabled = television && showBottomNavigation && !playbackActive &&
-        page in setOf("home", "discover", "library") && selected == null && !showAccountMenu && !showLogoMenu && !confirmExit && !addProfileOpen && !manageCentralProfiles &&
+        page in setOf("home", "discover", "library") && selected == null && !showAccountMenu && centralSignOutAction == null && !showLogoMenu && !confirmExit && !addProfileOpen && !manageCentralProfiles &&
         !headerEditing && !gridEditing
     val canJump by rememberUpdatedState(shortcutsEnabled)
     LaunchedEffect(page) {
@@ -1026,29 +1028,20 @@ fun StremioCatalogScreen(
         runCatching { target.requestFocus() }
     }
 
-    // Retain account-scoped Room data on logout; old bearer token is invalidated locally first.
-    var openCentralAfterLogout by remember { mutableStateOf(false) }
-    LaunchedEffect(centralConnection, openCentralAfterLogout) {
-        if (centralConnection == null && openCentralAfterLogout) {
-            page = "central"
-            openCentralAfterLogout = false
-        }
-    }
-
     fun signOutCentral() {
-        val previous = centralConnection
+        val previous = centralConnection ?: return
         XpCentralEventSync.clear()
         XpCentralConnectionStore.clear(context)
         centralConnection = null
+        centralUsername = ""
         centralPassword = ""
         centralSyncMessage = null
         showAccountMenu = false
         addons.clear()
         continueTitles = emptyList()
         favoriteTitles = emptyList()
-        openCentralAfterLogout = true
         page = "central"
-        scope.launch { runCatching { previous?.let { XpCentralAddonSync.signOut(it) } } }
+        XpCentralAddonSync.signOut(previous)
     }
 
     DisposableEffect(context, favoritesProfileId) {
@@ -2113,7 +2106,7 @@ fun StremioCatalogScreen(
                         .padding(horizontal = 34.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text(stringResource(R.string.moviotv_xp_central_account_title), color = XpText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.movioxp_account_login_title), color = XpText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     Text(
                         stringResource(R.string.moviotv_xp_central_account_help),
                         color = XpMuted, fontSize = 16.sp,
@@ -2136,7 +2129,6 @@ fun StremioCatalogScreen(
                                             centralPassword = ""
                                             centralSyncMessage = null
                                             centralSyncBusy = false
-                                            syncAddonsWithCentral()
                                         }
                                         .onFailure {
                                             centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed)
@@ -2145,6 +2137,9 @@ fun StremioCatalogScreen(
                                 }
                             }
                         }
+                        Text(stringResource(R.string.movioxp_login_or), color = XpMuted)
+                        XpDialogButton(stringResource(R.string.movioxp_mobile_login), OwnTVIcon.PHONE,
+                            enabled = !centralSyncBusy) { centralMobileLogin = true }
                         XpAction(stringResource(R.string.moviotv_xp_central_register), centralSyncBusy) {
                             if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
                                 centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
@@ -2169,7 +2164,7 @@ fun StremioCatalogScreen(
                         Text(stringResource(R.string.movioxp_account_name, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
                         XpAction(stringResource(R.string.moviotv_xp_central_sync_now), centralSyncBusy) { syncAddonsWithCentral() }
                         XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy) {
-                            signOutCentral()
+                            centralSignOutAction = R.string.movioxp_logout_central
                         }
                     }
                     centralSyncMessage?.let { Text(it, color = XpAccent, fontSize = 14.sp) }
@@ -2395,7 +2390,7 @@ fun StremioCatalogScreen(
                         if (centralConnection != null) {
                             XpSettingsOption(stringResource(R.string.moviotv_xp_central_disconnect),
                                 enabled = !centralSyncBusy) {
-                                signOutCentral()
+                                centralSignOutAction = R.string.movioxp_logout_central
                             }
                         }
                         if (centralSyncBusy) Text(stringResource(R.string.moviotv_xp_central_syncing),
@@ -2794,7 +2789,35 @@ fun StremioCatalogScreen(
                 }
             }
         }
-        if (showAccountMenu) {
+        centralSignOutAction?.let { action ->
+            val cancelFocus = remember { FocusRequester() }
+            val cancel = { centralSignOutAction = null }
+            val label = stringResource(action)
+            XpQa5Dialog(label, stringResource(R.string.common_cancel), cancel) {
+                LaunchedEffect(Unit) { cancelFocus.requestFocus() }
+                Text(stringResource(R.string.movioxp_confirm_account_logout), color = XpText)
+                XpDialogActions {
+                    XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
+                        requester = cancelFocus, onClick = cancel)
+                    XpDialogButton(label, if (action == R.string.movioxp_switch_account) OwnTVIcon.SWAP else OwnTVIcon.POWER,
+                        enabled = !centralSyncBusy) {
+                        cancel()
+                        signOutCentral()
+                    }
+                }
+            }
+        }
+        if (centralMobileLogin) {
+            XpCentralPairingDialog(centralApiBase, onDismiss = { centralMobileLogin = false }) { connection ->
+                XpCentralConnectionStore.write(context, connection)
+                centralConnection = connection
+                centralApiBase = connection.apiBase.removeSuffix("/")
+                centralPassword = ""
+                centralSyncMessage = null
+                centralMobileLogin = false
+            }
+        }
+        if (showAccountMenu && centralSignOutAction == null) {
             val connection = centralConnection
             val statusColor = when {
                 connection == null -> Color(0xFF9A9AA3)
@@ -2844,7 +2867,7 @@ fun StremioCatalogScreen(
                         }
                         if (connection != null) {
                             XpDialogButton(stringResource(R.string.movioxp_switch_account), OwnTVIcon.SWAP,
-                                enabled = !centralSyncBusy) { signOutCentral() }
+                                enabled = !centralSyncBusy) { centralSignOutAction = R.string.movioxp_switch_account }
                         } else {
                             XpDialogButton(stringResource(R.string.moviotv_xp_central_login), OwnTVIcon.PERSON) {
                                 showAccountMenu = false
@@ -2852,7 +2875,7 @@ fun StremioCatalogScreen(
                             }
                         }
                         XpDialogButton(stringResource(R.string.movioxp_logout_central), OwnTVIcon.POWER,
-                            enabled = connection != null && !centralSyncBusy) { signOutCentral() }
+                            enabled = connection != null && !centralSyncBusy) { centralSignOutAction = R.string.movioxp_logout_central }
                         XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER) {
                             showAccountMenu = false
                             confirmExit = true

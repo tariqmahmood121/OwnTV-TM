@@ -52,6 +52,11 @@ internal object XpCentralProfileScope {
             .getStringSet(membershipKey(account), emptySet()).orEmpty()
             .mapNotNull { it.toLongOrNull()?.takeIf { id -> id > 0L } }.toSet()
 
+    fun linkedLocalIds(context: Context): Set<Long> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all
+            .mapNotNull { (key, value) -> if (key.startsWith("central_")) value as? Long else null }
+            .toSet()
+
     fun remoteIdFor(context: Context, account: Long, localId: Long): Long? {
         if (localId !in allowedLocalIds(context, account)) return null
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

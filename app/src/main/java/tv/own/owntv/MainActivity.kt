@@ -398,7 +398,10 @@ open class MainActivity : ComponentActivity() {
             val centralMembershipRevision by XpCentralProfileScope.revision.collectAsStateWithLifecycle()
             // All previous account profiles remain in Room. Only an account's verified Central
             // members are visible when signed in; a stale local V10 cannot enter another account.
-            val profiles = if (centralAccountId == null) localProfiles else {
+            val linkedLocalIds = remember(centralMembershipRevision) {
+                XpCentralProfileScope.linkedLocalIds(this@MainActivity)
+            }
+            val profiles = if (centralAccountId == null) localProfiles.filterNot { it.id in linkedLocalIds } else {
                 val ids = XpCentralProfileScope.allowedLocalIds(this@MainActivity, centralAccountId!!)
                 localProfiles.filter { it.id in ids }
             }
@@ -557,6 +560,14 @@ open class MainActivity : ComponentActivity() {
                         val profile = activeProfileId
                         when {
                             profile == null || !profilesLoaded -> Unit // active id / Room list loading
+                            centralAccountId == null && profile in linkedLocalIds -> {
+                                val localProfile = profiles.firstOrNull()
+                                tv.own.owntv.features.setup.CentralAccountStep(
+                                    registering = false,
+                                    onBack = localProfile?.let { local -> { profilesVm.switchTo(local) } },
+                                    onConnected = {},
+                                )
+                            }
                             // Adding a profile from the gate → onboard the new profile.
                             addingProfile -> Onboarding(
                                 firstRun = false,

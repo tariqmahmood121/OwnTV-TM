@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import tv.own.owntv.BuildConfig
 import tv.own.owntv.R
 import tv.own.owntv.core.brand.AppIcon
 import tv.own.owntv.core.database.entity.SourceEntity
@@ -67,7 +68,10 @@ import tv.own.owntv.features.settings.SetupLocalSyncScreen
 import tv.own.owntv.features.settings.StageFieldRow
 import tv.own.owntv.features.settings.StageSettingRow
 import tv.own.owntv.features.settings.SettingHelp
+import tv.own.owntv.features.home.XpCentralConnection
 import tv.own.owntv.features.home.XpCentralConnectionStore
+import tv.own.owntv.features.home.XpCentralPairingDialog
+import tv.own.owntv.features.home.XpDialogButton
 import tv.own.owntv.features.home.XpCentralAddonSync
 import tv.own.owntv.features.shell.PendingShellRequest
 import tv.own.owntv.ui.components.BrandMark
@@ -413,48 +417,64 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
 }
 
 @Composable
-private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConnected: () -> Unit) {
+internal fun CentralAccountStep(registering: Boolean, onBack: (() -> Unit)?, onConnected: () -> Unit) {
     val context = LocalContext.current
+    val mobileEnabled = BuildConfig.MOVIOXP_RELEASE && !registering
+    val apiBase = stringResource(R.string.moviotv_xp_central_api_default)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var mobileLogin by remember { mutableStateOf(false) }
+    fun accept(connection: XpCentralConnection) {
+        XpCentralConnectionStore.write(context, connection)
+        password = ""
+        busy = false
+        mobileLogin = false
+        onConnected()
+    }
     val usernameLabel = stringResource(R.string.moviotv_xp_central_username_label)
     val passwordLabel = stringResource(R.string.moviotv_xp_central_password_label)
     val valid = username.trim().isNotEmpty() && password.isNotEmpty() && (!registering || (username.trim().length >= 3 && password.length >= 12))
-    WizardFrame(
-        step = WizardStep.PROFILE,
-        title = stringResource(if (registering) R.string.moviotv_xp_central_register else R.string.moviotv_xp_central_login),
-        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_short_help else R.string.moviotv_xp_central_login_short_help),
-        compactOnPhone = true,
-        back = WizardAction(stringResource(R.string.common_back), onBack),
-        next = WizardAction(
-            stringResource(if (busy) R.string.moviotv_xp_central_connecting else if (registering) R.string.moviotv_xp_central_create_short else R.string.moviotv_xp_central_login_short),
-            onClick = {
-                if (valid && !busy) {
-                    busy = true
-                    message = null
-                    scope.launch {
-                        val apiBase = context.getString(R.string.moviotv_xp_central_api_default)
-                        runCatching {
-                            if (registering) XpCentralAddonSync.register(apiBase, username, password)
-                            XpCentralAddonSync.signIn(apiBase, username, password)
-                        }.onSuccess { connection ->
-                            XpCentralConnectionStore.write(context, connection)
-                            busy = false
-                            onConnected()
-                        }.onFailure { error ->
-                            message = error.message?.takeIf(String::isNotBlank) ?: context.getString(R.string.moviotv_xp_central_sync_failed)
-                            busy = false
-                        }
+    val submit = WizardAction(
+        stringResource(when {
+            busy -> R.string.moviotv_xp_central_connecting
+            registering -> R.string.moviotv_xp_central_create_short
+            mobileEnabled -> R.string.moviotv_xp_central_login
+            else -> R.string.moviotv_xp_central_login_short
+        }),
+        onClick = {
+            if (valid && !busy) {
+                busy = true
+                message = null
+                scope.launch {
+                    try {
+                        if (registering) XpCentralAddonSync.register(apiBase, username, password)
+                        accept(XpCentralAddonSync.signIn(apiBase, username, password))
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        message = error.message?.takeIf(String::isNotBlank)
+                            ?: context.getString(R.string.moviotv_xp_central_sync_failed)
+                        busy = false
                     }
                 }
-            },
-            enabled = valid && !busy,
-        ),
-        // Keep only Back and the prominent submit button so narrow phones never overflow.
-        extraLeft = emptyList(),
+            }
+        },
+        enabled = valid && !busy,
+    )
+    WizardFrame(
+        step = WizardStep.PROFILE,
+        title = stringResource(when {
+            registering -> R.string.moviotv_xp_central_register
+            mobileEnabled -> R.string.movioxp_account_login_title
+            else -> R.string.moviotv_xp_central_login
+        }),
+        sub = stringResource(if (registering) R.string.moviotv_xp_central_register_short_help else R.string.moviotv_xp_central_login_short_help),
+        compactOnPhone = true,
+        back = onBack?.let { WizardAction(stringResource(R.string.common_back), it) },
+        next = if (mobileEnabled) null else submit,
     ) {
         CentralCredentialField(
             label = usernameLabel,
@@ -474,7 +494,19 @@ private fun CentralAccountStep(registering: Boolean, onBack: () -> Unit, onConne
             Text(stringResource(R.string.moviotv_xp_central_register_requirements),
                 style = stageText(13, 500), color = StageColors.Muted)
         }
+        if (mobileEnabled) {
+            XpDialogButton(submit.label, OwnTVIcon.CHEVRON, enabled = submit.enabled, primary = true,
+                onClick = submit.onClick)
+            Text(stringResource(R.string.movioxp_login_or), style = stageText(14, 600), color = StageColors.Muted,
+                modifier = Modifier.align(Alignment.CenterHorizontally))
+            XpDialogButton(stringResource(R.string.movioxp_mobile_login), OwnTVIcon.PHONE, enabled = !busy) {
+                mobileLogin = true
+            }
+        }
         message?.let { Text(it, style = stageText(14, 600), color = StageColors.Warn) }
+    }
+    if (mobileLogin) {
+        XpCentralPairingDialog(apiBase, onDismiss = { mobileLogin = false }, onConnected = ::accept)
     }
 }
 

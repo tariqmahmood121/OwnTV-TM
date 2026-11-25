@@ -15,6 +15,14 @@
     <string name="movioxp_local_profile_status">Local profile · Central disconnected</string>
     <string name="movioxp_add_profile">Add profile</string>
     <string name="movioxp_manage_profile">Manage profile</string>
+    <string name="movioxp_confirm_account_logout">You will be logged out of your current account. Do you wish to continue?</string>
+    <string name="movioxp_account_login_title">MovioXP Central account</string>
+    <string name="movioxp_login_or">or</string>
+    <string name="movioxp_mobile_login">Use mobile to enter details</string>
+    <string name="movioxp_mobile_scan">Scan this QR code with your phone to sign in to Central.</string>
+    <string name="movioxp_mobile_waiting">Waiting for your phone…</string>
+    <string name="movioxp_mobile_expired">This QR code expired. Close this window and try again.</string>
+    <string name="movioxp_mobile_unavailable">Mobile sign-in is unavailable. Try again or sign in directly on the TV.</string>
     <string name="movioxp_switch_account">Switch account</string>
     <string name="movioxp_profile_name">Profile name</string>
     <string name="movioxp_profile_create_failed">Couldn’t create the profile. Choose a unique name or refresh your Central profiles.</string>
