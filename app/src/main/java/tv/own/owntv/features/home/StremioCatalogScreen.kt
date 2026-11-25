@@ -180,6 +180,7 @@ internal data class XpMeta(
     val description: String?, val releaseInfo: String?, val rating: String?,
     val positionMs: Long = 0L, val durationMs: Long = 0L,
     val tmdbId: String? = null, val ratingSource: String? = null, val imdbId: String? = null,
+    val activityAt: Long = 0L,
 )
 data class XpPlaybackSource(
     val url: String,
@@ -193,6 +194,10 @@ data class XpPlaybackSource(
     val addonIdentity: String = "",
     val quality: String? = null,
     val releaseName: String? = null,
+    val infoHash: String? = null,
+    val fileIndex: Int? = null,
+    val tmdbId: String? = null,
+    val imdbId: String? = null,
 )
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 
@@ -303,6 +308,8 @@ private data class XpStream(
             addonIdentity = XpSourcePreference.identity(addon.url, addon.id),
             quality = Regex("(?i)2160p|1080p|720p|480p|4k").find(label)?.value,
             releaseName = release ?: label,
+            infoHash = providerId?.substringBeforeLast(':'),
+            fileIndex = providerId?.substringAfterLast(':')?.toIntOrNull()?.takeIf { index -> index >= 0 },
         )
     }
 }
@@ -624,19 +631,21 @@ internal object XpFavoritesStore {
                         tmdbId = item.optString("tmdb_id").takeIf(String::isNotBlank),
                         ratingSource = item.optString("rating_source").takeIf(String::isNotBlank),
                         imdbId = item.optString("imdb_id").takeIf(String::isNotBlank),
+                        activityAt = item.optLong("activityAt"),
                     )
                 )
             }
         }
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()).sortedByDescending(XpMeta::activityAt)
 
     fun write(context: Context, profileId: Long, titles: List<XpMeta>) {
         val json = JSONArray().apply {
-            titles.distinctBy { "${it.type}:${it.id}" }.forEach { item ->
+            XpCollectionOrder.unique(titles).forEach { item ->
                 put(JSONObject().put("id", item.id).put("type", item.type).put("name", item.name)
                     .put("poster", item.poster ?: "").put("description", item.description ?: "")
                     .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: "").put("tmdb_id", item.tmdbId.orEmpty())
-                    .put("rating_source", item.ratingSource.orEmpty()).put("imdb_id", item.imdbId.orEmpty()))
+                    .put("rating_source", item.ratingSource.orEmpty()).put("imdb_id", item.imdbId.orEmpty())
+                    .put("activityAt", item.activityAt))
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREFIX + profileId, json.toString()).apply()
@@ -648,11 +657,11 @@ internal object XpFavoritesStore {
     fun toggle(context: Context, profileId: Long, item: XpMeta): Boolean {
         val current = read(context, profileId)
         val matches = current.filter { XpPlaybackIdentity.sameTitle(it, item) }
-        val updated = if (matches.isNotEmpty()) current - matches.toSet()
-            else listOf(item.copy(positionMs = 0L, durationMs = 0L)) + current
+        val added = item.copy(positionMs = 0L, durationMs = 0L, activityAt = System.currentTimeMillis())
+        val updated = if (matches.isNotEmpty()) current - matches.toSet() else listOf(added) + current
         write(context, profileId, updated)
-        if (matches.isEmpty()) XpCentralDataSync.markFavorite(context, profileId, item, deleted = false)
-        else matches.forEach { XpCentralDataSync.markFavorite(context, profileId, it, deleted = true) }
+        if (matches.isEmpty()) XpCentralDataSync.markFavorite(context, profileId, added, deleted = false)
+        else matches.forEach { XpCentralDataSync.markFavorite(context, profileId, it.copy(activityAt = added.activityAt), deleted = true) }
         return matches.isEmpty()
     }
 }
@@ -686,12 +695,13 @@ internal object XpContinueStore {
                         item.optLong("positionMs", 0L), item.optLong("durationMs", 0L),
                         item.optString("tmdb_id").takeIf(String::isNotBlank),
                         item.optString("rating_source").takeIf(String::isNotBlank),
-                        item.optString("imdb_id").takeIf(String::isNotBlank))
+                        item.optString("imdb_id").takeIf(String::isNotBlank), item.optLong("activityAt"))
                 )
             }
         }
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()).sortedByDescending(XpMeta::activityAt)
 
+    @Synchronized
     fun add(context: Context, profileId: Long, item: XpMeta) {
         val existing = read(context, profileId).firstOrNull { XpPlaybackIdentity.sameTitle(it, item) }
         // Opening a title must not erase the saved playhead before the player can use it.
@@ -703,6 +713,7 @@ internal object XpContinueStore {
         ))
     }
 
+    @Synchronized
     fun updateProgress(
         context: Context, profileId: Long, id: String, type: String, name: String, poster: String?, year: String?,
         positionMs: Long, durationMs: Long,
@@ -710,20 +721,21 @@ internal object XpContinueStore {
         val previous = read(context, profileId).firstOrNull { it.id == id && it.type == type }
         val knownDuration = durationMs.takeIf { it > 0L } ?: previous?.durationMs ?: 0L
         val safePosition = positionMs.coerceAtLeast(0L)
+        val now = System.currentTimeMillis()
         if (knownDuration > 0L && safePosition >= knownDuration * .95f) {
-            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource, previous?.imdbId)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource, previous?.imdbId, now)
             val remaining = read(context, profileId).filterNot { it.id == id && it.type == type }
             write(context, profileId, remaining)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = true)
         } else if (safePosition > 0L) {
-            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource, previous?.imdbId)
+            val meta = XpMeta(id, type, name, poster, null, previous?.releaseInfo ?: year, previous?.rating, safePosition, knownDuration, previous?.tmdbId, previous?.ratingSource, previous?.imdbId, now)
             save(context, profileId, meta)
             XpCentralDataSync.markResume(context, profileId, meta, deleted = false)
         }
     }
 
     private fun save(context: Context, profileId: Long, item: XpMeta) {
-        val updated = (listOf(item) + read(context, profileId).filterNot { XpPlaybackIdentity.sameTitle(it, item) }).take(20)
+        val updated = XpCollectionOrder.merge(read(context, profileId), item, deleted = false).take(120)
         write(context, profileId, updated)
     }
 
@@ -736,7 +748,7 @@ internal object XpContinueStore {
                     .put("poster", meta.poster ?: "").put("year", meta.releaseInfo ?: "").put("rating", meta.rating ?: "")
                     .put("tmdb_id", meta.tmdbId.orEmpty()).put("rating_source", meta.ratingSource.orEmpty())
                     .put("imdb_id", meta.imdbId.orEmpty())
-                    .put("positionMs", meta.positionMs).put("durationMs", meta.durationMs))
+                    .put("positionMs", meta.positionMs).put("durationMs", meta.durationMs).put("activityAt", meta.activityAt))
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREFIX + profileId, json.toString()).apply()
@@ -1244,13 +1256,8 @@ fun StremioCatalogScreen(
         )
     }
 
-    fun recordPlayback(item: XpMeta): XpMeta {
-        val playback = playbackWithResume(item)
-        XpContinueStore.add(context, favoritesProfileId, playback)
-        XpPersonalCollections.change(context, favoritesProfileId, XpCollection.HISTORY, playback)
-        continueTitles = XpContinueStore.read(context, favoritesProfileId)
-        return playback
-    }
+    fun playbackCandidates(media: XpMeta, sources: List<XpPlaybackSource>): List<XpPlaybackSource> =
+        sources.map { it.copy(tmdbId = media.tmdbId, imdbId = media.imdbId) }
 
     fun savedSource(media: XpMeta): String? =
         (listOf(media.id) + XpPlaybackIdentity.ids(media)).distinct().firstNotNullOfOrNull { id ->
@@ -1628,7 +1635,12 @@ fun StremioCatalogScreen(
             showManualSources = true
             return@LaunchedEffect
         }
-        if (!autoSelectSource && !(resumeFromShelf && saved != null)) return@LaunchedEffect
+        if (resumeFromShelf && saved == null) {
+            manualSourceSelection = true
+            showManualSources = true
+            return@LaunchedEffect
+        }
+        if (!autoSelectSource && !resumeFromShelf) return@LaunchedEffect
         val candidates = selectedStreams.mapNotNull(XpStream::playback)
         val match = XpSourcePreference.playedMatch(saved, candidates)
         if (saved != null && match == null) {
@@ -1641,12 +1653,12 @@ fun StremioCatalogScreen(
         } ?: candidates.firstOrNull() ?: return@LaunchedEffect
         val sources = listOf(preferred) + candidates.filterNot { it == preferred }
         autoStartedItem = itemKey
-        val playback = recordPlayback(item)
+        val playback = playbackWithResume(item)
         selected = null
         manualSourceSelection = false
         showManualSources = false
         if (onPlayStreamCandidates != null) {
-            onPlayStreamCandidates(sources, playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs)
+            onPlayStreamCandidates(playbackCandidates(playback, sources), playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs)
         } else {
             onPlayStream(sources.first().url, playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs)
         }
@@ -2418,7 +2430,7 @@ fun StremioCatalogScreen(
                 val firstPage = when (category) {
                     "favorites" -> favoriteTitles
                     "history" -> historyTitles
-                    "continue" -> continueTitles.filter { it.positionMs > 0L }
+                    "continue" -> XpCollectionOrder.resumeShelf(continueTitles)
                     "watchlist" -> watchlistTitles
                     else -> null
                 }
@@ -2500,7 +2512,7 @@ fun StremioCatalogScreen(
                         val titles = firstPage ?: XpCataloguePaging.unique(
                             loadedPages.toSortedMap().values.flatMap { it.titles },
                         ) { it }.take(XpCataloguePaging.MAX_TITLES)
-                        sortedTitles(titles, category)
+                        if (firstPage != null) titles else sortedTitles(titles, category)
                     }
                     XpBrowseGrid(
                         options = options,
@@ -2618,10 +2630,10 @@ fun StremioCatalogScreen(
                 ) {
                     if (page == "home") {
                         item(key = "xp-continue-watching") {
-                            if (continueTitles.isNotEmpty()) Column {
+                            val titles = XpCollectionOrder.resumeShelf(continueTitles)
+                            if (titles.isNotEmpty()) Column {
                                 Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(start = 24.dp, top = 2.dp))
-                                val titles = sortedTitles(continueTitles)
                                 LazyRow(state = rememberHomeCatalogueRowState("xp-continue-watching", titles, returnHomePoster),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2753,7 +2765,7 @@ fun StremioCatalogScreen(
         }
         if (showAccountMenu) {
             XpQa5Dialog(activeProfileName.ifBlank { stringResource(R.string.movioxp_guest_label) },
-                stringResource(R.string.movioxp_close), { showAccountMenu = false }) {
+                stringResource(R.string.movioxp_close), { showAccountMenu = false }, titleIcon = OwnTVIcon.PERSON) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val connection = centralConnection
@@ -2761,7 +2773,11 @@ fun StremioCatalogScreen(
                         Text(stringResource(R.string.movioxp_local_profile_status), color = XpMuted, fontSize = 14.sp)
                     } else {
                         Text(stringResource(R.string.movioxp_account_name, connection.username), color = XpText, fontSize = 15.sp)
-                        Text(stringResource(R.string.movioxp_central_status_connected), color = XpAccent, fontSize = 14.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val connected = Color(0xFF70D5AC)
+                            Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(connected))
+                            Text(stringResource(R.string.movioxp_central_status_connected), color = connected, fontSize = 14.sp)
+                        }
                     }
                     XpDialogActions {
                         XpDialogButton(stringResource(R.string.movioxp_switch_profile), OwnTVIcon.PERSON, enabled = onSwitchProfile != null) {
@@ -2855,7 +2871,14 @@ fun StremioCatalogScreen(
         }
         if (showLogoMenu) {
             XpQa5Dialog(stringResource(R.string.moviotv_xp_title), stringResource(R.string.common_cancel),
-                { showLogoMenu = false }) {
+                { showLogoMenu = false }, titleContent = {
+                    Text(androidx.compose.ui.text.buildAnnotatedString {
+                        append(stringResource(R.string.movioxp_logo_menu_movio))
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = XpRemotePink))
+                        append(stringResource(R.string.movioxp_logo_menu_xp))
+                        pop()
+                    }, color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                }) {
                 XpDialogActions {
                     XpDialogButton(stringResource(R.string.moviotv_xp_about_heading), OwnTVIcon.INFO) {
                         showLogoMenu = false
@@ -2953,7 +2976,7 @@ fun StremioCatalogScreen(
                     val lastPlayed = XpSourcePreference.playedMatch(saved, candidates)
                     val ordered = if (lastPlayed == null) selectedStreams else
                         selectedStreams.sortedByDescending { it.playback() == lastPlayed }
-                    if (saved != null && lastPlayed == null && !streamsLoading && ordered.isNotEmpty()) {
+                    if (saved != null && lastPlayed == null && !streamsLoading) {
                         Text(stringResource(R.string.movioxp_last_source_missing), color = XpMuted)
                     }
                     when {
@@ -2969,16 +2992,17 @@ fun StremioCatalogScreen(
                                 val actionLabel = if (stream.playback() == lastPlayed && lastPlayed != null)
                                     stringResource(R.string.movioxp_last_source, label) else label
                                 XpDialogButton(actionLabel, OwnTVIcon.PLAY, enabled = stream.url != null,
+                                    primary = lastPlayed != null && stream.playback() == lastPlayed,
                                     requester = if (index == 0) firstSourceFocus else null) {
                                     stream.url?.let { playable ->
-                                    val playback = recordPlayback(item)
+                                    val playback = playbackWithResume(item)
                                     selected = null
                                     manualSourceSelection = false
                                     showManualSources = false
                                     if (onPlayStreamCandidates != null) {
                                         onPlayStreamCandidates(
-                                            listOfNotNull(stream.playback()?.copy(userSelected = true)) +
-                                                candidates.filterNot { it.url == playable },
+                                            playbackCandidates(playback, listOfNotNull(stream.playback()?.copy(userSelected = true)) +
+                                                candidates.filterNot { it.url == playable }),
                                             playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs,
                                         )
                                     } else {

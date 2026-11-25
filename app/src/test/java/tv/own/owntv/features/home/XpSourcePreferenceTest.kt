@@ -105,4 +105,20 @@ class XpSourcePreferenceTest {
         assertFalse(evidence.sample(20_400, true, false, false))
         assertTrue(evidence.sample(20_800, true, false, false))
     }
+
+    @Test
+    fun periodicPlayheadUpdatesStillConfirmTheSelectedSource() {
+        val evidence = XpPlaybackEvidence()
+        listOf(0L, 0L, 1_000L, 1_000L, 1_000L).forEach { position ->
+            assertFalse(evidence.sample(position, true, false, false))
+        }
+        assertTrue(evidence.sample(2_000L, true, false, false))
+    }
+
+    @Test
+    fun savedSourceCarriesSuccessfulPlaybackTime() {
+        val item = source("https://example.org/manifest.json", "4K")
+        val saved = XpSourcePreference.playedPreference("stremio:movie:tt123", item, playedAt = 124L)
+        assertEquals(124L, XpCentralDataSync.activityTime(org.json.JSONObject().put("value", saved)))
+    }
 }

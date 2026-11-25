@@ -109,6 +109,15 @@ internal object XpCentralDataSync {
 
         for ((id, entry) in uploadQueue) {
             val current = remote[id]
+            if (current != null && activityTime(current.payload) > activityTime(entry.payload)) {
+                val pendingKey = dirtyKey(localProfileId, entry.type, entry.key)
+                withRecordLock(entry.type, entry.key) {
+                    if (dirtyPrefs.getString(pendingKey, null) == entry.payload.toString()) {
+                        dirtyPrefs.edit().remove(pendingKey).apply()
+                    }
+                }
+                continue
+            }
             val body = JSONObject()
                 .put("profile_id", centralProfileId)
                 .put("record_type", entry.type)
@@ -129,7 +138,7 @@ internal object XpCentralDataSync {
         }
 
         // Clean remote records can be applied. Pending local changes win until uploaded.
-        remote.values.forEach { record ->
+        remote.values.sortedBy { activityTime(it.payload) }.forEach { record ->
             withRecordLock(record.type, record.key) {
                 if (!dirtyPrefs.contains(dirtyKey(localProfileId, record.type, record.key))) {
                     applyRemote(context, localProfileId, record)
@@ -211,6 +220,17 @@ internal object XpCentralDataSync {
         }
     }
 
+    internal fun activityTime(payload: JSONObject): Long {
+        val value = payload.opt("value")
+        return when (value) {
+            is JSONObject -> value.optLong("activityAt")
+            is String -> if (value.startsWith("v4:")) {
+                runCatching { JSONObject(value.removePrefix("v4:")).optLong("playedAt") }.getOrDefault(0L)
+            } else 0L
+            else -> payload.optLong("activityAt")
+        }
+    }
+
     private fun applyRemote(context: Context, profileId: Long, record: Record) {
         when (record.type) {
             "history" -> if (record.key.startsWith("xp:")) {
@@ -221,11 +241,11 @@ internal object XpCentralDataSync {
                 val item = parseMeta(record.payload) ?: return
                 val deleted = record.payload.optBoolean("deleted")
                 if (record.type == "favorite") {
-                    val current = XpFavoritesStore.read(context, profileId).filterNot { it.type == item.type && it.id == item.id }
-                    XpFavoritesStore.write(context, profileId, if (deleted) current else listOf(item) + current)
+                    val current = XpFavoritesStore.read(context, profileId)
+                    XpFavoritesStore.write(context, profileId, XpCollectionOrder.merge(current, item, deleted))
                 } else {
-                    val current = XpContinueStore.read(context, profileId).filterNot { it.type == item.type && it.id == item.id }
-                    XpContinueStore.writeCloud(context, profileId, if (deleted) current else listOf(item) + current)
+                    val current = XpContinueStore.read(context, profileId)
+                    XpContinueStore.writeCloud(context, profileId, XpCollectionOrder.merge(current, item, deleted))
                 }
             }
             "setting" -> {
@@ -253,7 +273,12 @@ internal object XpCentralDataSync {
                     return
                 }
                 val localKey = localPreferenceKey(cloudKey, profileId) ?: return
-                val editor = context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE).edit()
+                val preferences = context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+                if (cloudKey.startsWith("last_source:")) {
+                    val local = JSONObject().put("value", preferences.getString(localKey, null))
+                    if (activityTime(local) > activityTime(record.payload)) return
+                }
+                val editor = preferences.edit()
                 when (value) {
                     is Boolean -> editor.putBoolean(localKey, value)
                     is Int -> editor.putInt(localKey, value)
@@ -314,6 +339,7 @@ internal object XpCentralDataSync {
             payload.optString("tmdb_id").takeIf(String::isNotBlank),
             payload.optString("rating_source").takeIf(String::isNotBlank),
             payload.optString("imdb_id").takeIf(String::isNotBlank),
+            payload.optLong("activityAt"),
         )
     }
 
@@ -323,7 +349,7 @@ internal object XpCentralDataSync {
         .put("year", item.releaseInfo ?: "").put("rating", item.rating ?: "")
         .put("tmdb_id", item.tmdbId.orEmpty()).put("rating_source", item.ratingSource.orEmpty())
         .put("imdb_id", item.imdbId.orEmpty())
-        .put("positionMs", item.positionMs).put("durationMs", item.durationMs)
+        .put("positionMs", item.positionMs).put("durationMs", item.durationMs).put("activityAt", item.activityAt)
 
     private fun titleKey(type: String, id: String) = "$type:$id"
     private fun recordId(type: String, key: String) = "$type::$key"

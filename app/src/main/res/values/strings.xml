@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="movioxp_logo_menu_movio" translatable="false">MOVIO</string>
+    <string name="movioxp_logo_menu_xp" translatable="false">XP</string>
     <string name="movioxp_splash_movio" translatable="false">MOVIO</string>
     <string name="movioxp_splash_tv" translatable="false">TV</string>
     <string name="movioxp_splash_created_by">Created by </string>

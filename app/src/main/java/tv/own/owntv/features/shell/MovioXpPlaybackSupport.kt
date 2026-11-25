@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -13,6 +15,9 @@ import tv.own.owntv.features.home.XpCentralDataSync
 import tv.own.owntv.features.home.XpContinueStore
 import tv.own.owntv.features.home.XpFavoritesStore
 import tv.own.owntv.features.home.XpPlaybackSource
+import tv.own.owntv.features.home.XpMeta
+import tv.own.owntv.features.home.XpCollection
+import tv.own.owntv.features.home.XpPersonalCollections
 import tv.own.owntv.features.home.XpSourcePreference
 import tv.own.owntv.player.MpvPlaybackEngine
 import tv.own.owntv.player.OwnTVPlayer
@@ -67,9 +72,14 @@ internal fun MovioXpPlaybackEffects(
     val preferences = remember(context) {
         context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        playback?.takeIf { it.profileId == activeProfileId }?.let {
+            flushMovioXpProgress(context, player, it)
+        }
+    }
     LaunchedEffect(contentKey, playback?.profileId, activeProfileId, candidateGeneration, candidateIndex, source) {
         val media = playback ?: return@LaunchedEffect
-        val candidate = source ?: return@LaunchedEffect
+        val candidate = source
         val playedKey = movioXpContentKey(media)
         if (activeProfileId != media.profileId || contentKey != playedKey) return@LaunchedEffect
         val evidence = XpPlaybackEvidence()
@@ -78,7 +88,12 @@ internal fun MovioXpPlaybackEffects(
             if (player.currentMeta.value?.contentKey != contentKey) return@LaunchedEffect
             if (evidence.sample(player.position.value, player.isPlaying.value,
                     player.buffering.value, player.error.value != null)) {
-                XpSourcePreference.store(context, media.profileId, playedKey, candidate)
+                val now = System.currentTimeMillis()
+                val activity = XpMeta(media.id, media.type, media.title, media.poster, null, media.year, null,
+                    tmdbId = candidate?.tmdbId, imdbId = candidate?.imdbId, activityAt = now)
+                XpContinueStore.add(context, media.profileId, activity)
+                XpPersonalCollections.change(context, media.profileId, XpCollection.HISTORY, activity)
+                if (candidate != null) XpSourcePreference.store(context, media.profileId, playedKey, candidate)
                 val suffix = "${media.profileId}_${playedKey.hashCode()}"
                 // An existing choice is restored by the track effect below. An observed
                 // default must never replace the user's explicit preference.
@@ -96,9 +111,9 @@ internal fun MovioXpPlaybackEffects(
             }
         }
     }
-    LaunchedEffect(contentKey, playback?.profileId, candidateGeneration, candidateIndex) {
+    LaunchedEffect(contentKey, playback?.profileId, activeProfileId, candidateGeneration, candidateIndex) {
         val media = playback ?: return@LaunchedEffect
-        if (contentKey != movioXpContentKey(media)) return@LaunchedEffect
+        if (media.profileId != activeProfileId || contentKey != movioXpContentKey(media)) return@LaunchedEffect
         val key = "${media.profileId}_${contentKey.hashCode()}"
         val audioId = preferences.getInt("xp_audio_$key", -1)
         val subtitleId = preferences.getInt("xp_subtitle_$key", -2)
@@ -124,8 +139,8 @@ internal fun MovioXpPlaybackEffects(
             if (audioReady && subtitleReady) return@LaunchedEffect
         }
     }
-    LaunchedEffect(playback) {
-        val media = playback ?: return@LaunchedEffect
+    LaunchedEffect(playback, activeProfileId) {
+        val media = playback?.takeIf { it.profileId == activeProfileId } ?: return@LaunchedEffect
         val key = movioXpContentKey(media)
         var observedAt = android.os.SystemClock.elapsedRealtime()
         var observedPosition = -1L
@@ -232,10 +247,11 @@ internal class XpPlaybackEvidence {
         }
         val before = previous
         previous = position
-        if (before == null || position <= before || position - before > 2_000L) {
+        if (before == null || position < before || position - before > 2_000L) {
             advances = 0
             return false
         }
+        if (position == before) return false
         return ++advances >= 2
     }
 }

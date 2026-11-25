@@ -3,6 +3,7 @@ package tv.own.owntv.features.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -55,6 +56,8 @@ internal fun XpQa5Dialog(
     onDismiss: () -> Unit,
     width: Dp = 480.dp,
     primaryAction: (@Composable () -> Unit)? = null,
+    titleIcon: OwnTVIcon? = null,
+    titleContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.(wide: Boolean) -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -68,9 +71,13 @@ internal fun XpQa5Dialog(
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(title, modifier = Modifier.weight(1f), color = OwnTVTheme.colors.onSurface,
-                        fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (titleIcon != null) OwnTVIcon(titleIcon, OwnTVTheme.colors.primary, Modifier.size(22.dp))
+                    Box(Modifier.weight(1f)) {
+                        if (titleContent != null) titleContent()
+                        else Text(title, color = OwnTVTheme.colors.onSurface,
+                            fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                     XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, onClick = onDismiss)
                 }
                 content(wide)
@@ -88,7 +95,10 @@ internal fun XpDialogActions(content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 8.dp
         val count = if (maxWidth >= 570.dp) 3 else if (maxWidth >= 250.dp) 2 else 1
-        val itemWidth = (maxWidth - gap * (count - 1)) / count
+        val itemWidth = with(LocalDensity.current) {
+            val available = constraints.maxWidth - gap.roundToPx() * (count - 1)
+            (available / count).toDp()
+        }
         CompositionLocalProvider(LocalXpDialogCellWidth provides itemWidth) {
             FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = count,
                 horizontalArrangement = Arrangement.spacedBy(gap),

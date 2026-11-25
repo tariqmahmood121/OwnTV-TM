@@ -37,10 +37,13 @@ internal object XpSourcePreference {
         if (source.identity.isNotBlank()) "$PREFIX${source.identity}:${source.provider}"
         else source.provider
 
-    fun playedPreference(contentKey: String, source: XpPlaybackSource): String =
+    fun playedPreference(contentKey: String, source: XpPlaybackSource, playedAt: Long = System.currentTimeMillis()): String =
         PLAYED_PREFIX + JSONObject().put("content", contentKey)
             .put("source", source.stableIdentity.ifBlank { source.identity })
             .put("addon", source.addonIdentity)
+            .put("playedAt", playedAt)
+            .put("infoHash", source.infoHash?.takeIf { it.matches(Regex("[a-fA-F0-9]{40}")) })
+            .put("fileIndex", source.fileIndex)
             .put("provider", safeLabel(source.provider))
             .put("quality", safeLabel(source.quality.orEmpty()))
             .put("release", safeLabel(source.releaseName ?: source.label)).toString()
