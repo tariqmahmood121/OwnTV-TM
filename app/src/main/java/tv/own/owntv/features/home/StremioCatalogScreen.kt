@@ -86,7 +86,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.Text
 import tv.own.owntv.R
 import tv.own.owntv.ui.components.OwnTVIcon
@@ -190,6 +189,10 @@ data class XpPlaybackSource(
     // No more confusing auto-play/automatic failover with an explicit selection by the viewer.
     val userSelected: Boolean = false,
     val legacyIdentity: String = "",
+    val stableIdentity: String = "",
+    val addonIdentity: String = "",
+    val quality: String? = null,
+    val releaseName: String? = null,
 )
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 
@@ -281,7 +284,28 @@ private fun xpDiscoverSource(categoryId: String, addons: List<XpAddon>): XpDisco
 }
 
 private data class XpSearchHit(val addon: XpAddon, val meta: XpMeta)
-private data class XpStream(val addon: XpAddon, val label: String, val detail: String?, val url: String?)
+private data class XpStream(
+    val addon: XpAddon,
+    val label: String,
+    val detail: String?,
+    val url: String?,
+    val providerId: String? = null,
+) {
+    fun playback(): XpPlaybackSource? = url?.let {
+        val release = detail?.lineSequence()?.map(String::trim)?.firstOrNull { line ->
+            line.isNotBlank() && !line.contains("://") &&
+                !line.contains("seeds", true) && !line.contains("size", true)
+        }
+        XpPlaybackSource(it, label, addon.name,
+            identity = XpSourcePreference.identity(addon.url, label),
+            legacyIdentity = XpSourcePreference.legacyIdentity(addon.url, label, detail),
+            stableIdentity = XpSourcePreference.stableIdentity(addon.url, label, release, providerId),
+            addonIdentity = XpSourcePreference.identity(addon.url, addon.id),
+            quality = Regex("(?i)2160p|1080p|720p|480p|4k").find(label)?.value,
+            releaseName = release ?: label,
+        )
+    }
+}
 
 private object XpAddonProtocol {
     private val client = OkHttpClient.Builder()
@@ -483,7 +507,9 @@ private object XpAddonProtocol {
                     stream.optString("name").ifBlank { addon.name }
                 }
                 val detail = stream.optString("description").takeIf { it.isNotBlank() }
-                add(XpStream(addon, label, detail, url))
+                val hash = stream.optString("infoHash").takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }
+                val providerId = hash?.let { "${it.lowercase()}:${stream.optInt("fileIdx", -1)}" }
+                add(XpStream(addon, label, detail, url, providerId))
             }
         }
     }
@@ -1206,21 +1232,31 @@ fun StremioCatalogScreen(
             ratingSource = if (selectedImdbRating == null) item.ratingSource else "IMDb")
     }
 
-    fun recordPlayback(item: XpMeta): XpMeta {
+    fun playbackWithResume(item: XpMeta): XpMeta {
         val enriched = playbackMetadata(item)
         val previous = continueTitles.firstOrNull { XpPlaybackIdentity.sameTitle(it, enriched) }
-        val playback = if (previous == null) enriched else enriched.copy(
+        return if (previous == null) enriched else enriched.copy(
             id = previous.id,
             positionMs = previous.positionMs,
             durationMs = previous.durationMs,
             tmdbId = XpPlaybackIdentity.tmdbId(enriched) ?: XpPlaybackIdentity.tmdbId(previous),
             imdbId = XpPlaybackIdentity.ids(enriched).firstOrNull(XpPlaybackIdentity::isImdbId),
         )
+    }
+
+    fun recordPlayback(item: XpMeta): XpMeta {
+        val playback = playbackWithResume(item)
         XpContinueStore.add(context, favoritesProfileId, playback)
         XpPersonalCollections.change(context, favoritesProfileId, XpCollection.HISTORY, playback)
         continueTitles = XpContinueStore.read(context, favoritesProfileId)
         return playback
     }
+
+    fun savedSource(media: XpMeta): String? =
+        (listOf(media.id) + XpPlaybackIdentity.ids(media)).distinct().firstNotNullOfOrNull { id ->
+            XpSourcePreference.read(context, favoritesProfileId, "stremio:${media.type}:$id")
+        }
+
 
     fun withSavedResume(item: XpMeta): XpMeta {
         val saved = continueTitles.firstOrNull { XpPlaybackIdentity.sameTitle(it, item) }
@@ -1250,7 +1286,10 @@ fun StremioCatalogScreen(
         streamsLoading = true
     }
 
-    fun openItem(item: XpMeta) {
+    var resumeFromShelf by remember { mutableStateOf(false) }
+
+    fun openItem(item: XpMeta, resume: Boolean = false) {
+        resumeFromShelf = resume
         resetEpisodeSelection()
         manualSourceSelection = false
         showManualSources = false
@@ -1578,29 +1617,30 @@ fun StremioCatalogScreen(
     }
     LaunchedEffect(selected?.id, selected?.type, selectedStreams, streamsLoading, autoSelectSource, preferredAddonUrl, manualSourceSelection) {
         val item = selected ?: return@LaunchedEffect
-        if (manualSourceSelection || !autoSelectSource || streamsLoading || selectedStreams.isEmpty()) return@LaunchedEffect
-        val media = playbackMetadata(item)
+        if (manualSourceSelection || streamsLoading) return@LaunchedEffect
+        val media = playbackWithResume(item)
         val itemKey = "${media.type}:${media.id}"
         if (autoStartedItem == itemKey) return@LaunchedEffect
-        val saved = XpPlaybackIdentity.ids(media).firstNotNullOfOrNull { id ->
-            XpSourcePreference.read(context, favoritesProfileId, "stremio:${media.type}:$id")
+        val saved = savedSource(media)
+        if (saved != null && !resumeFromShelf) {
+            manualSourceSelection = true
+            showManualSources = true
+            return@LaunchedEffect
         }
-        val candidates = selectedStreams.mapNotNull { stream ->
-            stream.url?.let { url ->
-                XpPlaybackSource(
-                    url, stream.label, stream.addon.name,
-                    XpSourcePreference.identity(stream.addon.url, stream.label),
-                    legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail),
-                )
-            }
-        }.sortedWith(
-            compareBy<XpPlaybackSource> { XpSourcePreference.score(saved, it) }
-                .thenBy { if (installedAddons.firstOrNull { addon -> addon.name == it.provider }?.url == preferredAddonUrl) 0 else 1 },
-        )
-        if (candidates.isEmpty()) return@LaunchedEffect
+        if (!autoSelectSource && !(resumeFromShelf && saved != null)) return@LaunchedEffect
+        val candidates = selectedStreams.mapNotNull(XpStream::playback)
+        val match = XpSourcePreference.playedMatch(saved, candidates)
+        if (saved != null && match == null) {
+            manualSourceSelection = true
+            showManualSources = true
+            return@LaunchedEffect
+        }
+        val preferred = match ?: candidates.firstOrNull { source ->
+            selectedStreams.any { it.url == source.url && it.addon.url == preferredAddonUrl }
+        } ?: candidates.firstOrNull() ?: return@LaunchedEffect
+        val sources = listOf(preferred) + candidates.filterNot { it == preferred }
         autoStartedItem = itemKey
         val playback = recordPlayback(item)
-        val sources = candidates
         selected = null
         manualSourceSelection = false
         showManualSources = false
@@ -1862,58 +1902,42 @@ fun StremioCatalogScreen(
                 )
             }
             if (page == "addons" && adding) {
-                Dialog(onDismissRequest = { adding = false; notice = null }) {
-                    Column(
-                        Modifier.fillMaxWidth().widthIn(max = 440.dp)
-                            .clip(RoundedCornerShape(22.dp)).background(XpBackground)
-                            .border(1.dp, XpAccent.copy(alpha = .5f), RoundedCornerShape(22.dp))
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Text(stringResource(R.string.moviotv_xp_addon_manifest_title),
-                            color = XpText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                        Text(stringResource(R.string.moviotv_xp_addon_paste_help),
-                            color = XpMuted, fontSize = 14.sp)
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(stringResource(R.string.moviotv_xp_addon_url_button),
-                                color = XpText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                            Box(
-                                Modifier.fillMaxWidth().heightIn(min = 54.dp)
-                                    .clip(RoundedCornerShape(12.dp)).background(XpPanel)
-                                    .border(1.dp, XpAccent.copy(alpha = .65f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 14.dp, vertical = 15.dp),
-                            ) {
-                                if (address.isBlank()) Text(
-                                    stringResource(R.string.moviotv_xp_addon_url_hint), color = XpMuted,
-                                    fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                )
-                                BasicTextField(
-                                    value = address,
-                                    onValueChange = { address = it; notice = null },
-                                    singleLine = true,
-                                    textStyle = TextStyle(color = XpText, fontSize = 16.sp),
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                        notice?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp) }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                XpQa5Dialog(stringResource(R.string.moviotv_xp_addon_manifest_title),
+                    stringResource(R.string.movioxp_close), { adding = false; notice = null }) {
+                    Text(stringResource(R.string.moviotv_xp_addon_paste_help),
+                        color = XpMuted, fontSize = 14.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.moviotv_xp_addon_url_button),
+                            color = XpText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Box(
+                            Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                                .clip(RoundedCornerShape(12.dp)).background(XpPanel)
+                                .border(1.dp, XpAccent.copy(alpha = .65f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 15.dp),
                         ) {
-                            XpAction(stringResource(R.string.moviotv_xp_cancel), false) {
-                                adding = false; notice = null
-                            }
-                            XpAction(stringResource(R.string.moviotv_xp_install), busy) {
-                                val candidate = address.trim()
-                                if (candidate.isBlank()) {
-                                    notice = context.getString(R.string.moviotv_xp_enter_addon_url)
-                                } else installAddon(candidate)
-                            }
+                            if (address.isBlank()) Text(
+                                stringResource(R.string.moviotv_xp_addon_url_hint), color = XpMuted,
+                                fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            BasicTextField(
+                                value = address,
+                                onValueChange = { address = it; notice = null },
+                                singleLine = true,
+                                textStyle = TextStyle(color = XpText, fontSize = 16.sp),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    notice?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp) }
+                    XpDialogActions {
+                        XpDialogButton(stringResource(R.string.moviotv_xp_install), OwnTVIcon.ADD, primary = true) {
+                            val candidate = address.trim()
+                            if (candidate.isBlank()) {
+                                notice = context.getString(R.string.moviotv_xp_enter_addon_url)
+                            } else installAddon(candidate)
                         }
                         if (!compactPhone) {
-                            XpAction(stringResource(R.string.moviotv_xp_remote_enter_on_phone), busy) {
+                            XpDialogButton(stringResource(R.string.moviotv_xp_remote_enter_on_phone), OwnTVIcon.SETTINGS) {
                                 showAddonRemote = true
                                 addonRemoteServer.start()
                             }
@@ -2518,7 +2542,7 @@ fun StremioCatalogScreen(
                         },
                         restorePoster = returnHomePoster,
                         onFocused = ::trackHomePoster,
-                        onOpen = ::openItem,
+                        onOpen = { openItem(it, resume = library && category == "continue") },
                         onDetails = ::openDetails,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
@@ -2604,7 +2628,7 @@ fun StremioCatalogScreen(
                                         HomeCataloguePoster(title, "xp-continue-watching", 142.dp * homeScale, returnHomePoster,
                                             onFocused = ::trackHomePoster,
                                             onLongClick = { openDetails(title, false) },
-                                            onVeryLongClick = { openDetails(title, true) }) { openItem(title) }
+                                            onVeryLongClick = { openDetails(title, true) }) { openItem(title, resume = true) }
                                     }
                                 }
                             }
@@ -2732,23 +2756,24 @@ fun StremioCatalogScreen(
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val connection = centralConnection
-                    Text(
-                        if (connection == null) stringResource(R.string.movioxp_local_profile_status)
-                        else stringResource(R.string.moviotv_xp_central_connected_as, connection.username),
-                        color = XpMuted, fontSize = 14.sp,
-                    )
+                    if (connection == null) {
+                        Text(stringResource(R.string.movioxp_local_profile_status), color = XpMuted, fontSize = 14.sp)
+                    } else {
+                        Text(stringResource(R.string.movioxp_account_name, connection.username), color = XpText, fontSize = 15.sp)
+                        Text(stringResource(R.string.movioxp_central_status_connected), color = XpAccent, fontSize = 14.sp)
+                    }
                     XpDialogActions {
-                        XpAction(stringResource(R.string.movioxp_switch_profile), onSwitchProfile == null, compact = true) {
+                        XpDialogButton(stringResource(R.string.movioxp_switch_profile), OwnTVIcon.PERSON, enabled = onSwitchProfile != null) {
                             showAccountMenu = false
                             onSwitchProfile?.invoke()
                         }
-                        XpAction(stringResource(R.string.movioxp_add_profile), false, compact = true) {
+                        XpDialogButton(stringResource(R.string.movioxp_add_profile), OwnTVIcon.ADD) {
                             showAccountMenu = false
                             centralProfileName = ""
                             profileError = false
                             addProfileOpen = true
                         }
-                        XpAction(stringResource(R.string.movioxp_manage_profile), false, compact = true) {
+                        XpDialogButton(stringResource(R.string.movioxp_manage_profile), OwnTVIcon.GEAR) {
                             showAccountMenu = false
                             profileError = false
                             if (connection != null) manageCentralProfiles = true
@@ -2757,12 +2782,15 @@ fun StremioCatalogScreen(
                             else page = "settings"
                         }
                         if (connection != null) {
-                            XpAction(stringResource(R.string.movioxp_switch_account), centralSyncBusy, compact = true) { signOutCentral() }
-                            XpAction(stringResource(R.string.movioxp_logout_central), centralSyncBusy, compact = true) { signOutCentral() }
-                        } else XpAction(stringResource(R.string.moviotv_xp_central_login), false, compact = true) {
+                            XpDialogButton(stringResource(R.string.movioxp_switch_account), OwnTVIcon.SWAP, enabled = !centralSyncBusy) { signOutCentral() }
+                        } else XpDialogButton(stringResource(R.string.moviotv_xp_central_login), OwnTVIcon.PERSON) {
                             showAccountMenu = false
                             page = "central"
                         }
+                    }
+                    if (connection != null) {
+                        XpDialogButton(stringResource(R.string.movioxp_logout_central), OwnTVIcon.POWER,
+                            enabled = !centralSyncBusy) { signOutCentral() }
                     }
                 }
             }
@@ -2782,8 +2810,8 @@ fun StremioCatalogScreen(
                 XpQa5Dialog(stringResource(R.string.movioxp_add_profile), stringResource(R.string.movioxp_close),
                     { if (!profileWorking) addProfileOpen = false },
                     primaryAction = {
-                        XpAction(stringResource(R.string.profiles_create), profileWorking ||
-                            centralProfileName.isBlank() || centralProfileName.trim().length > 80, compact = true) {
+                        XpDialogButton(stringResource(R.string.profiles_create), OwnTVIcon.ADD, enabled = !profileWorking &&
+                            centralProfileName.isNotBlank() && centralProfileName.trim().length <= 80, primary = true) {
                             val name = centralProfileName.trim()
                             profileWorking = true
                             profileError = false
@@ -2812,8 +2840,8 @@ fun StremioCatalogScreen(
             XpQa5Dialog(stringResource(R.string.movioxp_manage_profile), stringResource(R.string.movioxp_close),
                 { manageCentralProfiles = false }) {
                 Text(stringResource(R.string.movioxp_central_profile_management), color = XpMuted)
-                XpAction(stringResource(R.string.moviotv_xp_refresh), profileWorking, compact = true) {
-                    val connection = centralConnection ?: return@XpAction
+                XpDialogButton(stringResource(R.string.moviotv_xp_refresh), OwnTVIcon.REFRESH, enabled = !profileWorking) {
+                    val connection = centralConnection ?: return@XpDialogButton
                     profileWorking = true
                     scope.launch {
                         runCatching { XpCentralProfileScope.refresh(context, connection, profiles) }
@@ -2828,11 +2856,11 @@ fun StremioCatalogScreen(
             XpQa5Dialog(stringResource(R.string.moviotv_xp_title), stringResource(R.string.common_cancel),
                 { showLogoMenu = false }) {
                 XpDialogActions {
-                    XpAction(stringResource(R.string.moviotv_xp_about_heading), false, compact = true) {
+                    XpDialogButton(stringResource(R.string.moviotv_xp_about_heading), OwnTVIcon.INFO) {
                         showLogoMenu = false
                         showXpAbout = true
                     }
-                    XpAction(stringResource(R.string.movioxp_exit), false, compact = true) {
+                    XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER) {
                         showLogoMenu = false
                         confirmExit = true
                     }
@@ -2844,38 +2872,31 @@ fun StremioCatalogScreen(
             XpQa5Dialog(stringResource(R.string.movioxp_exit), stringResource(R.string.common_cancel),
                 { confirmExit = false }) {
                 Text(stringResource(R.string.movioxp_exit_confirm), color = XpMuted)
-                XpAction(stringResource(R.string.movioxp_exit), false, compact = true) {
+                XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER) {
                     confirmExit = false
                     activity?.finish()
                 }
             }
         }
         if (genrePickerOpen) {
-            Dialog(onDismissRequest = { genrePickerOpen = false }) {
-                Column(
-                    Modifier.width(340.dp).heightIn(max = 560.dp)
-                        .clip(RoundedCornerShape(18.dp)).background(XpBackground).padding(16.dp),
-                ) {
-                    Text(stringResource(R.string.moviotv_categories), color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    XpGenreRail(
-                        modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp),
-                        genres = genreOptions,
-                        selected = discoveryGenre,
-                        allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
-                        focusRequester = categoryRailFocus,
-                        rightFocusRequester = firstGridFocus,
-                        onSelect = { discoveryGenre = it; genrePickerOpen = false },
-                    )
-                }
+            XpQa5Dialog(stringResource(R.string.moviotv_categories), stringResource(R.string.movioxp_close),
+                { genrePickerOpen = false }) {
+                XpGenreRail(
+                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+                    genres = genreOptions, selected = discoveryGenre,
+                    allLabel = context.getString(if (page == "movies") R.string.moviotv_xp_all_movies else R.string.moviotv_xp_all_series),
+                    focusRequester = categoryRailFocus, rightFocusRequester = firstGridFocus,
+                    onSelect = { discoveryGenre = it; genrePickerOpen = false },
+                )
             }
         }
         if (showAddonRemote) {
-            Dialog(onDismissRequest = { showAddonRemote = false; addonRemoteServer.close() }) {
+            XpQa5Dialog(stringResource(R.string.moviotv_xp_remote_tv_title), stringResource(R.string.movioxp_close),
+                { showAddonRemote = false; addonRemoteServer.close() }, width = 560.dp) {
                 Column(
-                    Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(XpBackground).padding(24.dp),
+                    Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(stringResource(R.string.moviotv_xp_remote_tv_title), color = XpText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text(
                         stringResource(R.string.moviotv_xp_remote_tv_instructions),
                         color = XpMuted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
@@ -2896,7 +2917,6 @@ fun StremioCatalogScreen(
                             Text(stringResource(R.string.moviotv_xp_remote_tv_code, link.pin), color = XpAccent, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         }
                     }
-                    XpAction(stringResource(R.string.moviotv_xp_cancel), false) { showAddonRemote = false; addonRemoteServer.close() }
                 }
             }
         }
@@ -2927,17 +2947,28 @@ fun StremioCatalogScreen(
                 XpQa5Dialog(stringResource(R.string.moviotv_xp_stream_sources), stringResource(R.string.common_back),
                     { showManualSources = false; manualSourceSelection = true }, width = 660.dp) {
                     Text(item.name, color = XpMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val saved = savedSource(playbackWithResume(item))
+                    val candidates = selectedStreams.mapNotNull(XpStream::playback)
+                    val lastPlayed = XpSourcePreference.playedMatch(saved, candidates)
+                    val ordered = if (lastPlayed == null) selectedStreams else
+                        selectedStreams.sortedByDescending { it.playback() == lastPlayed }
+                    if (saved != null && lastPlayed == null && !streamsLoading && ordered.isNotEmpty()) {
+                        Text(stringResource(R.string.movioxp_last_source_missing), color = XpMuted)
+                    }
                     when {
                         streamsLoading -> Text(stringResource(R.string.moviotv_xp_loading_streams), color = XpMuted)
                         selectedStreams.isEmpty() -> Text(stringResource(R.string.moviotv_xp_no_streams), color = XpMuted)
                         else -> LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            itemsIndexed(selectedStreams) { index, stream ->
+                            itemsIndexed(ordered) { index, stream ->
                                 val resultLabel = stringResource(R.string.moviotv_xp_stream_result, stream.label, stream.addon.name)
                                 val label = stream.detail?.let {
                                     stringResource(R.string.moviotv_xp_stream_result_detail, resultLabel, it)
                                 } ?: resultLabel
-                                XpAction(label, stream.url == null, if (index == 0) firstSourceFocus else null, compact = true) {
+                                val actionLabel = if (stream.playback() == lastPlayed && lastPlayed != null)
+                                    stringResource(R.string.movioxp_last_source, label) else label
+                                XpDialogButton(actionLabel, OwnTVIcon.PLAY, enabled = stream.url != null,
+                                    requester = if (index == 0) firstSourceFocus else null) {
                                     stream.url?.let { playable ->
                                     val playback = recordPlayback(item)
                                     selected = null
@@ -2945,10 +2976,8 @@ fun StremioCatalogScreen(
                                     showManualSources = false
                                     if (onPlayStreamCandidates != null) {
                                         onPlayStreamCandidates(
-                                            listOf(XpPlaybackSource(playable, stream.label, stream.addon.name,
-                                                XpSourcePreference.identity(stream.addon.url, stream.label),
-                                                userSelected = true,
-                                                legacyIdentity = XpSourcePreference.legacyIdentity(stream.addon.url, stream.label, stream.detail))),
+                                            listOfNotNull(stream.playback()?.copy(userSelected = true)) +
+                                                candidates.filterNot { it.url == playable },
                                             playback.name, playback.type, playback.releaseInfo, playback.id, playback.poster, playback.positionMs,
                                         )
                                     } else {
@@ -2964,8 +2993,8 @@ fun StremioCatalogScreen(
                 val chooseEpisode = item.type == "series" && XpPlaybackIdentity.isImdbId(item.id) && selectedEpisode == null
                 XpQa5Dialog(item.name, stringResource(R.string.movioxp_close), ::closeDetails, width = 880.dp,
                     primaryAction = {
-                        XpAction(stringResource(R.string.movioxp_find_sources),
-                            disabled = chooseEpisode, focusRequester = detailFocus, compact = true, primary = true) {
+                        XpDialogButton(stringResource(R.string.movioxp_find_sources), OwnTVIcon.PLAY,
+                            enabled = !chooseEpisode, requester = detailFocus, primary = true) {
                             manualSourceSelection = true
                             showManualSources = true
                         }
@@ -2992,25 +3021,25 @@ fun StremioCatalogScreen(
                                 Text(description, color = XpMuted, fontSize = 15.sp,
                                     maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis)
                                 if (description.length > 140) {
-                                    XpAction(stringResource(if (expanded) R.string.movioxp_read_less else R.string.movioxp_read_more),
-                                        false, compact = true) { expanded = !expanded }
+                                    XpDialogButton(stringResource(if (expanded) R.string.movioxp_read_less else R.string.movioxp_read_more),
+                                        if (expanded) OwnTVIcon.CHEVRON_UP else OwnTVIcon.CHEVRON_DOWN) { expanded = !expanded }
                                 }
                             }
                             val collectionItem = item.copy(imdbId = selectedImdbId ?: item.imdbId)
                             val savedWatch = watchlistTitles.firstOrNull { XpPlaybackIdentity.sameTitle(it, collectionItem) }
                             XpDialogActions {
-                                XpAction(stringResource(if (favoriteTitles.any { XpPlaybackIdentity.sameTitle(it, collectionItem) })
-                                    R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite), false, compact = true) {
+                                XpDialogButton(stringResource(if (favoriteTitles.any { XpPlaybackIdentity.sameTitle(it, collectionItem) })
+                                    R.string.moviotv_xp_remove_favorite else R.string.moviotv_xp_add_favorite), OwnTVIcon.FAVORITE) {
                                     toggleFavorite(item)
                                 }
-                                XpAction(stringResource(if (savedWatch == null) R.string.movioxp_watchlist_add else R.string.movioxp_watchlist_remove),
-                                    false, compact = true) {
+                                XpDialogButton(stringResource(if (savedWatch == null) R.string.movioxp_watchlist_add else R.string.movioxp_watchlist_remove),
+                                    OwnTVIcon.PLAYLIST) {
                                     XpPersonalCollections.change(context, favoritesProfileId, XpCollection.WATCHLIST,
                                         savedWatch ?: collectionItem, deleted = savedWatch != null)
                                 }
-                                XpAction(stringResource(R.string.movioxp_credits), false, compact = true) { showCredits = true }
+                                XpDialogButton(stringResource(R.string.movioxp_credits), OwnTVIcon.PERSON) { showCredits = true }
                                 val history = historyTitles.filter { XpPlaybackIdentity.sameTitle(it, collectionItem) }
-                                if (history.isNotEmpty()) XpAction(stringResource(R.string.movioxp_history_remove), false, compact = true) {
+                                if (history.isNotEmpty()) XpDialogButton(stringResource(R.string.movioxp_history_remove), OwnTVIcon.HISTORY) {
                                     history.forEach { XpPersonalCollections.change(context, favoritesProfileId,
                                         XpCollection.HISTORY, it, deleted = true) }
                                 }

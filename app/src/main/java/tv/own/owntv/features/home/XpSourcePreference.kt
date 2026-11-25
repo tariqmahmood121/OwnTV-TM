@@ -2,14 +2,15 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import java.security.MessageDigest
+import org.json.JSONObject
 
 /**
- * Preserve the source that the viewer CHOSE, independently of the automatic candidate
- * selected for playback or a temporary network fallback. Never persist raw stream URLs.
+ * Persist confirmed playback by content and profile without storing stream URLs.
  */
 internal object XpSourcePreference {
     private const val STORE = "movioxp_playback"
     private const val PREFIX = "v3:"
+    private const val PLAYED_PREFIX = "v4:"
     private const val LEGACY_PREFIX = "v2:"
 
     fun key(profileId: Long, contentKey: String): String =
@@ -36,8 +37,30 @@ internal object XpSourcePreference {
         if (source.identity.isNotBlank()) "$PREFIX${source.identity}:${source.provider}"
         else source.provider
 
+    fun playedPreference(contentKey: String, source: XpPlaybackSource): String =
+        PLAYED_PREFIX + JSONObject().put("content", contentKey)
+            .put("source", source.stableIdentity.ifBlank { source.identity })
+            .put("addon", source.addonIdentity)
+            .put("provider", safeLabel(source.provider))
+            .put("quality", safeLabel(source.quality.orEmpty()))
+            .put("release", safeLabel(source.releaseName ?: source.label)).toString()
+
+    private fun safeLabel(value: String): String = value.replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), "").take(240).trim()
+
+    fun stableIdentity(addonUrl: String, label: String, release: String?, providerId: String?): String =
+        identity(addonUrl, providerId?.takeIf(String::isNotBlank) ?: listOf(label, release.orEmpty()).joinToString("\u001f"))
+
+    fun playedMatch(saved: String?, candidates: List<XpPlaybackSource>): XpPlaybackSource? =
+        candidates.filter { score(saved, it) == 0 }.singleOrNull()
+
     fun score(saved: String?, candidate: XpPlaybackSource): Int {
         if (saved.isNullOrBlank()) return 2
+        if (saved.startsWith(PLAYED_PREFIX)) {
+            val record = runCatching { JSONObject(saved.removePrefix(PLAYED_PREFIX)) }.getOrNull() ?: return 2
+            val identity = candidate.stableIdentity.ifBlank { candidate.identity }
+            return if (identity.isNotBlank() && record.optString("source") == identity &&
+                record.optString("addon") == candidate.addonIdentity) 0 else 2
+        }
         val prefix = when {
             saved.startsWith(PREFIX) -> PREFIX
             saved.startsWith(LEGACY_PREFIX) -> LEGACY_PREFIX
@@ -57,17 +80,25 @@ internal object XpSourcePreference {
         return if (candidate.provider == saved) 1 else 2
     }
 
-    fun read(context: Context, profileId: Long, contentKey: String): String? =
-        context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-            .getString(key(profileId, contentKey), null)
+    internal fun stableKey(profileId: Long, contentKey: String) = "last_source_${profileId}_${hash(contentKey)}"
 
-    /** Only call on an explicit user source choice; auto-start/failover must not call this. */
+    fun read(context: Context, profileId: Long, contentKey: String): String? {
+        if (profileId <= 0) return null
+        val store = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+        val value = store.getString(stableKey(profileId, contentKey), null)
+        if (value != null && runCatching {
+                JSONObject(value.removePrefix(PLAYED_PREFIX)).optString("content") == contentKey
+            }.getOrDefault(false)) return value
+        return store.getString(key(profileId, contentKey), null)
+    }
+
     fun store(context: Context, profileId: Long, contentKey: String, source: XpPlaybackSource) {
-        if (profileId <= 0) return
-        val storageKey = key(profileId, contentKey)
-        val value = preference(source)
-        context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-            .edit().putString(storageKey, value).apply()
+        if (profileId <= 0 || source.stableIdentity.isBlank() && source.identity.isBlank()) return
+        val storageKey = stableKey(profileId, contentKey)
+        val value = playedPreference(contentKey, source)
+        val store = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+        if (store.getString(storageKey, null) == value) return
+        store.edit().putString(storageKey, value).apply()
         XpCentralDataSync.markSetting(context, profileId, storageKey, value)
     }
 }

@@ -2,7 +2,11 @@ package tv.own.owntv.features.home
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import tv.own.owntv.features.shell.XpPlaybackEvidence
 
 class XpSourcePreferenceTest {
     private fun source(addon: String, label: String, detail: String = "") =
@@ -53,5 +57,42 @@ class XpSourcePreferenceTest {
         val item = source("https://example.org/manifest.json", "1080p")
         assertEquals(false, item.userSelected)
         assertEquals(true, item.copy(userSelected = true).userSelected)
+    }
+
+    @Test
+    fun confirmedSourceMatchesRefreshedUrlAndRejectsAmbiguousMatches() {
+        val addon = "https://example.org/manifest.json"
+        val played = source(addon, "4K").copy(
+            stableIdentity = XpSourcePreference.stableIdentity(addon, "4K", "Release A", "provider-id"),
+            addonIdentity = XpSourcePreference.identity(addon, ""),
+            releaseName = "Release A https://example.org/private-token",
+            quality = "4K",
+        )
+        val saved = XpSourcePreference.playedPreference("series:tt123:1:2", played)
+        val refreshed = played.copy(url = "https://example.org/fresh")
+        val alternative = source(addon, "1080p")
+        assertFalse(saved.contains("example.org"))
+        assertEquals(refreshed, XpSourcePreference.playedMatch(saved, listOf(alternative, refreshed)))
+        assertNull(XpSourcePreference.playedMatch(saved, listOf(alternative)))
+        assertNull(XpSourcePreference.playedMatch(saved, listOf(played, refreshed)))
+    }
+
+    @Test
+    fun storageKeysSeparateProfilesAndEpisodes() {
+        val episode = XpSourcePreference.stableKey(10, "series:tt123:1:2")
+        assertNotEquals(episode, XpSourcePreference.stableKey(11, "series:tt123:1:2"))
+        assertNotEquals(episode, XpSourcePreference.stableKey(10, "series:tt123:1:3"))
+    }
+
+    @Test
+    fun playbackConfirmationRequiresConsecutiveAdvancesWithoutErrors() {
+        val evidence = XpPlaybackEvidence()
+        assertFalse(evidence.sample(0, true, false, false))
+        assertFalse(evidence.sample(400, true, false, false))
+        assertFalse(evidence.sample(800, true, false, true))
+        assertFalse(evidence.sample(800, true, false, false))
+        assertFalse(evidence.sample(20_000, true, false, false))
+        assertFalse(evidence.sample(20_400, true, false, false))
+        assertTrue(evidence.sample(20_800, true, false, false))
     }
 }

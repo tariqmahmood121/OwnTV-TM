@@ -5,6 +5,10 @@
     <string name="movioxp_splash_created_by">Created by </string>
     <string name="movioxp_splash_ziggs" translatable="false">Ziggs</string>
     <string name="movioxp_update_channel_unavailable">MovioXP updates</string>
+    <string name="movioxp_last_source">Last played source · %1$s</string>
+    <string name="movioxp_last_source_missing">The last played source is unavailable. Choose a different source to continue.</string>
+    <string name="movioxp_account_name">Account · %1$s</string>
+    <string name="movioxp_central_status_connected">Central connected</string>
     <string name="movioxp_close">Close</string>
     <string name="movioxp_local_profile_status">Local profile · Central disconnected</string>
     <string name="movioxp_add_profile">Add profile</string>

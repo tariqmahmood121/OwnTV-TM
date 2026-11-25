@@ -277,6 +277,9 @@ fun PlayerHud(
     val stopsAtItemEnd by player.stopsAtItemEnd.collectAsStateWithLifecycle()
 
     var dialog by remember { mutableStateOf(HudDialog.NONE) }
+    LaunchedEffect(error, streamSources?.playingId) {
+        if (error != null && streamSources != null) dialog = HudDialog.SOURCES
+    }
     val playFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val catchFocus = remember { FocusRequester() }

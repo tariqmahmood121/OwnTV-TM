@@ -12,6 +12,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import tv.own.owntv.features.home.XpCentralDataSync
 import tv.own.owntv.features.home.XpContinueStore
 import tv.own.owntv.features.home.XpFavoritesStore
+import tv.own.owntv.features.home.XpPlaybackSource
+import tv.own.owntv.features.home.XpSourcePreference
 import tv.own.owntv.player.MpvPlaybackEngine
 import tv.own.owntv.player.OwnTVPlayer
 
@@ -59,9 +61,40 @@ internal fun MovioXpPlaybackEffects(
     playback: MovioXpPlayback?,
     candidateGeneration: Int,
     candidateIndex: Int,
+    source: XpPlaybackSource?,
+    activeProfileId: Long?,
 ) {
     val preferences = remember(context) {
         context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
+    }
+    LaunchedEffect(contentKey, playback?.profileId, activeProfileId, candidateGeneration, candidateIndex, source) {
+        val media = playback ?: return@LaunchedEffect
+        val candidate = source ?: return@LaunchedEffect
+        val playedKey = movioXpContentKey(media)
+        if (activeProfileId != media.profileId || contentKey != playedKey) return@LaunchedEffect
+        val evidence = XpPlaybackEvidence()
+        repeat(120) {
+            delay(400L)
+            if (player.currentMeta.value?.contentKey != contentKey) return@LaunchedEffect
+            if (evidence.sample(player.position.value, player.isPlaying.value,
+                    player.buffering.value, player.error.value != null)) {
+                XpSourcePreference.store(context, media.profileId, playedKey, candidate)
+                val suffix = "${media.profileId}_${playedKey.hashCode()}"
+                // An existing choice is restored by the track effect below. An observed
+                // default must never replace the user's explicit preference.
+                if (!preferences.contains("xp_audio_$suffix")) {
+                    player.audioTracks().firstOrNull { it.selected }?.let {
+                        saveMovioXpAudioPreference(context, player, media, it.mpvId)
+                    }
+                }
+                if (!preferences.contains("xp_subtitle_$suffix")) {
+                    val subtitles = player.textTracks()
+                    if (subtitles.isNotEmpty()) saveMovioXpSubtitlePreference(
+                        context, player, media, subtitles.firstOrNull { it.selected }?.mpvId)
+                }
+                return@LaunchedEffect
+            }
+        }
     }
     LaunchedEffect(contentKey, playback?.profileId, candidateGeneration, candidateIndex) {
         val media = playback ?: return@LaunchedEffect
@@ -102,7 +135,7 @@ internal fun MovioXpPlaybackEffects(
         var completed = false
 
         fun saveProgress(upload: Boolean) {
-            if (player.currentMeta.value?.contentKey != key) return
+            if (player.currentMeta.value?.contentKey != key || player.error.value != null) return
             val duration = player.duration.value
             val position = player.position.value
             if (position <= 0L || duration <= 0L) return
@@ -187,14 +220,23 @@ internal fun startMovioXpStream(
     return media
 }
 
-internal fun storeMovioXpSource(
-    context: Context, profileId: Long, contentKey: String,
-    source: tv.own.owntv.features.home.XpPlaybackSource,
-    explicitChoice: Boolean = false,
-) {
-    // Keep automatic playback/fallback from replacing the user's last chosen source.
-    if (explicitChoice || source.userSelected) {
-        tv.own.owntv.features.home.XpSourcePreference.store(context, profileId, contentKey, source)
+internal class XpPlaybackEvidence {
+    private var previous: Long? = null
+    private var advances = 0
+
+    fun sample(position: Long, playing: Boolean, buffering: Boolean, failed: Boolean): Boolean {
+        if (!playing || buffering || failed || position < 0L) {
+            previous = null
+            advances = 0
+            return false
+        }
+        val before = previous
+        previous = position
+        if (before == null || position <= before || position - before > 2_000L) {
+            advances = 0
+            return false
+        }
+        return ++advances >= 2
     }
 }
 
@@ -225,7 +267,7 @@ internal fun saveMovioXpSubtitlePreference(
 }
 
 internal fun flushMovioXpProgress(context: Context, player: OwnTVPlayer, media: MovioXpPlayback) {
-    if (player.currentMeta.value?.contentKey != movioXpContentKey(media)) return
+    if (player.currentMeta.value?.contentKey != movioXpContentKey(media) || player.error.value != null) return
     XpContinueStore.updateProgress(
         context, media.profileId, media.id, media.type, media.title,
         media.poster, media.year,

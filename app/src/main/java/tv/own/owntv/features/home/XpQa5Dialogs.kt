@@ -1,6 +1,27 @@
 package tv.own.owntv.features.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import tv.own.owntv.ui.components.OwnTVIcon
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -50,7 +71,7 @@ internal fun XpQa5Dialog(
                     Text(title, modifier = Modifier.weight(1f), color = OwnTVTheme.colors.onSurface,
                         fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    XpAction(closeLabel, false, compact = true, onClick = onDismiss)
+                    XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, onClick = onDismiss)
                 }
                 content(wide)
                 primaryAction?.invoke()
@@ -59,11 +80,58 @@ internal fun XpQa5Dialog(
     }
 }
 
+private val LocalXpDialogCellWidth = staticCompositionLocalOf<Dp?> { null }
+
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun XpDialogActions(content: @Composable () -> Unit) {
-    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val gap = 8.dp
+        val count = if (maxWidth >= 570.dp) 3 else if (maxWidth >= 250.dp) 2 else 1
+        val itemWidth = (maxWidth - gap * (count - 1)) / count
+        CompositionLocalProvider(LocalXpDialogCellWidth provides itemWidth) {
+            FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = count,
+                horizontalArrangement = Arrangement.spacedBy(gap),
+                verticalArrangement = Arrangement.spacedBy(gap)) { content() }
+        }
+    }
+}
+
+@Composable
+internal fun XpDialogButton(
+    label: String,
+    icon: OwnTVIcon,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    iconOnly: Boolean = false,
+    requester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
+    val colors = OwnTVTheme.colors
+    val cellWidth = LocalXpDialogCellWidth.current
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    val layout = if (iconOnly) Modifier.size(44.dp) else
+        (if (cellWidth == null) Modifier.fillMaxWidth() else Modifier.width(cellWidth)).height(56.dp)
+    val foreground = when {
+        !enabled -> colors.onSurfaceVariant
+        focused -> XpRemotePink
+        else -> colors.onSurface
+    }
+    Box(layout.clip(shape)
+        .background(if (primary && enabled) colors.primary.copy(alpha = .22f) else colors.surfaceContainerLow)
+        .border(if (focused) 2.dp else 1.dp, if (focused) XpRemotePink else colors.outline.copy(alpha = .35f), shape)
+        .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+        .semantics { contentDescription = label }
+        .onFocusChanged { focused = it.isFocused }
+        .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            OwnTVIcon(icon, foreground, Modifier.size(18.dp))
+            if (!iconOnly) Text(label, color = foreground, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
 internal data class XpDetailMetadata(

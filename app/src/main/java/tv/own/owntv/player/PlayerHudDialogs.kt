@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -374,27 +375,22 @@ internal fun StreamSourcesDialog(sources: HudStreamSources, onDismiss: () -> Uni
     val focus = remember { FocusRequester() }
     val focusIndex = sources.choices.indexOfFirst { it.id == sources.playingId }.coerceAtLeast(0)
     LaunchedEffect(Unit) { requestFocusRetrying(focus) }
-    BackHandler { onDismiss() }
-    DialogScaffold(title = stringResource(R.string.player_tool_sources), onDismiss = onDismiss) {
-        items(sources.choices.size) { index ->
-            val choice = sources.choices[index]
-            val playing = choice.id == sources.playingId
-            tv.own.owntv.ui.stage.StagePopupOption(
-                title = choice.title,
-                subtitle = choice.provider.takeIf { it.isNotBlank() },
-                chosen = playing,
-                modifier = if (index == focusIndex) Modifier.focusRequester(focus) else Modifier,
-                leading = { f -> tv.own.owntv.ui.stage.StagePopupRadio(playing, f) },
-                onClick = { onDismiss(); if (!playing) sources.onPick(choice.id) },
-            )
-        }
-        if (sources.choices.size <= 1) item {
-            tv.own.owntv.ui.stage.StagePopupOption(
-                title = stringResource(R.string.player_sources_none),
-                subtitle = sources.choices.firstOrNull()?.provider?.takeIf { it.isNotBlank() },
-                onClick = onDismiss,
-                enabled = false,
-            )
+    tv.own.owntv.features.home.XpQa5Dialog(
+        stringResource(R.string.player_tool_sources), stringResource(R.string.movioxp_close), onDismiss,
+        width = 660.dp,
+    ) {
+        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(sources.choices.size) { index ->
+                val choice = sources.choices[index]
+                val playing = choice.id == sources.playingId
+                val label = stringResource(R.string.moviotv_xp_stream_result, choice.title, choice.provider)
+                tv.own.owntv.features.home.XpDialogButton(label,
+                    if (playing) OwnTVIcon.PAUSE else OwnTVIcon.PLAY, primary = playing,
+                    requester = if (index == focusIndex) focus else null) {
+                    onDismiss()
+                    if (!playing) sources.onPick(choice.id)
+                }
+            }
         }
     }
 }
