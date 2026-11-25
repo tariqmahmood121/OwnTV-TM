@@ -2145,26 +2145,8 @@ fun StremioCatalogScreen(
                                 }
                             }
                         }
-                        XpAction(stringResource(R.string.moviotv_xp_central_register), centralSyncBusy) {
-                            if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-                            } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
-                            } else {
-                                centralSyncBusy = true
-                                centralSyncMessage = null
-                                scope.launch {
-                                    runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
-                                        .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
-                                    centralSyncBusy = false
-                                }
-                            }
-                        }
-                        Text(
-                            stringResource(R.string.moviotv_xp_central_registration_help),
-                            color = XpMuted, fontSize = 14.sp,
-                        )
+                        Text(stringResource(R.string.movioxp_existing_central_account_help),
+                            color = XpMuted, fontSize = 14.sp)
                     } else {
                         Text(stringResource(R.string.movioxp_account_name, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
                         XpAction(stringResource(R.string.moviotv_xp_central_sync_now), centralSyncBusy) { syncAddonsWithCentral() }
@@ -2350,7 +2332,7 @@ fun StremioCatalogScreen(
                         onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 2) null else 2 },
                     ) {
                         if (centralConnection == null) {
-                            Text(stringResource(R.string.moviotv_xp_central_addons_help),
+                            Text(stringResource(R.string.movioxp_existing_central_account_help),
                                 color = XpMuted, fontSize = 13.sp)
                             XpCentralField(
                                 value = centralUsername,
@@ -2372,26 +2354,6 @@ fun StremioCatalogScreen(
                                 R.string.moviotv_xp_central_connect_sync else R.string.moviotv_xp_central_sync_now),
                             enabled = !centralSyncBusy,
                         ) { syncAddonsWithCentral() }
-                        if (centralConnection == null) {
-                            XpSettingsOption(stringResource(R.string.moviotv_xp_central_register),
-                                enabled = !centralSyncBusy) {
-                                if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
-                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-                                } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
-                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
-                                } else {
-                                    centralSyncBusy = true
-                                    scope.launch {
-                                        runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                            .onSuccess { centralSyncMessage = it.ifBlank {
-                                                context.getString(R.string.moviotv_xp_central_registration_complete)
-                                            } }
-                                            .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
-                                        centralSyncBusy = false
-                                    }
-                                }
-                            }
-                        }
                         if (centralConnection != null) {
                             XpSettingsOption(stringResource(R.string.moviotv_xp_central_disconnect),
                                 enabled = !centralSyncBusy) {

@@ -140,4 +140,5 @@
     <string name="movioxp_update_checked_value">Last checked: %1$s</string>
     <string name="movioxp_update_size_mb">%1$d MB</string>
     <string name="movioxp_update_percent">%1$d%%</string>
+    <string name="movioxp_existing_central_account_help">Use your existing Central account to sync add-ons and profile data. Accounts are created and managed by your Central administrator.</string>
 </resources>
