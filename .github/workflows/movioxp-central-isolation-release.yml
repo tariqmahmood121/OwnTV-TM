@@ -90,6 +90,12 @@ jobs:
           SDK_APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           [ -n "$SDK_APKSIGNER" ] || { echo "::error::apksigner missing"; exit 1; }
           "$SDK_APKSIGNER" verify "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          [ -n "$AAPT" ] || { echo "::error::aapt missing"; exit 1; }
+          BADGING=$("$AAPT" dump badging "$APK" | head -1)
+          [[ "$BADGING" == *"name='com.oakstudios.movioxp'"* ]] || { echo "::error::Package mismatch"; exit 1; }
+          [[ "$BADGING" == *"versionCode='$VERSION_CODE'"* ]] || { echo "::error::Version code mismatch"; exit 1; }
+          [[ "$BADGING" == *"versionName='$VERSION_NAME'"* ]] || { echo "::error::Version name mismatch"; exit 1; }
           mkdir -p dist
           cp "$APK" "dist/MovioXP-${VERSION_NAME}-discover-home-release.apk"
           # Produce a matching update manifest; publication to Plesk is deliberately MANUAL.
@@ -120,6 +126,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: MovioXP-${{ github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}-Discover-Home-SIGNED
-          path: dist/*.apk
+          path: dist/*
           if-no-files-found: error
           retention-days: 21
