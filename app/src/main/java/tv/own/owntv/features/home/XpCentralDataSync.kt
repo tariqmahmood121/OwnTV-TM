@@ -267,7 +267,7 @@ internal object XpCentralDataSync {
         }
     }
 
-    private fun canonicalPreferenceKey(key: String, profileId: Long): String? = when {
+    internal fun canonicalPreferenceKey(key: String, profileId: Long): String? = when {
         key == XpHomeConfig.orderKey(profileId) -> "home:order"
         key == XpHomeConfig.hiddenKey(profileId) -> "home:hidden"
         key == XpHomeConfig.defaultsKey(profileId) -> "home:defaults"
@@ -285,7 +285,7 @@ internal object XpCentralDataSync {
         else -> null
     }
 
-    private fun localPreferenceKey(key: String, profileId: Long): String? = when {
+    internal fun localPreferenceKey(key: String, profileId: Long): String? = when {
         key == "home:order" -> XpHomeConfig.orderKey(profileId)
         key == "home:hidden" -> XpHomeConfig.hiddenKey(profileId)
         key == "home:defaults" -> XpHomeConfig.defaultsKey(profileId)

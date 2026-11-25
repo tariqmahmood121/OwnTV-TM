@@ -313,7 +313,8 @@ fun OwnTVShell(
         playback = movioXpPlayback,
         candidateGeneration = xpCandidateGeneration,
         candidateIndex = xpCandidateIndex,
-        source = xpCandidateSources.getOrNull(xpCandidateIndex),
+        source = xpCandidateSources.getOrNull(xpCandidateIndex)
+            .takeIf { currentPlayerMeta?.contentKey == xpCandidateContentKey },
         activeProfileId = activeProfileId,
     )
     // Audio focus + MediaSession. This is the only place that knows which engine currently owns

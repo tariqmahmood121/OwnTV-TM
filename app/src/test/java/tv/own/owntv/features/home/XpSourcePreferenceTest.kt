@@ -85,6 +85,16 @@ class XpSourcePreferenceTest {
     }
 
     @Test
+    fun centralTranslatesSourceKeyToTheTargetDeviceProfile() {
+        val content = "stremio:series:tt123:1:2"
+        val firstDevice = XpSourcePreference.stableKey(5, content)
+        val cloud = requireNotNull(XpCentralDataSync.canonicalPreferenceKey(firstDevice, 5))
+        assertNull(XpCentralDataSync.canonicalPreferenceKey(firstDevice, 6))
+        assertEquals(XpSourcePreference.stableKey(19, content),
+            XpCentralDataSync.localPreferenceKey(cloud, 19))
+    }
+
+    @Test
     fun playbackConfirmationRequiresConsecutiveAdvancesWithoutErrors() {
         val evidence = XpPlaybackEvidence()
         assertFalse(evidence.sample(0, true, false, false))

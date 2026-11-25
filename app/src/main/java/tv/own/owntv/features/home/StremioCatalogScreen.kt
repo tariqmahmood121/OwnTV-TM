@@ -1297,6 +1297,7 @@ fun StremioCatalogScreen(
     }
 
     fun openDetails(item: XpMeta, showSources: Boolean) {
+        resumeFromShelf = false
         resetEpisodeSelection()
         manualSourceSelection = true
         showManualSources = showSources
@@ -1937,7 +1938,7 @@ fun StremioCatalogScreen(
                             } else installAddon(candidate)
                         }
                         if (!compactPhone) {
-                            XpDialogButton(stringResource(R.string.moviotv_xp_remote_enter_on_phone), OwnTVIcon.SETTINGS) {
+                            XpDialogButton(stringResource(R.string.moviotv_xp_remote_enter_on_phone), OwnTVIcon.PHONE) {
                                 showAddonRemote = true
                                 addonRemoteServer.start()
                             }
@@ -2799,7 +2800,7 @@ fun StremioCatalogScreen(
             val connection = centralConnection
             if (connection == null) {
                 tv.own.owntv.features.profiles.ProfileEditorDialog(
-                    initial = null, onDismiss = { addProfileOpen = false },
+                    initial = null, onDismiss = { addProfileOpen = false }, movioXpDialog = true,
                     takenNames = profileList.map { it.name.trim().lowercase() }.toSet(),
                     onConfirm = { name, avatar, child, pin, picture ->
                         addProfileOpen = false

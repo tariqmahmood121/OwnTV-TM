@@ -1,5 +1,8 @@
 package tv.own.owntv.features.profiles
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import tv.own.owntv.ui.theme.stageAccent
 import tv.own.owntv.ui.theme.stageText
@@ -121,6 +124,7 @@ internal fun ProfileEditorDialog(
     onClearPicture: (() -> Unit)? = null,
     allowDownloads: Boolean? = null,
     onAllowDownloads: (Boolean) -> Unit = {},
+    movioXpDialog: Boolean = false,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var downloads by remember(allowDownloads) { mutableStateOf(allowDownloads ?: true) }
@@ -135,21 +139,14 @@ internal fun ProfileEditorDialog(
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val nameTaken = name.trim().isNotEmpty() && name.trim().lowercase() in takenNames
 
-    ProfileScrim(
-        onDismiss,
-        title = stringResource(if (initial == null) R.string.profiles_new else R.string.profiles_edit),
-        buttons = {
-            tv.own.owntv.ui.stage.StagePopupButton(stringResource(R.string.common_cancel), onClick = onDismiss, primary = false)
-            tv.own.owntv.ui.stage.StagePopupButton(
-                stringResource(if (initial == null) R.string.profiles_create else R.string.profiles_save),
-                onClick = {
-                    if (allowDownloads != null && downloads != allowDownloads) onAllowDownloads(downloads)
-                    onConfirm(name, avatarId, isKids, if (removePin) "" else pin.takeIf { it.isNotBlank() }, pendingPicture)
-                },
-                enabled = name.isNotBlank() && !nameTaken && (removePin || pin.isEmpty() || pin.length >= 4),
-            )
-        },
-    ) {
+    val title = stringResource(if (initial == null) R.string.profiles_new else R.string.profiles_edit)
+    val confirmLabel = stringResource(if (initial == null) R.string.profiles_create else R.string.profiles_save)
+    val canConfirm = name.isNotBlank() && !nameTaken && (removePin || pin.isEmpty() || pin.length >= 4)
+    val confirm: () -> Unit = {
+        if (allowDownloads != null && downloads != allowDownloads) onAllowDownloads(downloads)
+        onConfirm(name, avatarId, isKids, if (removePin) "" else pin.takeIf { it.isNotBlank() }, pendingPicture)
+    }
+    val fields: @Composable () -> Unit = {
         tv.own.owntv.features.settings.StageFieldRow(
             icon = tv.own.owntv.ui.components.OwnTVIcon.PENCIL,
             label = stringResource(R.string.profiles_name),
@@ -210,6 +207,20 @@ internal fun ProfileEditorDialog(
                 keyboardType = KeyboardType.NumberPassword,
             )
         }
+    }
+    if (movioXpDialog) {
+        tv.own.owntv.features.home.XpQa5Dialog(title, stringResource(R.string.movioxp_close), onDismiss,
+            primaryAction = {
+                tv.own.owntv.features.home.XpDialogButton(confirmLabel, tv.own.owntv.ui.components.OwnTVIcon.CHECK,
+                    enabled = canConfirm, primary = true, onClick = confirm)
+            }) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { fields() }
+        }
+    } else {
+        ProfileScrim(onDismiss, title = title, buttons = {
+            tv.own.owntv.ui.stage.StagePopupButton(stringResource(R.string.common_cancel), onClick = onDismiss, primary = false)
+            tv.own.owntv.ui.stage.StagePopupButton(confirmLabel, onClick = confirm, enabled = canConfirm)
+        }) { fields() }
     }
     if (choosingPicture) {
         ProfilePictureChooser(

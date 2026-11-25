@@ -36,8 +36,13 @@ import tv.own.owntv.ui.theme.stageAccent
 import tv.own.owntv.ui.theme.stageText
 
 @Composable
-fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovioXp: Boolean = false) {
-    BackHandler(onBack = onBack)
+fun MovioAboutScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    forMovioXp: Boolean = false,
+    embeddedInDialog: Boolean = false,
+) {
+    BackHandler(enabled = !embeddedInDialog, onBack = onBack)
     val accent = stageAccent.accent
     val focusOutline = XpRemotePink.takeIf { forMovioXp && LocalXpTvControls.current }
     val context = LocalContext.current
@@ -69,7 +74,13 @@ fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovio
         Spacer(Modifier.height(6.dp))
         // Oak Studios is our identity. Preserve the original MovioTV About design, and move
         // upstream GPL attribution into the legal view instead of the main studio description.
-        StageButton(stringResource(R.string.moviotv_xp_about_licences), onClick = { showLegal = !showLegal }, focusOutline = focusOutline)
+        if (embeddedInDialog) {
+            tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.moviotv_xp_about_licences),
+                tv.own.owntv.ui.components.OwnTVIcon.INFO) { showLegal = !showLegal }
+        } else {
+            StageButton(stringResource(R.string.moviotv_xp_about_licences),
+                onClick = { showLegal = !showLegal }, focusOutline = focusOutline)
+        }
         if (showLegal) {
             Text(stringResource(R.string.moviotv_xp_about_attribution),
                 style = stageText(15, 500), color = StageColors.Text)
@@ -82,6 +93,6 @@ fun MovioAboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier, forMovio
             }.getOrDefault("") }
             Text(licence, style = stageText(11, 400), color = StageColors.Muted)
         }
-        StageButton(stringResource(R.string.common_back), onClick = onBack, focusOutline = focusOutline)
+        if (!embeddedInDialog) StageButton(stringResource(R.string.common_back), onClick = onBack, focusOutline = focusOutline)
     }
 }

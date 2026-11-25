@@ -73,7 +73,7 @@ internal fun MovioXpPlaybackEffects(
         val playedKey = movioXpContentKey(media)
         if (activeProfileId != media.profileId || contentKey != playedKey) return@LaunchedEffect
         val evidence = XpPlaybackEvidence()
-        repeat(120) {
+        while (true) {
             delay(400L)
             if (player.currentMeta.value?.contentKey != contentKey) return@LaunchedEffect
             if (evidence.sample(player.position.value, player.isPlaying.value,
