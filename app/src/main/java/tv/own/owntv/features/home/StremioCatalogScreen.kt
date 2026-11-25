@@ -2110,7 +2110,6 @@ fun StremioCatalogScreen(
                         color = XpMuted, fontSize = 16.sp,
                     )
                     if (centralConnection == null) {
-                        XpCentralField(value = centralApiBase, label = stringResource(R.string.moviotv_xp_central_api_label), onValueChange = { centralApiBase = it })
                         XpCentralField(value = centralUsername, label = stringResource(R.string.moviotv_xp_central_username_label), onValueChange = { centralUsername = it })
                         XpCentralField(value = centralPassword, label = stringResource(R.string.moviotv_xp_central_password_label), onValueChange = { centralPassword = it }, password = true)
                         XpAction(stringResource(R.string.moviotv_xp_central_login), centralSyncBusy) {
@@ -2344,11 +2343,6 @@ fun StremioCatalogScreen(
                         if (centralConnection == null) {
                             Text(stringResource(R.string.moviotv_xp_central_addons_help),
                                 color = XpMuted, fontSize = 13.sp)
-                            XpCentralField(
-                                value = centralApiBase,
-                                label = stringResource(R.string.moviotv_xp_central_api_label),
-                                onValueChange = { centralApiBase = it },
-                            )
                             XpCentralField(
                                 value = centralUsername,
                                 label = stringResource(R.string.moviotv_xp_central_username_label),
