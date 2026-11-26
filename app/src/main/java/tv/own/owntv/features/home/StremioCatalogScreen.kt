@@ -984,6 +984,7 @@ fun StremioCatalogScreen(
     }
     val homeScaleNow by rememberUpdatedState(homeScale)
     val homePosterWidth = 142.dp * homeScale
+    val homeChannelWidth = homePosterWidth * 1.55f
     DisposableEffect(libraryPrefs, libraryZoomKey, homeZoomKey, discoverZoomKey) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
@@ -2006,6 +2007,7 @@ fun StremioCatalogScreen(
                             item = item, row = page, width = width, returnPoster = returnHomePoster,
                             onFocused = ::trackHomePoster,
                             initialRequester = if (index == 0) firstGridFocus else null,
+                            landscape = page == "live",
                             onLongClick = { openDetails(item, showSources = false) },
                             onVeryLongClick = { openDetails(item, showSources = true) },
                         ) {
@@ -2872,6 +2874,7 @@ fun StremioCatalogScreen(
                     items(visibleRows, key = { rowKey(it) }) { row ->
                         val key = rowKey(row)
                         val titles = sortedTitles(metas[key to row].orEmpty())
+                        val channelRow = row.catalog.type.isLiveCatalogueType()
                         Column {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
@@ -2894,11 +2897,12 @@ fun StremioCatalogScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                        HomeCataloguePoster(item, key, homePosterWidth,
+                                        HomeCataloguePoster(item, key, if (channelRow) homeChannelWidth else homePosterWidth,
                                             returnHomePoster.takeIf { page == "home" },
                                             onFocused = { if (page == "home") trackHomePoster(it) },
                                             onLongClick = { openDetails(item, false) },
-                                            onVeryLongClick = { openDetails(item, true) }) { openItem(item) }
+                                            onVeryLongClick = { openDetails(item, true) },
+                                            landscape = channelRow) { openItem(item) }
                                     }
                                 }
                             }
@@ -3854,9 +3858,15 @@ private fun XpPoster(
             .clickable(onClick = onClick).focusable(),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
+        val artworkSize = if (landscape) Modifier.aspectRatio(16f / 9f) else Modifier.height(width * 1.46f)
+        val artworkBackground = when {
+            landscape && item.poster != null -> Color.Transparent
+            focused -> XpAccent.copy(alpha = .24f)
+            else -> XpPanel
+        }
         Box(
-            Modifier.fillMaxWidth().height(width * (if (landscape) 0.68f else 1.46f)).clip(RoundedCornerShape(12.dp))
-                .background(if (focused) XpAccent.copy(alpha = .24f) else XpPanel),
+            Modifier.fillMaxWidth().then(artworkSize).clip(RoundedCornerShape(12.dp))
+                .background(artworkBackground),
         ) {
             item.poster?.let {
                 val context = LocalContext.current
@@ -3869,7 +3879,8 @@ private fun XpPoster(
             if (!landscape) XpPosterBadges(item)
             else if (item.liveNow) {
                 Text(stringResource(R.string.movioxp_live_now), color = Color.White, fontSize = 11.sp,
-                    modifier = Modifier.align(Alignment.BottomStart).background(Color.Black).padding(4.dp))
+                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                        .background(XpAccent, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 2.dp))
             }
             if (item.durationMs > 0L && item.positionMs > 0L) {
                 Box(
@@ -3884,7 +3895,7 @@ private fun XpPoster(
             }
         }
         Text(item.name, color = if (focused) XpFocus else XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
-            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            minLines = if (landscape) 1 else 2, maxLines = if (landscape) 1 else 2, overflow = TextOverflow.Ellipsis)
         if (landscape && item.eventTime != null) {
             Text(item.eventTime, color = XpMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
