@@ -898,6 +898,7 @@ fun StremioCatalogScreen(
     var showPreferredAddons by remember { mutableStateOf(false) }
     var showXpAbout by remember { mutableStateOf(false) }
     var returnPage by key(catalogueProfile, initialPage) { rememberSaveable { mutableStateOf(initialPage) } }
+    var searchType by remember(catalogueProfile) { mutableIntStateOf(0) }
     var searchText by key(catalogueProfile) { rememberSaveable { mutableStateOf("") } }
     var discoveryType by key(catalogueProfile) { rememberSaveable { mutableStateOf("all") } }
     var discoveryCatalog by key(catalogueProfile) { rememberSaveable { mutableStateOf("all") } }
@@ -2728,7 +2729,7 @@ fun StremioCatalogScreen(
                         loading = pageLoading,
                         failed = pageFailed,
                         landscape = liveCategory,
-                        emptyLabel = if (liveCategory && liveRows.isEmpty()) R.string.movioxp_live_no_addons else null,
+                        emptyLabel = if (liveCategory && liveRows.isEmpty()) R.string.movioxp_sports_no_addons else null,
                         canLoadMore = firstPage == null && pages[loadPage]?.next != null,
                         onLoadMore = {
                             val next = pages[loadPage]?.next
@@ -2790,7 +2791,20 @@ fun StremioCatalogScreen(
                                 val hits = filteredHits.associateBy { it.meta }
                                 sortXpTitles(filteredHits.map { it.meta }, sortMode).mapNotNull(hits::get)
                             }
-                            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                            val touchSearchScale by rememberUpdatedState(discoverScale)
+                            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).pointerInput(television, discoverZoomKey) {
+                                if (!television) awaitEachGesture {
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.count { it.pressed } >= 2) {
+                                            val next = (touchSearchScale * event.calculateZoom()).coerceIn(0.65f, 1.85f)
+                                            discoverScale = next
+                                            libraryPrefs.edit().putFloat(discoverZoomKey, next).apply()
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }) {
                                 val scale = if (television) tvCardScale else discoverScale
                                 val columns = (maxWidth.value / (118f * scale)).toInt().coerceIn(2, 12)
                                 val width = (maxWidth - 8.dp * (columns - 1)) / columns

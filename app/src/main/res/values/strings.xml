@@ -183,4 +183,5 @@
     <string name="movioxp_activation_renew">Your access to MovioXP has expired. Please contact Oak Studios to renew your access.</string>
     <string name="movioxp_activation_contact">Please contact Oak Studios.</string>
     <string name="movioxp_activation_check">Check activation</string>
+    <string name="movioxp_sports_no_addons">No compatible sports add-ons are enabled.</string>
 </resources>
