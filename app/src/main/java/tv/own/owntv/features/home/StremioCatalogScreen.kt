@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import tv.own.owntv.BuildConfig
 import tv.own.owntv.R
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVIcon as DrawOwnTVIcon
@@ -116,7 +117,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Semaphore
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.sync.withPermit
 import org.koin.androidx.compose.koinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -182,6 +188,8 @@ internal data class XpMeta(
     val positionMs: Long = 0L, val durationMs: Long = 0L,
     val tmdbId: String? = null, val ratingSource: String? = null, val imdbId: String? = null,
     val activityAt: Long = 0L,
+    val liveNow: Boolean = false,
+    val eventTime: String? = null,
 )
 data class XpPlaybackSource(
     val url: String,
@@ -200,6 +208,11 @@ data class XpPlaybackSource(
     val tmdbId: String? = null,
     val imdbId: String? = null,
 )
+private fun String.isLiveCatalogueType(): Boolean =
+    lowercase(java.util.Locale.ROOT).filter(Char::isLetterOrDigit) in setOf(
+        "tv", "channel", "channels", "livetv", "live", "iptv", "sport", "sports", "livechannel", "livechannels",
+    )
+
 private data class XpCatalogRow(val addon: XpAddon, val catalog: XpCatalog)
 
 /**
@@ -454,9 +467,18 @@ private object XpAddonProtocol {
                 add(
                     XpMeta(
                         id = id,
-                        type = item.optString("type", row.catalog.type),
+                        type = item.optString("type", row.catalog.type).ifBlank { row.catalog.type },
                         name = name,
-                        poster = item.optString("poster").takeIf { it.isNotBlank() },
+                        poster = item.optString("poster").takeIf { it.isNotBlank() }
+                            ?: if (row.catalog.type.isLiveCatalogueType()) {
+                                listOf("logo", "thumbnail", "background").firstNotNullOfOrNull { key ->
+                                    item.optString(key).takeIf(String::isNotBlank)
+                                }
+                            } else null,
+                        liveNow = row.catalog.type.isLiveCatalogueType() && item.optBoolean("isLive", false),
+                        eventTime = if (row.catalog.type.isLiveCatalogueType()) {
+                            item.optString("startTime").takeIf(String::isNotBlank)
+                        } else null,
                         description = item.optString("description").takeIf { it.isNotBlank() },
                         releaseInfo = item.optString("released").take(10).takeIf { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
                             ?: item.optString("releaseInfo").takeIf { it.isNotBlank() },
@@ -568,12 +590,12 @@ private object XpAddonStore {
     private const val LEGACY_VALUE = "encrypted_urls"
     private const val ALIAS = "movioxp_addons_aes_v1"
 
-    fun read(context: Context, profileId: Long? = null): List<String> = runCatching {
+    fun read(context: Context, profileId: Long? = null, suffix: String = ""): List<String> = runCatching {
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val profileKey = profileId?.let { "encrypted_urls_profile_$it" }
         // Never feed the unscoped legacy cache into a different account's profile.
         val encoded = if (profileKey == null) preferences.getString(LEGACY_VALUE, null)
-            else preferences.getString(profileKey, null)
+            else preferences.getString(profileKey + suffix, null)
         if (encoded == null) return emptyList()
         val payload = Base64.decode(encoded, Base64.NO_WRAP)
         require(payload.size > 12)
@@ -583,14 +605,14 @@ private object XpAddonStore {
         buildList { for (i in 0 until values.length()) values.optString(i).takeIf { it.isNotBlank() }?.let(::add) }
     }.getOrDefault(emptyList())
 
-    fun write(context: Context, urls: List<String>, profileId: Long? = null) {
+    fun write(context: Context, urls: List<String>, profileId: Long? = null, suffix: String = "") {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val plain = JSONArray(urls.distinct()).toString().toByteArray(Charsets.UTF_8)
         val payload = cipher.iv + cipher.doFinal(plain)
         val key = profileId?.let { "encrypted_urls_profile_$it" } ?: LEGACY_VALUE
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(key, Base64.encodeToString(payload, Base64.NO_WRAP)).apply()
+            .putString(key + suffix, Base64.encodeToString(payload, Base64.NO_WRAP)).apply()
     }
 
     private fun key(): SecretKey {
@@ -806,6 +828,18 @@ fun StremioCatalogScreen(
     var providerUrls by remember(catalogueProfile) {
         mutableStateOf(XpAddonStore.read(context, favoritesProfileId).filterNot { it == builtInUrl })
     }
+    var disabledAddonUrls by remember(catalogueProfile) {
+        mutableStateOf(XpAddonStore.read(context, favoritesProfileId, "_disabled").toSet())
+    }
+    var centralDisabledAddonUrls by remember(catalogueProfile) {
+        mutableStateOf(XpAddonStore.read(context, favoritesProfileId, "_central_disabled").toSet())
+    }
+    var localAddonOrder by remember(catalogueProfile) {
+        mutableStateOf(XpAddonStore.read(context, favoritesProfileId, "_order"))
+    }
+    val currentCatalogueProfile by rememberUpdatedState(catalogueProfile)
+    val addonSyncLock = remember { Mutex() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     fun updateAddon(addon: XpAddon) {
         val index = addons.indexOfFirst { it.url == addon.url }
         if (index >= 0) addons[index] = addon else addons.add(addon)
@@ -949,6 +983,7 @@ fun StremioCatalogScreen(
         mutableStateOf(libraryPrefs.getFloat(homeZoomKey, 1f).coerceIn(0.65f, 1.85f))
     }
     val homeScaleNow by rememberUpdatedState(homeScale)
+    val homePosterWidth = 142.dp * homeScale
     DisposableEffect(libraryPrefs, libraryZoomKey, homeZoomKey, discoverZoomKey) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
@@ -1065,7 +1100,13 @@ fun StremioCatalogScreen(
     val loadingRows = remember(catalogueProfile) { mutableStateMapOf<String, Boolean>() }
     val addonsByUrl = addons.associateBy { it.url }
     val manifestAddresses = (listOf(builtInUrl) + providerUrls).mapNotNull(XpAddonProtocol::manifestAddress).distinct()
-    val installedAddons = manifestAddresses.mapNotNull(addonsByUrl::get)
+    val managedAddresses = manifestAddresses.filterNot { it == builtInUrl }.let { addresses ->
+        localAddonOrder.filter { it in addresses } + addresses.filterNot { it in localAddonOrder }
+    }
+    val managedAddons = managedAddresses.mapNotNull(addonsByUrl::get)
+    val installedAddons = listOfNotNull(addonsByUrl[builtInUrl]) +
+        managedAddons.filterNot { it.url in disabledAddonUrls || it.url in centralDisabledAddonUrls }
+    val moveableAddons = managedAddons.map { it.url }
     val homeSources = visibleHomeIds.associateWith { id -> xpDiscoverSource(id, installedAddons) }
 
     fun discoveryDataKey(id: String, source: XpDiscoverSource?) = id to source
@@ -1123,7 +1164,7 @@ fun StremioCatalogScreen(
             val typeMatches = when (page) {
                 "movies" -> row.catalog.type.equals("movie", true)
                 "series" -> row.catalog.type.equals("series", true)
-                "live" -> row.catalog.type.equals("channel", true)
+                "live" -> row.catalog.type.isLiveCatalogueType()
                 "favorites" -> false
                 "discover" -> false
                 else -> true
@@ -1195,6 +1236,7 @@ fun StremioCatalogScreen(
         .filterNot { it.trim().matches(Regex("\\d{4}")) }
         .filter { XpHomeConfig.idForGenre(it) != null }
         .sorted()
+    val liveRows = availableCatalogRows.filter { it.catalog.type.isLiveCatalogueType() }
     val activeType = when (page) {
         "movies" -> "movie"
         "series" -> "series"
@@ -1310,6 +1352,32 @@ fun StremioCatalogScreen(
         selected = withSavedResume(item)
     }
 
+    fun signInCentral() {
+        if (centralSyncBusy) return
+        if (centralUsername.isBlank() || centralPassword.isBlank() || centralApiBase.isBlank()) {
+            centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
+            return
+        }
+        centralSyncBusy = true
+        centralSyncMessage = null
+        scope.launch {
+            try {
+                val connection = XpCentralAddonSync.signIn(centralApiBase, centralUsername, centralPassword)
+                XpCentralConnectionStore.write(context, connection)
+                centralConnection = connection
+                centralApiBase = connection.apiBase.removeSuffix("/")
+                centralPassword = ""
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
+            } finally {
+                centralSyncBusy = false
+            }
+        }
+    }
+
+    val pendingAddonRefresh = remember { kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
     fun syncAddonsWithCentral() {
         if (centralSyncBusy) {
             centralSyncAgain = true
@@ -1319,69 +1387,61 @@ fun StremioCatalogScreen(
             centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_required)
             return
         }
-        if (centralConnection == null && (centralUsername.isBlank() || centralPassword.isBlank() || centralApiBase.isBlank())) {
-            centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-            return
-        }
         val localProfileId = favoritesProfileId
         val localProfileName = activeProfileName
-        val childProfile = activeProfile?.isKids == true
-        val localAddons = installedAddons.filterNot { it.builtIn }.map { addon ->
-            XpCentralAddon(
-                addon.url,
-                addon.name,
-                JSONObject().put("id", addon.id).put("name", addon.name).put("version", addon.version)
-                    .put("description", addon.description).put("types", JSONArray(addon.types)),
-            )
-        }
+        val connection = centralConnection ?: return
         centralSyncBusy = true
         centralSyncMessage = null
         scope.launch {
-            runCatching {
-                val connection = centralConnection ?: XpCentralAddonSync.signIn(
-                    centralApiBase, centralUsername, centralPassword,
-                ).also {
-                    XpCentralConnectionStore.write(context, it)
-                    centralConnection = it
-                    centralApiBase = it.apiBase.removeSuffix("/")
-                    centralPassword = ""
+            try {
+                val requestedProfile = catalogueProfile
+                do {
+                    centralSyncAgain = false
+                    addonSyncLock.withLock {
+                        val assignments = XpCentralAddonSync.syncProfile(context, connection, localProfileId)
+                        val urls = assignments.mapNotNull { XpAddonProtocol.manifestAddress(it.url) }
+                            .distinct().filterNot { it == builtInUrl }
+                        val disabled = assignments.filterNot { it.enabled }
+                            .mapNotNull { XpAddonProtocol.manifestAddress(it.url) }.toSet()
+                        if (currentCatalogueProfile == requestedProfile) {
+                            if (centralDisabledAddonUrls != disabled) {
+                                XpAddonStore.write(context, disabled.toList(), localProfileId, "_central_disabled")
+                                centralDisabledAddonUrls = disabled
+                            }
+                            if (providerUrls != urls) {
+                                XpAddonStore.write(context, urls, localProfileId)
+                                providerUrls = urls
+                                addons.removeAll { !it.builtIn && it.url !in urls }
+                            }
+                            centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_saved, localProfileName)
+                        }
+                    }
+                } while (centralSyncAgain && currentCatalogueProfile == requestedProfile)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (currentCatalogueProfile == catalogueProfile) {
+                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
                 }
-                XpCentralAddonSync.syncProfile(
-                    context, connection, localProfileId, localProfileName, childProfile, localAddons,
-                )
-            }.onSuccess { mergedUrls ->
-                // Central is authoritative on refresh: do not restore a disabled/removed
-                // add-on from the previous device cache (e.g. Comet).
-                val allUrls = mergedUrls.distinct().filterNot { it == builtInUrl }
-                val removedUrls = XpAddonStore.read(context, localProfileId) - allUrls.toSet()
-                XpAddonStore.write(context, allUrls, localProfileId)
-                if (catalogueProfileKey(centralConnection, localProfileId) == catalogueProfile) {
-                    providerUrls = allUrls
-                    val currentAddresses = allUrls.mapNotNull(XpAddonProtocol::manifestAddress).toSet()
-                    addons.removeAll { !it.builtIn && it.url !in currentAddresses }
-                    removedUrls.mapNotNull(XpAddonProtocol::manifestAddress)
-                        .filterNot { it == builtInUrl || it in currentAddresses }
-                        .forEach { repository.invalidate(catalogueProfile, it) }
+            } finally {
+                centralSyncBusy = false
+                if (centralSyncAgain && currentCatalogueProfile != catalogueProfile) {
+                    centralSyncAgain = false
+                    pendingAddonRefresh.tryEmit(Unit)
                 }
-                centralSyncMessage = context.getString(R.string.moviotv_xp_central_profile_saved, localProfileName)
-            }.onFailure {
-                // Local encrypted URL list stays intact and will be retried at next sync.
-                xpDebug("Central add-on synchronization failed")
-                centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed)
-            }
-            centralSyncBusy = false
-            if (centralSyncAgain) {
-                centralSyncAgain = false
-                syncAddonsWithCentral()
             }
         }
     }
 
-    // A Central login/profile can be restored before the user opens Add-ons. Pull its account/profile
-    // add-ons as soon as this catalogue screen is ready, then keep the regular data sync separate.
-    LaunchedEffect(centralConnection, favoritesProfileId, activeProfileName, activeProfile?.isKids) {
-        if (centralConnection != null && favoritesProfileId > 0L && activeProfileName.isNotBlank()) {
-            syncAddonsWithCentral()
+    val latestAddonSync by rememberUpdatedState { syncAddonsWithCentral() }
+    LaunchedEffect(pendingAddonRefresh) { pendingAddonRefresh.collect { latestAddonSync() } }
+    LaunchedEffect(lifecycle, centralConnection, catalogueProfile, activeProfileName) {
+        if (centralConnection == null || favoritesProfileId <= 0L || activeProfileName.isBlank()) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                latestAddonSync()
+                delay(90_000L)
+            }
         }
     }
 
@@ -1436,14 +1496,14 @@ fun StremioCatalogScreen(
                         centralConnection?.let { conn ->
                             centralSyncMessage = context.getString(R.string.moviotv_xp_central_saving_profile)
                             runCatching {
-                                XpCentralAddonSync.installForProfile(
+                                addonSyncLock.withLock { XpCentralAddonSync.installForProfile(
                                     context, conn, favoritesProfileId,
                                     XpCentralAddon(addon.url, addon.name,
                                         JSONObject().put("id", addon.id).put("name", addon.name)
                                             .put("version", addon.version).put("description", addon.description)
                                             .put("types", JSONArray(addon.types))),
-                                )
-                            }.onSuccess { syncAddonsWithCentral() }
+                                ) }
+                            }.onSuccess { pendingAddonRefresh.tryEmit(Unit) }
                                 .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
                         }
                     }
@@ -1467,12 +1527,33 @@ fun StremioCatalogScreen(
         }
     }
     LaunchedEffect(showAddonRemote) {
-        if (!showAddonRemote) addonRemoteServer.close()
+        if (showAddonRemote) addonRemoteServer.start() else addonRemoteServer.close()
+    }
+
+    fun moveAddon(addon: XpAddon, offset: Int) {
+        val index = moveableAddons.indexOf(addon.url)
+        val target = index + offset
+        if (index < 0 || target !in moveableAddons.indices) return
+        val order = moveableAddons.toMutableList()
+        java.util.Collections.swap(order, index, target)
+        localAddonOrder = order
+        XpAddonStore.write(context, order, favoritesProfileId, "_order")
+        if (centralConnection != null) syncAddonsWithCentral()
+    }
+
+    fun toggleAddon(addon: XpAddon) {
+        disabledAddonUrls = if (addon.url in disabledAddonUrls) disabledAddonUrls - addon.url else disabledAddonUrls + addon.url
+        XpAddonStore.write(context, disabledAddonUrls.toList(), favoritesProfileId, "_disabled")
+        if (centralConnection != null) syncAddonsWithCentral()
     }
 
     fun removeAddon(addon: XpAddon) {
         if (addon.builtIn) return
         addons.remove(addon)
+        disabledAddonUrls = disabledAddonUrls - addon.url
+        localAddonOrder = localAddonOrder - addon.url
+        XpAddonStore.write(context, disabledAddonUrls.toList(), favoritesProfileId, "_disabled")
+        XpAddonStore.write(context, localAddonOrder, favoritesProfileId, "_order")
         val matchingUrls = providerUrls.filter { XpAddonProtocol.manifestAddress(it) == addon.url }
         providerUrls = providerUrls - matchingUrls.toSet()
         XpAddonStore.write(context, providerUrls, favoritesProfileId)
@@ -1480,8 +1561,10 @@ fun StremioCatalogScreen(
         centralConnection?.let { connection ->
             scope.launch {
                 runCatching {
-                    for (url in matchingUrls) XpCentralAddonSync.unlinkForProfile(context, connection, favoritesProfileId, url)
-                }.onSuccess { syncAddonsWithCentral() }
+                    addonSyncLock.withLock {
+                        for (url in matchingUrls) XpCentralAddonSync.unlinkForProfile(context, connection, favoritesProfileId, url)
+                    }
+                }.onSuccess { pendingAddonRefresh.tryEmit(Unit) }
                     .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
             }
         }
@@ -1568,7 +1651,9 @@ fun StremioCatalogScreen(
                 ?.optJSONObject("meta")?.let(XpDetailMetadata::parse)
         }
     }
-    LaunchedEffect(selected?.id, selected?.type, selectedEpisode?.id, installedAddons.map { it.url }) {
+    LaunchedEffect(selected?.id, selected?.type, selectedEpisode?.id, playbackActive,
+        installedAddons.map { it.url }.takeUnless { playbackActive }) {
+        if (playbackActive) return@LaunchedEffect
         val item = selected ?: return@LaunchedEffect
         val episode = selectedEpisode
         autoStartedItem = null
@@ -1605,7 +1690,7 @@ fun StremioCatalogScreen(
         }
         val streamIds = if (episode == null) XpPlaybackIdentity.ids(item, resolved) else
             listOfNotNull(episode.id, XpPlaybackIdentity.tmdbId(item)?.let(episode::forAlias))
-        val providers = installedAddons.distinctBy { it.url }.mapNotNull { addon ->
+        val providers = installedAddons.sortedBy { it.builtIn }.distinctBy { it.url }.mapNotNull { addon ->
             val ids = streamIds.filter { id -> addon.resources.any { it.supports(item.type, id) } }
             if (ids.isEmpty()) null else addon to ids
         }
@@ -1816,8 +1901,7 @@ fun StremioCatalogScreen(
                         page = "addons"
                         adding = true
                         showAddonRemote = true
-                        addonRemoteServer.start()
-                    } else {
+                        } else {
                         page = "addons"
                         adding = false
                     }
@@ -1932,7 +2016,7 @@ fun StremioCatalogScreen(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             }
-            if (page == "addons" && adding) {
+            if (page == "addons" && adding && !showAddonRemote) {
                 XpQa5Dialog(stringResource(R.string.moviotv_xp_addon_manifest_title),
                     stringResource(R.string.movioxp_close), { adding = false; notice = null }) {
                     Text(stringResource(R.string.moviotv_xp_addon_paste_help),
@@ -1970,7 +2054,6 @@ fun StremioCatalogScreen(
                         if (!compactPhone) {
                             XpDialogButton(stringResource(R.string.moviotv_xp_remote_enter_on_phone), OwnTVIcon.PHONE) {
                                 showAddonRemote = true
-                                addonRemoteServer.start()
                             }
                         }
                     }
@@ -2047,7 +2130,7 @@ fun StremioCatalogScreen(
                     Spacer(Modifier.height(10.dp))
                     val installed = addonCategory == "installed"
                     val addonEntries = if (installed) {
-                        installedAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
+                        (listOfNotNull(addonsByUrl[builtInUrl]) + managedAddons).filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
                     } else {
                         directoryAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }
                     }
@@ -2071,7 +2154,7 @@ fun StremioCatalogScreen(
                                     )
                                 }
                             } else if (installed) {
-                                items(installedAddons.filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "installed:${it.url}" }) { addon ->
+                                items((listOfNotNull(addonsByUrl[builtInUrl]) + managedAddons).filter { it.name.contains(addonFilter, true) || it.description.contains(addonFilter, true) }, key = { "installed:${it.url}" }) { addon ->
                                     XpAddonInfoCard(
                                         name = addon.name,
                                         version = addon.version,
@@ -2080,6 +2163,16 @@ fun StremioCatalogScreen(
                                         logo = addon.logo,
                                         action = stringResource(if (addon.builtIn) R.string.moviotv_xp_addon_builtin else R.string.moviotv_xp_remove),
                                         disabled = addon.builtIn || busy,
+                                        controls = if (addon.builtIn) null else {
+                                            {
+                                                XpAddonPriorityControls(
+                                                    moveableAddons.indexOf(addon.url), moveableAddons.lastIndex,
+                                                    addon.url !in disabledAddonUrls && addon.url !in centralDisabledAddonUrls,
+                                                    busy, { moveAddon(addon, -1) }, { moveAddon(addon, 1) },
+                                                    { toggleAddon(addon) }.takeUnless { addon.url in centralDisabledAddonUrls },
+                                                )
+                                            }
+                                        },
                                     ) { removeAddon(addon) }
                                 }
                             } else {
@@ -2114,52 +2207,32 @@ fun StremioCatalogScreen(
                     if (centralConnection == null) {
                         XpCentralField(value = centralUsername, label = stringResource(R.string.moviotv_xp_central_username_label), onValueChange = { centralUsername = it })
                         XpCentralField(value = centralPassword, label = stringResource(R.string.moviotv_xp_central_password_label), onValueChange = { centralPassword = it }, password = true)
-                        XpAction(stringResource(R.string.moviotv_xp_central_login), centralSyncBusy) {
-                            if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-                            } else {
-                                centralSyncBusy = true
-                                centralSyncMessage = null
-                                scope.launch {
-                                    runCatching { XpCentralAddonSync.signIn(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess {
-                                            XpCentralConnectionStore.write(context, it)
-                                            centralConnection = it
-                                            centralApiBase = it.apiBase.removeSuffix("/")
-                                            centralPassword = ""
-                                            centralSyncMessage = null
-                                            centralSyncBusy = false
-                                        }
-                                        .onFailure {
-                                            centralSyncMessage = it.message ?: context.getString(R.string.moviotv_xp_central_sync_failed)
-                                            centralSyncBusy = false
-                                        }
-                                }
-                            }
-                        }
+                        XpAction(stringResource(R.string.moviotv_xp_central_login), centralSyncBusy, onClick = ::signInCentral)
                         Text(stringResource(R.string.movioxp_login_or), color = XpMuted)
                         XpDialogButton(stringResource(R.string.movioxp_mobile_login), OwnTVIcon.PHONE,
                             enabled = !centralSyncBusy) { centralMobileLogin = true }
-                        XpAction(stringResource(R.string.moviotv_xp_central_register), centralSyncBusy) {
-                            if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
-                            } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
-                                centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
-                            } else {
-                                centralSyncBusy = true
-                                centralSyncMessage = null
-                                scope.launch {
-                                    runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
-                                        .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
-                                        .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
-                                    centralSyncBusy = false
+                        if (!BuildConfig.MOVIOXP_RELEASE) {
+                            XpAction(stringResource(R.string.moviotv_xp_central_register), centralSyncBusy) {
+                                if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
+                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
+                                } else if (centralUsername.trim().length < 3 || centralPassword.length < 12) {
+                                    centralSyncMessage = context.getString(R.string.moviotv_xp_central_register_requirements)
+                                } else {
+                                    centralSyncBusy = true
+                                    centralSyncMessage = null
+                                    scope.launch {
+                                        runCatching { XpCentralAddonSync.register(centralApiBase, centralUsername, centralPassword) }
+                                            .onSuccess { centralSyncMessage = it.ifBlank { context.getString(R.string.moviotv_xp_central_registration_complete) } }
+                                            .onFailure { centralSyncMessage = context.getString(R.string.moviotv_xp_central_sync_failed) }
+                                        centralSyncBusy = false
+                                    }
                                 }
                             }
+                            Text(
+                                stringResource(R.string.moviotv_xp_central_registration_help),
+                                color = XpMuted, fontSize = 14.sp,
+                            )
                         }
-                        Text(
-                            stringResource(R.string.moviotv_xp_central_registration_help),
-                            color = XpMuted, fontSize = 14.sp,
-                        )
                     } else {
                         Text(stringResource(R.string.movioxp_account_name, centralConnection?.username.orEmpty()), color = XpAccent, fontSize = 17.sp)
                         XpAction(stringResource(R.string.moviotv_xp_central_sync_now), centralSyncBusy) { syncAddonsWithCentral() }
@@ -2280,6 +2353,18 @@ fun StremioCatalogScreen(
                             onOpenSettingsGroup?.invoke(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
                                 ?: onOpenAppSettings?.invoke()
                         })
+                        XpSettingsFieldLabel(stringResource(R.string.movioxp_home_card_size))
+                        listOf(
+                            0.8f to R.string.movioxp_home_card_small,
+                            1f to R.string.movioxp_home_card_medium,
+                            1.25f to R.string.movioxp_home_card_large,
+                        ).forEach { (size, label) ->
+                            XpSettingsOption(stringResource(label), selected = homeScale == size) {
+                                homeScale = size
+                                libraryPrefs.edit().putFloat(homeZoomKey, size).apply()
+                                XpCentralDataSync.markSetting(context, favoritesProfileId, homeZoomKey, size)
+                            }
+                        }
                         XpSettingsOption(stringResource(R.string.movioxp_show_rating), selected = showRating) {
                             showRating = !showRating
                             displayPrefs.edit().putBoolean(ratingKey, showRating).apply()
@@ -2366,9 +2451,13 @@ fun StremioCatalogScreen(
                             title = stringResource(if (centralConnection == null)
                                 R.string.moviotv_xp_central_connect_sync else R.string.moviotv_xp_central_sync_now),
                             enabled = !centralSyncBusy,
-                        ) { syncAddonsWithCentral() }
+                        ) { if (centralConnection == null) signInCentral() else syncAddonsWithCentral() }
                         if (centralConnection == null) {
-                            XpSettingsOption(stringResource(R.string.moviotv_xp_central_register),
+                            if (BuildConfig.MOVIOXP_RELEASE) {
+                                XpSettingsOption(stringResource(R.string.movioxp_mobile_login), enabled = !centralSyncBusy) {
+                                    centralMobileLogin = true
+                                }
+                            } else XpSettingsOption(stringResource(R.string.moviotv_xp_central_register),
                                 enabled = !centralSyncBusy) {
                                 if (centralApiBase.isBlank() || centralUsername.isBlank() || centralPassword.isBlank()) {
                                     centralSyncMessage = context.getString(R.string.moviotv_xp_central_details_required)
@@ -2428,7 +2517,30 @@ fun StremioCatalogScreen(
                 }
             } else if (page == "library" || page == "discover") {
                 val library = page == "library"
-                val category = if (library) libraryCategory else discoverCategory
+                val liveLabel = stringResource(R.string.moviotv_nav_live_tv)
+                val liveSources = buildMap<String, Pair<XpDiscoverSource, String>> {
+                    for (row in liveRows) {
+                        val id = "live:" + externalRowId(row)
+                        val label = context.getString(R.string.movioxp_live_catalogue_label, row.catalog.name, row.addon.name)
+                        put(id, XpDiscoverSource(id, row) to label)
+                        for ((field, values) in row.catalog.extraFields) {
+                            if (field.equals("skip", true) || field == row.catalog.searchParameter) continue
+                            for ((index, value) in values.distinct().withIndex()) {
+                                val filterId = "$id:$field:$index"
+                                put(filterId, XpDiscoverSource(filterId, row, mapOf(field to value)) to context.getString(R.string.movioxp_live_catalogue_label, value, label))
+                            }
+                        }
+                    }
+                }
+                val category = if (library) libraryCategory else discoverCategory.let {
+                    if (it.startsWith("live:") && it !in liveSources) "live" else it
+                }
+                val liveCategory = !library && (category == "live" || category in liveSources)
+                val selectedLiveSources = when {
+                    !liveCategory -> emptyList()
+                    category == "live" -> liveSources.values.map { it.first }.filter { it.parameters.isEmpty() }
+                    else -> listOfNotNull(liveSources[category]?.first)
+                }
                 val personalOptions = listOf(
                     XpBrowseCategory("favorites", stringResource(R.string.content_category_favorites)),
                     XpBrowseCategory("history", stringResource(R.string.movioxp_history)),
@@ -2439,7 +2551,8 @@ fun StremioCatalogScreen(
                 ) else personalOptions + listOf(
                     XpBrowseCategory("movies", stringResource(R.string.moviotv_xp_all_movies)),
                     XpBrowseCategory("series", stringResource(R.string.moviotv_xp_all_series)),
-                ) + listOf("xp_trending", "xp_latest", "xp_cinema", "xp_upcoming", "xp_bollywood").mapNotNull { id ->
+                    XpBrowseCategory("live", liveLabel),
+                ) + liveSources.map { (id, source) -> XpBrowseCategory(id, source.second, liveLabel) } + listOf("xp_trending", "xp_latest", "xp_cinema", "xp_upcoming", "xp_bollywood").mapNotNull { id ->
                     XpHomeConfig.categories.firstOrNull { it.id == id }?.let { XpBrowseCategory(id, stringResource(it.labelRes)) }
                 } + listOf("xp_horror", "xp_action", "xp_thriller").mapNotNull { id ->
                     XpHomeConfig.categories.firstOrNull { it.id == id }?.let {
@@ -2479,8 +2592,30 @@ fun StremioCatalogScreen(
                     var pageFailed by remember { mutableStateOf(false) }
                     var reload by remember { mutableLongStateOf(0L) }
                     var pageOneRefresh by remember { mutableLongStateOf(0L) }
-                    LaunchedEffect(source, centralConnection, centralCategory, loadPage, refreshCatalogues, reload) {
-                        if (firstPage != null) return@LaunchedEffect
+                    val liveTitles = remember(catalogueProfile, selectedLiveSources) {
+                        mutableStateMapOf<XpDiscoverSource, List<XpMeta>>()
+                    }
+                    LaunchedEffect(catalogueProfile, selectedLiveSources, refreshCatalogues, reload) {
+                        if (selectedLiveSources.isEmpty()) return@LaunchedEffect
+                        pageLoading = true
+                        pageFailed = false
+                        try {
+                            val completed = selectedLiveSources.map { liveSource ->
+                                async {
+                                    XpAddonProtocol.observeCatalog(repository, catalogueProfile, liveSource.row,
+                                        liveSource.parameters, maxOf(refreshCatalogues, reload)).collect { titles ->
+                                        if (titles != null) liveTitles[liveSource] = titles
+                                    }
+                                    liveSource in liveTitles
+                                }
+                            }.awaitAll()
+                            pageFailed = completed.none { it }
+                        } finally {
+                            pageLoading = false
+                        }
+                    }
+                    LaunchedEffect(source, centralConnection, centralCategory, loadPage, refreshCatalogues, reload, liveCategory) {
+                        if (firstPage != null || liveCategory) return@LaunchedEffect
                         val refresh = maxOf(refreshCatalogues, reload)
                         pageLoading = true
                         pageFailed = false
@@ -2534,7 +2669,10 @@ fun StremioCatalogScreen(
                         }
                     }
                     val loadedPages = pages.toMap()
-                    val gridTitles = remember(firstPage, loadedPages, sortMode, category) {
+                    val gridTitles = if (liveCategory) {
+                        sortedTitles(selectedLiveSources.flatMap { liveTitles[it].orEmpty() }
+                            .distinctBy { it.type to it.id }, category)
+                    } else remember(firstPage, loadedPages, sortMode, category) {
                         val titles = firstPage ?: XpCataloguePaging.unique(
                             loadedPages.toSortedMap().values.flatMap { it.titles },
                         ) { it }.take(XpCataloguePaging.MAX_TITLES)
@@ -2557,6 +2695,8 @@ fun StremioCatalogScreen(
                         scale = if (library) libraryScale else discoverScale,
                         loading = pageLoading,
                         failed = pageFailed,
+                        landscape = liveCategory,
+                        emptyLabel = if (liveCategory && liveRows.isEmpty()) R.string.movioxp_live_no_addons else null,
                         canLoadMore = firstPage == null && pages[loadPage]?.next != null,
                         onLoadMore = {
                             val next = pages[loadPage]?.next
@@ -2664,7 +2804,7 @@ fun StremioCatalogScreen(
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     items(titles, key = { "continue:${it.type}:${it.id}" }) { title ->
-                                        HomeCataloguePoster(title, "xp-continue-watching", 142.dp * homeScale, returnHomePoster,
+                                        HomeCataloguePoster(title, "xp-continue-watching", homePosterWidth, returnHomePoster,
                                             onFocused = ::trackHomePoster,
                                             onLongClick = { openDetails(title, false) },
                                             onVeryLongClick = { openDetails(title, true) }) { openItem(title, resume = true) }
@@ -2710,7 +2850,7 @@ fun StremioCatalogScreen(
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             ) {
                                                 items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                                    HomeCataloguePoster(item, id, 142.dp * homeScale,
+                                                    HomeCataloguePoster(item, id, homePosterWidth,
                                                         returnHomePoster.takeIf { page == "home" },
                                                         onFocused = { if (page == "home") trackHomePoster(it) },
                                                         onLongClick = { openDetails(item, false) },
@@ -2734,7 +2874,7 @@ fun StremioCatalogScreen(
                         val titles = sortedTitles(metas[key to row].orEmpty())
                         Column {
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 4.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(row.catalog.name, color = XpText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -2750,11 +2890,11 @@ fun StremioCatalogScreen(
                             } else {
                                 LazyRow(
                                     state = rememberHomeCatalogueRowState(key, titles, returnHomePoster.takeIf { page == "home" }),
-                                    contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
+                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(titles, key = { "${it.type}:${it.id}" }) { item ->
-                                        HomeCataloguePoster(item, key, 142.dp * homeScale,
+                                        HomeCataloguePoster(item, key, homePosterWidth,
                                             returnHomePoster.takeIf { page == "home" },
                                             onFocused = { if (page == "home") trackHomePoster(it) },
                                             onLongClick = { openDetails(item, false) },
@@ -3300,6 +3440,8 @@ private fun XpBrowseGrid(
     scale: Float,
     loading: Boolean,
     failed: Boolean,
+    landscape: Boolean = false,
+    emptyLabel: Int? = null,
     canLoadMore: Boolean,
     onLoadMore: () -> Unit,
     onRetry: () -> Unit,
@@ -3449,10 +3591,10 @@ private fun XpBrowseGrid(
                         stringResource(when {
                             loading -> R.string.moviotv_xp_loading_catalogue
                             failed -> R.string.moviotv_xp_catalogue_load_failed
-                            else -> R.string.moviotv_xp_no_titles
+                            else -> emptyLabel ?: R.string.moviotv_xp_no_titles
                         }), color = XpMuted, modifier = Modifier.align(Alignment.Center),
                     )
-                    val columns = (maxWidth.value / (132f * scale + 8f)).toInt()
+                    val columns = (maxWidth.value / ((if (landscape) 158f else 132f) * scale + 8f)).toInt()
                         .coerceIn(if (maxWidth >= 250.dp) 2 else 1, 12)
                     val width = (maxWidth - 8.dp * (columns - 1)) / columns
                     LazyVerticalGrid(
@@ -3473,6 +3615,7 @@ private fun XpBrowseGrid(
                                     onLongClick = { onDetails(item, false) },
                                     onVeryLongClick = { onDetails(item, true) },
                                     initialRequester = gridFocus.takeIf { index == state.firstVisibleItemIndex },
+                                    landscape = landscape,
                                 ) { onOpen(item) }
                             }
                         }
@@ -3646,6 +3789,7 @@ private fun HomeCataloguePoster(
     onLongClick: () -> Unit,
     onVeryLongClick: () -> Unit,
     initialRequester: FocusRequester? = null,
+    landscape: Boolean = false,
     onClick: () -> Unit,
 ) {
     val posterKey = homePosterKey(row, item)
@@ -3658,7 +3802,7 @@ private fun HomeCataloguePoster(
         }
     }
     XpPoster(item, width, requester, onLongClick, onVeryLongClick,
-        onFocused = { onFocused(posterKey) }, onClick = onClick)
+        onFocused = { onFocused(posterKey) }, landscape = landscape, onClick = onClick)
 }
 
 @Composable
@@ -3669,6 +3813,7 @@ private fun XpPoster(
     onLongClick: () -> Unit = {},
     onVeryLongClick: () -> Unit = {},
     onFocused: (() -> Unit)? = null,
+    landscape: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -3710,7 +3855,7 @@ private fun XpPoster(
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(
-            Modifier.size(width, width * 1.46f).clip(RoundedCornerShape(12.dp))
+            Modifier.fillMaxWidth().height(width * (if (landscape) 0.68f else 1.46f)).clip(RoundedCornerShape(12.dp))
                 .background(if (focused) XpAccent.copy(alpha = .24f) else XpPanel),
         ) {
             item.poster?.let {
@@ -3719,9 +3864,13 @@ private fun XpPoster(
                     coil3.request.ImageRequest.Builder(context).data(it)
                         .diskCachePolicy(coil3.request.CachePolicy.ENABLED).build()
                 }
-                AsyncImage(model = request, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                AsyncImage(model = request, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = if (landscape || item.type.isLiveCatalogueType()) ContentScale.Fit else ContentScale.Crop)
             }
-            XpPosterBadges(item)
+            if (!landscape) XpPosterBadges(item)
+            else if (item.liveNow) {
+                Text(stringResource(R.string.movioxp_live_now), color = Color.White, fontSize = 11.sp,
+                    modifier = Modifier.align(Alignment.BottomStart).background(Color.Black).padding(4.dp))
+            }
             if (item.durationMs > 0L && item.positionMs > 0L) {
                 Box(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp)
@@ -3735,7 +3884,35 @@ private fun XpPoster(
             }
         }
         Text(item.name, color = if (focused) XpFocus else XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
+            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (landscape && item.eventTime != null) {
+            Text(item.eventTime, color = XpMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun XpAddonPriorityControls(
+    index: Int,
+    lastIndex: Int,
+    enabled: Boolean,
+    busy: Boolean,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
+    onToggle: (() -> Unit)?,
+) {
+    Text(
+        stringResource(R.string.movioxp_addon_priority, index + 1,
+            stringResource(if (enabled) R.string.movioxp_addon_enabled else R.string.movioxp_addon_disabled)),
+        color = XpMuted,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        XpAction(stringResource(R.string.movioxp_addon_up), busy || index <= 0, compact = true, onClick = onUp)
+        XpAction(stringResource(R.string.movioxp_addon_down), busy || index >= lastIndex, compact = true, onClick = onDown)
+    }
+    if (onToggle != null) {
+        XpAction(stringResource(if (enabled) R.string.movioxp_addon_disable else R.string.movioxp_addon_enable),
+            busy, compact = true, onClick = onToggle)
     }
 }
 
@@ -3748,6 +3925,7 @@ private fun XpAddonInfoCard(
     logo: String?,
     action: String,
     disabled: Boolean,
+    controls: (@Composable () -> Unit)? = null,
     onAction: () -> Unit,
 ) {
     Column(
@@ -3766,6 +3944,7 @@ private fun XpAddonInfoCard(
             Text("v$version", color = XpMuted, fontSize = 14.sp)
         }
         if (description.isNotBlank()) Text(description, color = XpMuted, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        controls?.invoke()
         XpAction(action, disabled, onClick = onAction)
     }
 }

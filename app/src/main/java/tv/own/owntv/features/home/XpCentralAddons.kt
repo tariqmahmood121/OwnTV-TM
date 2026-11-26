@@ -35,6 +35,8 @@ internal data class XpCentralAddon(
     val manifest: JSONObject,
 )
 
+internal data class XpCentralAddonAssignment(val url: String, val enabled: Boolean)
+
 /** Stores the Central bearer token encrypted with an Android Keystore AES key. */
 internal object XpCentralConnectionStore {
     private const val PREFS = "movioxp_central_secure"
@@ -121,19 +123,22 @@ internal object XpCentralAddonSync {
         context: Context,
         connection: XpCentralConnection,
         localProfileId: Long,
-        localProfileName: String,
-        isChild: Boolean,
-        localAddons: List<XpCentralAddon>,
-    ): List<String> = withContext(Dispatchers.IO) {
-        val centralId = ensureProfile(context, connection, localProfileId, localProfileName, isChild)
+    ): List<XpCentralAddonAssignment> = withContext(Dispatchers.IO) {
+        val centralId = ensureProfile(context, connection, localProfileId, "", false)
         val remote = request(connection.apiBase, "profiles/$centralId/addons", connection.token)
             .getJSONArray("addons")
         buildList {
             for (index in 0 until remote.length()) {
-                remote.optJSONObject(index)?.optString("url")
-                    ?.takeIf(String::isNotBlank)?.let(::add)
+                val entry = remote.optJSONObject(index) ?: continue
+                val url = entry.optString("url").takeIf(String::isNotBlank) ?: continue
+                val enabled = when (val value = entry.opt("enabled")) {
+                    is Number -> value.toInt() != 0
+                    is String -> value != "0" && !value.equals("false", ignoreCase = true)
+                    else -> entry.optBoolean("enabled", true)
+                }
+                add(XpCentralAddonAssignment(url, enabled))
             }
-        }.distinct()
+        }.distinctBy { it.url }
     }
 
     /** An explicit user install is the only path that may POST a configured manifest to Central. */

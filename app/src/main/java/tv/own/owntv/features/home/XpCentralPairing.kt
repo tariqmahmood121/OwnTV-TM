@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -111,11 +111,12 @@ internal fun XpCentralPairingDialog(apiBase: String, onDismiss: () -> Unit, onCo
     val connected by rememberUpdatedState(onConnected)
     val cancelFocus = remember { FocusRequester() }
     var qr by remember { mutableStateOf<Bitmap?>(null) }
-    var status by remember { mutableStateOf(R.string.movioxp_mobile_waiting) }
+    var status by remember { mutableStateOf(R.string.movioxp_mobile_opening) }
+    var attempt by remember { mutableStateOf(0) }
     val label = stringResource(R.string.movioxp_mobile_login)
 
     XpQa5Dialog(label, stringResource(R.string.common_cancel), onDismiss) {
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
+        LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             qr?.let { bitmap ->
                 Text(stringResource(R.string.movioxp_mobile_scan), color = OwnTVTheme.colors.onSurface)
@@ -123,23 +124,30 @@ internal fun XpCentralPairingDialog(apiBase: String, onDismiss: () -> Unit, onCo
                     Image(
                         bitmap.asImageBitmap(),
                         stringResource(R.string.common_qr_code_companion_url),
-                        Modifier.sizeIn(maxWidth = 224.dp, maxHeight = 224.dp)
+                        Modifier.size(224.dp)
                             .background(Color.White).padding(8.dp),
                     )
                 }
             }
             Text(stringResource(status), color = OwnTVTheme.colors.onSurface)
         }
-        XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
-            requester = cancelFocus, onClick = onDismiss)
+        XpDialogActions {
+            XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
+                requester = cancelFocus, onClick = onDismiss)
+            if (status == R.string.movioxp_mobile_unavailable || status == R.string.movioxp_mobile_expired) {
+                XpDialogButton(stringResource(R.string.movioxp_mobile_retry), OwnTVIcon.CHEVRON) { attempt++ }
+            }
+        }
     }
-    LaunchedEffect(apiBase) {
+    LaunchedEffect(apiBase, attempt) {
+        status = R.string.movioxp_mobile_opening
         var pairing: CentralPairing? = null
         try {
             val session = CentralPairing(apiBase)
             pairing = session
             val started = SystemClock.elapsedRealtime()
             qr = checkNotNull(withContext(Dispatchers.IO) { CompanionLink.renderQr(session.start()) })
+            status = R.string.movioxp_mobile_waiting
             while (SystemClock.elapsedRealtime() - started < 180_000L) {
                 delay(2_500L)
                 val connection = withContext(Dispatchers.IO) { session.claim() } ?: continue

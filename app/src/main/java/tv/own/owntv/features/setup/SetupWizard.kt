@@ -186,16 +186,16 @@ fun Onboarding(firstRun: Boolean, onDone: (Long?) -> Unit, onCancel: () -> Unit,
                 next = null,
             ) {
                 WizardCards(
-                    listOf(
+                    listOfNotNull(
                         WizardCard(OwnTVIcon.PERSON, stringResource(R.string.moviotv_xp_central_login), stringResource(R.string.moviotv_xp_central_login_line)) { centralRegistering = false; step = Step.CENTRAL_ACCOUNT },
-                        WizardCard(OwnTVIcon.SPARKLE, stringResource(R.string.moviotv_xp_central_register), stringResource(R.string.moviotv_xp_central_register_line)) { centralRegistering = true; step = Step.CENTRAL_ACCOUNT },
+                        if (!BuildConfig.MOVIOXP_RELEASE) WizardCard(OwnTVIcon.SPARKLE, stringResource(R.string.moviotv_xp_central_register), stringResource(R.string.moviotv_xp_central_register_line)) { centralRegistering = true; step = Step.CENTRAL_ACCOUNT } else null,
                         WizardCard(OwnTVIcon.PLAY, stringResource(R.string.moviotv_xp_guest), stringResource(R.string.moviotv_xp_guest_line)) { step = Step.WELCOME },
                     ),
                     rememberFirstFocus(),
                 )
             }
             Step.CENTRAL_ACCOUNT -> CentralAccountStep(
-                registering = centralRegistering,
+                registering = centralRegistering && !BuildConfig.MOVIOXP_RELEASE,
                 onBack = { step = Step.CENTRAL_GATE },
                 onConnected = { step = Step.CENTRAL_PROFILES },
             )
