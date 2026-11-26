@@ -105,6 +105,42 @@ fun MovioTouchBottomNav(
 }
 
 @Composable
+internal fun rememberXpSearchInput(television: Boolean, onFocus: (Boolean) -> Unit): Pair<Boolean, Modifier> {
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    var editing by remember(television) { mutableStateOf(!television) }
+    var focused by remember { mutableStateOf(false) }
+    val changed by androidx.compose.runtime.rememberUpdatedState(onFocus)
+    androidx.compose.runtime.LaunchedEffect(focused, television) {
+        if (television && focused) {
+            kotlinx.coroutines.delay(1_000)
+            editing = true
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(editing, focused) {
+        if (television && editing && focused) {
+            androidx.compose.runtime.withFrameNanos { }
+            keyboard?.show()
+        }
+    }
+    val modifier = Modifier.onFocusChanged {
+        if (focused != it.isFocused) {
+            focused = it.isFocused
+            if (television && !focused) editing = false
+            changed(focused)
+        }
+    }.onPreviewKeyEvent { event ->
+        if (!television || editing) return@onPreviewKeyEvent false
+        val native = event.nativeKeyEvent
+        if (native.keyCode !in setOf(android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER)) {
+            return@onPreviewKeyEvent false
+        }
+        if (native.action == android.view.KeyEvent.ACTION_UP) editing = true
+        true
+    }
+    return !editing to modifier
+}
+
+@Composable
 internal fun MovioTouchSearch(
     value: String,
     onChange: (String) -> Unit,
@@ -117,6 +153,7 @@ internal fun MovioTouchSearch(
 ) {
     var focused by remember { mutableStateOf(false) }
     val pink = focused && LocalXpTvControls.current
+    val (readOnly, searchInput) = rememberXpSearchInput(LocalXpTvControls.current) { focused = it }
     Box(
         modifier = modifier.height(44.dp).clip(RoundedCornerShape(12.dp))
             .background(background).border(if (pink) 2.dp else 1.dp, if (pink) XpRemotePink else outline, RoundedCornerShape(12.dp))
@@ -125,10 +162,10 @@ internal fun MovioTouchSearch(
     ) {
         if (value.isEmpty()) Text(hint, color = if (pink) XpRemotePink else hintColor, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicTextField(
-            value = value, onValueChange = onChange,
+            value = value, onValueChange = onChange, readOnly = readOnly,
             singleLine = true, textStyle = TextStyle(color = if (pink) XpRemotePink else textColor, fontSize = 15.sp),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(purple),
-            modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+            modifier = Modifier.fillMaxWidth().then(searchInput),
         )
     }
 }
@@ -169,6 +206,7 @@ fun MovioTouchPosterBrowser(
     itemCount: Int,
     gridState: LazyGridState,
     categoryFocusRequester: FocusRequester? = null,
+    tvPosterScale: Float? = null,
     emptyText: String,
     poster: @Composable (Int, Dp) -> Unit,
     modifier: Modifier = Modifier,
@@ -227,7 +265,7 @@ fun MovioTouchPosterBrowser(
                         }) {
                         val tvDenseGrid = maxWidth >= 1150.dp
                         val targetPosterWidth = if (tvDenseGrid) 128.dp else 150.dp
-                        val columns = ((maxWidth + 12.dp) / (targetPosterWidth * posterScale)).toInt()
+                        val columns = ((maxWidth + 12.dp) / (targetPosterWidth * (tvPosterScale ?: posterScale))).toInt()
                             .coerceIn(1, if (tvDenseGrid) 8 else 6)
                         val posterWidth = (maxWidth - 12.dp * (columns - 1) - 8.dp) / columns
                         LazyVerticalGrid(

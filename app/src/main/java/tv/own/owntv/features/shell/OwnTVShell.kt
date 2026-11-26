@@ -226,6 +226,8 @@ fun OwnTVShell(
     var xpCandidateIndex by remember { mutableStateOf(-1) }
     var xpCandidateContentKey by remember { mutableStateOf("") }
     var xpCandidateGeneration by remember { mutableStateOf(0) }
+    var xpAutoAttempt by remember { mutableStateOf(false) }
+    var xpAttemptResume by remember { mutableStateOf(0L) }
     val channelVersions = koinInject<tv.own.owntv.core.live.ChannelVersions>()
     // Docked mini-player size (% of screen width) + position, configurable in Settings and from the
     // mini-player's own controls. Read straight from settings so both entry points stay in sync.
@@ -704,11 +706,36 @@ fun OwnTVShell(
             if (candidates.isNotEmpty()) {
                 xpCandidateSources = candidates
                 xpCandidateIndex = 0
+                xpAutoAttempt = !candidates.first().userSelected
+                xpAttemptResume = resumePositionMs
                 xpCandidateContentKey = "stremio:$type:$contentId"
                 xpCandidateGeneration += 1
                 onPlayMovioXpStream(candidates.first().url, title, type, year, contentId, poster, resumePositionMs)
             }
         }
+    LaunchedEffect(xpCandidateGeneration, playerMode, activeProfileId) {
+        val generation = xpCandidateGeneration
+        val media = movioXpPlayback ?: return@LaunchedEffect
+        if (!xpAutoAttempt || playerMode == PlayerMode.NONE || media.profileId != activeProfileId) return@LaunchedEffect
+        val next = xpCandidateSources.getOrNull(xpCandidateIndex + 1) ?: return@LaunchedEffect
+        val evidence = XpPlaybackEvidence()
+        repeat(30) { sample ->
+            kotlinx.coroutines.delay(400L)
+            if (!xpAutoAttempt || generation != xpCandidateGeneration ||
+                player.currentMeta.value?.contentKey != xpCandidateContentKey) return@LaunchedEffect
+            val error = player.error.value != null
+            if (evidence.sample(player.position.value, player.isPlaying.value, player.buffering.value, error)) {
+                xpAutoAttempt = false
+                return@LaunchedEffect
+            }
+            if ((sample >= 2 && error) || sample == 29) {
+                xpCandidateIndex++
+                xpCandidateGeneration++
+                onPlayMovioXpStream(next.url, media.title, media.type, media.year, media.id, media.poster, xpAttemptResume)
+                return@LaunchedEffect
+            }
+        }
+    }
     LaunchedEffect(playerMode) {
         if (playerMode == PlayerMode.NONE) {
             xpCandidateSources = emptyList()
@@ -2098,6 +2125,7 @@ fun OwnTVShell(
                                     val current = player.position.value
                                     val position = if (player.error.value != null) maxOf(previous, current)
                                         else current.takeIf { it > 0L } ?: previous
+                                    xpAutoAttempt = false
                                     xpCandidateIndex = index
                                     xpCandidateGeneration += 1
                                     onPlayMovioXpStream(

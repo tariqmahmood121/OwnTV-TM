@@ -3,6 +3,8 @@ package tv.own.owntv.features.home
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.tv.material3.Text
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,25 +73,25 @@ internal fun XpCentralPairingDialog(apiBase: String, onDismiss: () -> Unit, onCo
         }
     }
 
-    XpQa5Dialog(stringResource(R.string.movioxp_mobile_login), stringResource(R.string.common_cancel), onDismiss) {
+    XpQa5Dialog(stringResource(R.string.movioxp_mobile_login), stringResource(R.string.common_cancel), onDismiss, width = 370.dp) {
         LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()) {
+            val qrSize = (maxHeight - 76.dp).coerceIn(72.dp, 148.dp)
             val session = state
-            if (session != null && session.failure == null) {
-                Text(stringResource(R.string.movioxp_mobile_scan), color = OwnTVTheme.colors.onSurface)
-                Text(stringResource(R.string.movioxp_mobile_trusted_network), color = OwnTVTheme.colors.onSurface)
-                session.qr?.let { bitmap ->
-                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (session != null && session.failure == null) {
+                    session.qr?.let { bitmap ->
                         Image(bitmap.asImageBitmap(), stringResource(R.string.common_qr_code_companion_url),
-                            Modifier.size(224.dp).background(Color.White).padding(8.dp))
+                            Modifier.size(qrSize).background(Color.White).padding(5.dp))
                     }
+                    Text(stringResource(R.string.moviotv_xp_remote_tv_code, session.pin), color = XpRemotePink,
+                        fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(session.url, color = OwnTVTheme.colors.onSurface, fontSize = 13.sp, maxLines = 1)
+                } else {
+                    Text(session?.failure ?: stringResource(status), color = OwnTVTheme.colors.onSurface)
                 }
-                Text(session.url, color = OwnTVTheme.colors.onSurface)
-                Text(stringResource(R.string.moviotv_xp_remote_tv_code, session.pin), color = OwnTVTheme.colors.primary)
             }
-            Text(session?.failure ?: stringResource(
-                if (session != null) R.string.movioxp_mobile_waiting else status,
-            ), color = OwnTVTheme.colors.onSurface)
         }
         XpDialogActions {
             XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
@@ -111,6 +115,22 @@ internal fun XpCentralSignOutDialog(action: Int, enabled: Boolean, onCancel: () 
                 requester = cancelFocus, onClick = onCancel)
             XpDialogButton(label, if (action == R.string.movioxp_switch_account) OwnTVIcon.SWAP else OwnTVIcon.POWER,
                 enabled = enabled, onClick = onConfirm)
+        }
+    }
+}
+
+
+@Composable
+internal fun XpResumePrompt(positionMs: Long, onCancel: () -> Unit, onSelect: (Boolean) -> Unit) {
+    val focus = remember { FocusRequester() }
+    val seconds = positionMs / 1_000
+    val time = String.format(java.util.Locale.ROOT, "%02d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
+    XpQa5Dialog(stringResource(R.string.moviotv_xp_continue_watching), stringResource(R.string.common_cancel), onCancel, width = 390.dp) {
+        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        XpDialogActions(stacked = true) {
+            XpDialogButton(stringResource(R.string.movioxp_resume_at, time), OwnTVIcon.PLAY, requester = focus, primary = true) { onSelect(false) }
+            XpDialogButton(stringResource(R.string.movioxp_restart_content), OwnTVIcon.REFRESH) { onSelect(true) }
+            XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE, onClick = onCancel)
         }
     }
 }

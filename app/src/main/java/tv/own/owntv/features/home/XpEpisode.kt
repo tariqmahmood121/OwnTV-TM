@@ -2,7 +2,10 @@ package tv.own.owntv.features.home
 
 import org.json.JSONObject
 
-internal data class XpEpisode(val id: String, val season: Int, val number: Int, val title: String?) {
+internal data class XpEpisode(
+    val id: String, val season: Int, val number: Int, val title: String?,
+    val artwork: String? = null, val synopsis: String? = null, val runtime: String? = null,
+) {
     fun forAlias(alias: String) = "$alias:$season:$number"
 
     companion object {
@@ -17,7 +20,10 @@ internal data class XpEpisode(val id: String, val season: Int, val number: Int, 
                     val id = "$seriesId:$season:$number"
                     if (entry.optString("id") != id) continue
                     val title = entry.optString("title").takeIf { !entry.isNull("title") && it.isNotBlank() }
-                    add(XpEpisode(id, season, number, title))
+                    add(XpEpisode(id, season, number, title,
+                        entry.optString("thumbnail").takeIf(String::isNotBlank),
+                        entry.optString("overview").takeIf(String::isNotBlank),
+                        entry.optString("runtime").takeIf(String::isNotBlank)))
                 }
             }.distinctBy(XpEpisode::id).sortedWith(compareBy(XpEpisode::season, XpEpisode::number))
         }

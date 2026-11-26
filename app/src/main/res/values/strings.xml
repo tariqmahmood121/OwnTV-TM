@@ -31,7 +31,7 @@
     <string name="movioxp_live_catalogue_label">%1$s · %2$s</string>
     <string name="movioxp_live_now">Live</string>
     <string name="movioxp_live_no_addons">No compatible Live TV add-ons are enabled.</string>
-    <string name="movioxp_home_card_size">Home poster size</string>
+    <string name="movioxp_home_card_size">Content Card Size</string>
     <string name="movioxp_home_card_small">Small</string>
     <string name="movioxp_home_card_medium">Medium</string>
     <string name="movioxp_home_card_large">Large</string>
@@ -168,4 +168,19 @@
     <string name="movioxp_update_checked_value">Last checked: %1$s</string>
     <string name="movioxp_update_size_mb">%1$d MB</string>
     <string name="movioxp_update_percent">%1$d%%</string>
+    <string name="movioxp_discover_sports">Sports</string>
+    <string name="movioxp_resume_at">Resume from %1$s</string>
+    <string name="movioxp_restart_content">Restart from beginning</string>
+    <string name="movioxp_play_content">Play</string>
+    <string name="movioxp_search_all_types">All content types</string>
+    <string name="movioxp_episode_in_progress">In progress</string>
+    <string name="movioxp_episode_watched">Watched</string>
+    <string name="movioxp_episode_next">Next unwatched</string>
+    <string name="movioxp_episode_state">%1$s · %2$s</string>
+    <string name="movioxp_activation_expired">Account Expired</string>
+    <string name="movioxp_activation_blocked">Account Blocked</string>
+    <string name="movioxp_activation_required">Activation Check Required</string>
+    <string name="movioxp_activation_renew">Your access to MovioXP has expired. Please contact Oak Studios to renew your access.</string>
+    <string name="movioxp_activation_contact">Please contact Oak Studios.</string>
+    <string name="movioxp_activation_check">Check activation</string>
 </resources>

@@ -13,7 +13,6 @@ import org.json.JSONObject
 internal object XpCentralDataSync {
     private const val DIRTY_PREFS = "movioxp_central_dirty"
     private const val STATE_PREFS = "movioxp_central_state"
-    private const val POSTER_PREFS = "moviotv_poster_grid_v75"
     internal const val SORT_PREFS = "xp_catalog_sort"
     private const val SORT_KEY = "catalog_sort"
     private val sortLock = Any()
@@ -187,19 +186,7 @@ internal object XpCentralDataSync {
             if (mode in 0..6) add(Record("setting", "xp:$SORT_KEY",
                 JSONObject().put("key", SORT_KEY).put("value", mode), 0))
         }
-        // Retain independent poster sizes for each authenticated profile across phone and TV.
-        val posterPrefs = context.getSharedPreferences(POSTER_PREFS, Context.MODE_PRIVATE)
-        for (page in listOf("library", "home", "discover")) {
-            val key = "xp_${page}_zoom_$profileId"
-            if (posterPrefs.contains(key)) {
-                val zoom = posterPrefs.getFloat(key, 1f)
-                if (zoom.isFinite()) {
-                    val cloudKey = "poster_zoom:$page"
-                    add(Record("setting", "xp:$cloudKey",
-                        JSONObject().put("key", cloudKey).put("value", zoom), 0))
-                }
-            }
-        }
+
     }
 
     private fun parseRecords(response: JSONObject): List<Record> {
@@ -265,13 +252,6 @@ internal object XpCentralDataSync {
                         .edit().putInt(profileId.toString(), mode).apply()
                     return
                 }
-                if (cloudKey in setOf("poster_zoom:library", "poster_zoom:home", "poster_zoom:discover")) {
-                    val zoom = (value as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return
-                    val page = cloudKey.removePrefix("poster_zoom:")
-                    context.getSharedPreferences(POSTER_PREFS, Context.MODE_PRIVATE)
-                        .edit().putFloat("xp_${page}_zoom_$profileId", zoom.coerceIn(0.65f, 1.85f)).apply()
-                    return
-                }
                 val localKey = localPreferenceKey(cloudKey, profileId) ?: return
                 val preferences = context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE)
                 if (cloudKey.startsWith("last_source:")) {
@@ -296,9 +276,6 @@ internal object XpCentralDataSync {
         key == XpHomeConfig.orderKey(profileId) -> "home:order"
         key == XpHomeConfig.hiddenKey(profileId) -> "home:hidden"
         key == XpHomeConfig.defaultsKey(profileId) -> "home:defaults"
-        key == "xp_library_zoom_$profileId" -> "poster_zoom:library"
-        key == "xp_home_zoom_$profileId" -> "poster_zoom:home"
-        key == "xp_discover_zoom_$profileId" -> "poster_zoom:discover"
         key == "xp_show_rating_$profileId" -> "poster:rating"
         key == "xp_show_year_$profileId" -> "poster:year"
         key == "auto_select_source" || key == "preferred_addon" -> key

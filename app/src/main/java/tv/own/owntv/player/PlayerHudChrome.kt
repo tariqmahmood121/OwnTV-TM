@@ -589,7 +589,25 @@ private fun VodTimeline(player: PlaybackEngine, position: () -> Long, duration: 
     val seekStep by player.seekStepMs.collectAsStateWithLifecycle() // Settings -> Seek step
     val buffered by player.bufferedMs.collectAsStateWithLifecycle()
     val pos = position()
+    var confirmRestart by remember { mutableStateOf(false) }
+    if (confirmRestart) {
+        tv.own.owntv.features.home.XpQa5Dialog(
+            stringResource(R.string.movioxp_restart_content), stringResource(R.string.common_cancel),
+            { confirmRestart = false }, width = 370.dp,
+        ) {
+            tv.own.owntv.features.home.XpDialogActions {
+                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE) { confirmRestart = false }
+                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_restart_content), OwnTVIcon.REFRESH) {
+                    player.seekBy(-position().coerceAtLeast(0L))
+                    confirmRestart = false
+                }
+            }
+        }
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (tv.own.owntv.BuildConfig.MOVIOXP_RELEASE) {
+            CtrlButton(OwnTVIcon.REFRESH, label = stringResource(R.string.movioxp_restart_content)) { confirmRestart = true }
+        }
         TimeCap(formatTime(pos), Alignment.Start)
         Spacer(Modifier.width(12.dp))
         Box(Modifier.weight(1f)) {

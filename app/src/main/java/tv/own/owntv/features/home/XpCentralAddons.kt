@@ -35,7 +35,7 @@ internal data class XpCentralAddon(
     val manifest: JSONObject,
 )
 
-internal data class XpCentralAddonAssignment(val url: String, val enabled: Boolean)
+internal data class XpCentralAddonAssignment(val url: String, val enabled: Boolean, val priority: Int?)
 
 /** Stores the Central bearer token encrypted with an Android Keystore AES key. */
 internal object XpCentralConnectionStore {
@@ -136,9 +136,11 @@ internal object XpCentralAddonSync {
                     is String -> value != "0" && !value.equals("false", ignoreCase = true)
                     else -> entry.optBoolean("enabled", true)
                 }
-                add(XpCentralAddonAssignment(url, enabled))
+                val priority = entry.optInt("sort_order", entry.optInt("priority", Int.MAX_VALUE))
+                    .takeUnless { it == Int.MAX_VALUE }
+                add(XpCentralAddonAssignment(url, enabled, priority))
             }
-        }.distinctBy { it.url }
+        }.sortedBy { it.priority ?: Int.MAX_VALUE }.distinctBy { it.url }
     }
 
     /** An explicit user install is the only path that may POST a configured manifest to Central. */
