@@ -1517,18 +1517,22 @@ fun StremioCatalogScreen(
         }
     }
 
-    DisposableEffect(addonRemoteServer) {
-        onDispose { addonRemoteServer.close() }
-    }
     LaunchedEffect(addonRemoteServer) {
-        addonRemoteServer.submissions.collect { url ->
+        addonRemoteServer.submissions.collect { submission ->
+            val addon = submission as? XpAddonRemoteServer.Submission.Addon ?: return@collect
             showAddonRemote = false
             adding = false
-            installAddon(url)
+            installAddon(addon.url)
         }
     }
     LaunchedEffect(showAddonRemote) {
-        if (showAddonRemote) addonRemoteServer.start() else addonRemoteServer.close()
+        if (!showAddonRemote) return@LaunchedEffect
+        try {
+            withContext(Dispatchers.IO) { addonRemoteServer.start() }
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            addonRemoteServer.close()
+        }
     }
 
     fun moveAddon(addon: XpAddon, offset: Int) {

@@ -345,6 +345,7 @@
 2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	xp_upcoming
 5	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	year
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	★
+4	empty	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	\0
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	"
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&#39;
@@ -353,34 +354,37 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&lt;
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	&quot;
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	'
-1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/
+2	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/
 1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/install
-1	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/unlock
+2	uri	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	/unlock
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>$title</title><style> body{margin:0;background:#100d17;color:#f7f1fb;font:18px system-ui,sans-serif;padding:24px}main{max-width:520px;margin:8vh auto;background:#1c1724;border-radius:22px;padding:28px}h1{font-size:28px;margin:0 0 16px}p{color:#c9bdd1;line-height:1.5}label{display:block;margin:24px 0 14px}input{display:block;box-sizing:border-box;width:100%;margin-top:8px;padding:15px;border-radius:12px;border:1px solid #76598d;background:#100d17;color:#fff;font-size:18px}button{width:100%;padding:15px;border:0;border-radius:14px;background:#70438e;color:#fff;font-size:18px;font-weight:700}a{color:#d5b6ed} </style></head><body><main><h1>$title</h1>$content</main></body></html>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<button>${escape(context.getString(R.string.moviotv_xp_central_login))}</button></form>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<button>${escape(context.getString(R.string.moviotv_xp_remote_add_to_tv))}</button></form>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<button>${escape(context.getString(R.string.moviotv_xp_remote_continue))}</button></form>
-1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<form method='post' action='/install'><input type='hidden' name='pin' value='${escape(code)}'>
+2	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<form method='post' action='/install'><input type='hidden' name='pin' value='${escape(code)}'>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_central_password_label))}<input name='password' type='password' autocomplete='current-password' required></label>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_central_username_label))}<input name='username' autocomplete='username' required autofocus></label>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_remote_code_label))}<input name='pin' inputmode='numeric' autocomplete='one-time-code' maxlength='6' required autofocus></label>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<label>${escape(context.getString(R.string.moviotv_xp_remote_url_label))}<input name='url' type='url' inputmode='url' placeholder='${escape(context.getString(R.string.moviotv_xp_remote_url_placeholder))}' required autofocus></label>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_add_catalogue_help))}</p>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_help))}</p><form method='post' action='/unlock'>
-1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.moviotv_xp_remote_sent_help))}</p>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(R.string.movioxp_mobile_trusted_network))}</p>
+1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(context.getString(if (credentials) R.string.movioxp_mobile_sent else R.string.moviotv_xp_remote_sent_help))}</p>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	<p>${escape(message)}</p><p><a href='/'>${escape(context.getString(R.string.moviotv_xp_remote_enter_code_again))}</a></p>
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	>
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Content-Length:
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Content-Length: ${body.size} Connection: close Cache-Control: no-store
-1	log	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Could not start add-on phone entry
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	Content-Length: ${body.size} Connection: close Cache-Control: no-store Referrer-Policy: no-referrer X-Frame-Options: DENY
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	GET
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	HTTP/1.1 200 OK Content-Type: text/html; charset=utf-8
-2	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	POST
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	POST
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	UTF-8
-1	log	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	XpAddonRemote
-7	empty	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	\0
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	http
+2	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	http
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	https
-2	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	pin
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	password
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	pin
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	url
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	username
 1	regex	app/src/main/java/tv/own/owntv/features/home/XpCatalogSort.kt	(?<!\\d)\\d{4}(?!\\d)
 1	regex	app/src/main/java/tv/own/owntv/features/home/XpCatalogSort.kt	(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogSort.kt	xp_trending
@@ -595,23 +599,6 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	xp_thriller
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	xp_trending
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralMetadata.kt	xp_upcoming
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	account_id
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	action
-1	mime	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	application/json
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	cancel
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	claim
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	connected
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	expired
-1	uri	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	index.php/
-1	uri	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	mobile-login/
-1	uri	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	pair.php
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	phone_secret
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	start
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	state
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	token
-2	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	tv_secret
-1	json	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	username
-1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCentralPairing.kt	waiting
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	central_
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	central_${account}_
 1	preference-key	app/src/main/java/tv/own/owntv/features/home/XpCentralProfileScope.kt	central_${account}_$remoteProfile

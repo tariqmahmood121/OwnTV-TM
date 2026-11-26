@@ -1,7 +1,5 @@
 package tv.own.owntv.features.home
 
-import android.graphics.Bitmap
-import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -26,142 +24,77 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import tv.own.owntv.R
-import tv.own.owntv.core.companion.CompanionLink
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.theme.OwnTVTheme
-import java.util.concurrent.TimeUnit
-
-private class CentralPairing(rawApiBase: String) {
-    private val api = XpCentralAddonSync.normalizeApiBase(rawApiBase).toHttpUrl()
-    private val mobile = api.newBuilder().encodedPath(
-        api.encodedPath.removeSuffix("index.php/") + "mobile-login/",
-    ).build()
-
-    // The TV secret stays in POST bodies and is never included in the QR URL.
-    private var tvSecret: String? = null
-
-    fun start(): String {
-        val response = post("start")
-        tvSecret = response.getString("tv_secret")
-        val phoneSecret = response.getString("phone_secret")
-        return mobile.newBuilder().fragment(phoneSecret).build().toString()
-    }
-
-    fun claim(): XpCentralConnection? {
-        val response = post("claim")
-        return when (response.getString("state")) {
-            "waiting" -> null
-            "expired" -> throw PairingExpired()
-            "connected" -> XpCentralConnection(
-                api.toString(),
-                response.getString("token").also { require(it.isNotBlank()) },
-                response.getLong("account_id").also { require(it > 0L) },
-                response.getString("username"),
-            ).also { tvSecret = null }
-            else -> throw IllegalStateException()
-        }
-    }
-
-    fun cancel() {
-        if (tvSecret != null) post("cancel")
-    }
-
-    private fun post(action: String): JSONObject {
-        val params = JSONObject().put("action", action).put("tv_secret", tvSecret)
-        val request = Request.Builder().url(mobile.resolve("pair.php")!!)
-            .post(params.toString().toRequestBody(jsonType))
-            .build()
-        return client.newCall(request).execute().use { response ->
-            check(response.isSuccessful)
-            JSONObject(checkNotNull(response.body).string())
-        }
-    }
-
-    private class PairingExpired : IllegalStateException()
-
-    companion object {
-        private val jsonType = "application/json".toMediaType()
-        private val client = OkHttpClient.Builder()
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .retryOnConnectionFailure(false)
-            .callTimeout(8, TimeUnit.SECONDS)
-            .build()
-
-        fun message(error: Exception): Int = if (error is PairingExpired) {
-            R.string.movioxp_mobile_expired
-        } else R.string.movioxp_mobile_unavailable
-    }
-}
 
 @Composable
 internal fun XpCentralPairingDialog(apiBase: String, onDismiss: () -> Unit, onConnected: (XpCentralConnection) -> Unit) {
+    val context = LocalContext.current
+    val server = remember(context) { XpAddonRemoteServer(context, credentials = true) }
+    val state by server.state.collectAsStateWithLifecycle()
     val connected by rememberUpdatedState(onConnected)
     val cancelFocus = remember { FocusRequester() }
-    var qr by remember { mutableStateOf<Bitmap?>(null) }
     var status by remember { mutableStateOf(R.string.movioxp_mobile_opening) }
     var attempt by remember { mutableStateOf(0) }
-    val label = stringResource(R.string.movioxp_mobile_login)
 
-    XpQa5Dialog(label, stringResource(R.string.common_cancel), onDismiss) {
+    LaunchedEffect(server, attempt) {
+        status = R.string.movioxp_mobile_opening
+        try {
+            withContext(Dispatchers.IO) { server.start() }
+            awaitCancellation()
+        } finally {
+            server.close()
+        }
+    }
+    LaunchedEffect(server, apiBase) {
+        server.submissions.collect { submission ->
+            val account = submission as? XpAddonRemoteServer.Submission.Account ?: return@collect
+            status = R.string.moviotv_xp_central_connecting
+            val connection = try {
+                XpCentralAddonSync.signIn(apiBase, account.username, account.password)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                status = R.string.movioxp_mobile_login_failed
+                return@collect
+            }
+            connected(connection)
+        }
+    }
+
+    XpQa5Dialog(stringResource(R.string.movioxp_mobile_login), stringResource(R.string.common_cancel), onDismiss) {
         LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-            qr?.let { bitmap ->
+            val session = state
+            if (session != null && session.failure == null) {
                 Text(stringResource(R.string.movioxp_mobile_scan), color = OwnTVTheme.colors.onSurface)
-                Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Image(
-                        bitmap.asImageBitmap(),
-                        stringResource(R.string.common_qr_code_companion_url),
-                        Modifier.size(224.dp)
-                            .background(Color.White).padding(8.dp),
-                    )
+                Text(stringResource(R.string.movioxp_mobile_trusted_network), color = OwnTVTheme.colors.onSurface)
+                session.qr?.let { bitmap ->
+                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        Image(bitmap.asImageBitmap(), stringResource(R.string.common_qr_code_companion_url),
+                            Modifier.size(224.dp).background(Color.White).padding(8.dp))
+                    }
                 }
+                Text(session.url, color = OwnTVTheme.colors.onSurface)
+                Text(stringResource(R.string.moviotv_xp_remote_tv_code, session.pin), color = OwnTVTheme.colors.primary)
             }
-            Text(stringResource(status), color = OwnTVTheme.colors.onSurface)
+            Text(session?.failure ?: stringResource(
+                if (session != null) R.string.movioxp_mobile_waiting else status,
+            ), color = OwnTVTheme.colors.onSurface)
         }
         XpDialogActions {
             XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE,
                 requester = cancelFocus, onClick = onDismiss)
-            if (status == R.string.movioxp_mobile_unavailable || status == R.string.movioxp_mobile_expired) {
+            if (state?.failure != null || status == R.string.movioxp_mobile_login_failed) {
                 XpDialogButton(stringResource(R.string.movioxp_mobile_retry), OwnTVIcon.CHEVRON) { attempt++ }
             }
-        }
-    }
-    LaunchedEffect(apiBase, attempt) {
-        status = R.string.movioxp_mobile_opening
-        var pairing: CentralPairing? = null
-        try {
-            val session = CentralPairing(apiBase)
-            pairing = session
-            val started = SystemClock.elapsedRealtime()
-            qr = checkNotNull(withContext(Dispatchers.IO) { CompanionLink.renderQr(session.start()) })
-            status = R.string.movioxp_mobile_waiting
-            while (SystemClock.elapsedRealtime() - started < 180_000L) {
-                delay(2_500L)
-                val connection = withContext(Dispatchers.IO) { session.claim() } ?: continue
-                connected(connection)
-                return@LaunchedEffect
-            }
-            status = R.string.movioxp_mobile_expired
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            status = CentralPairing.message(error)
-        } finally {
-            qr = null
-            withContext(NonCancellable + Dispatchers.IO) { runCatching { pairing?.cancel() } }
         }
     }
 }
