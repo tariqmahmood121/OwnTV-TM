@@ -266,4 +266,5 @@
     </plurals>
     <string name="movioxp_wordmark_description">MovioXP</string>
     <string name="movioxp_cinema_font_licences">Cinema Font Licences</string>
+    <string name="movioxp_cinema_metadata_separator">" · "</string>
 </resources>

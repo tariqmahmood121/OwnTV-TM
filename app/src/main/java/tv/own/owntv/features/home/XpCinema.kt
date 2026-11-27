@@ -209,11 +209,11 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
         xpReleaseYear(item)?.takeIf { showYear }, if (item.type == "series") details?.seasonCount?.let {
             androidx.compose.ui.res.pluralStringResource(R.plurals.movioxp_cinema_seasons, it, it)
         } else (details?.runtime ?: item.runtime)?.let { runtime ->
-            runtime.toIntOrNull()?.let { minutes ->
+            runtime.trim().removeSuffix(" min").trim().toIntOrNull()?.let { minutes ->
                 if (minutes >= 60) stringResource(R.string.movioxp_cinema_hours_minutes, minutes / 60, minutes % 60)
                 else stringResource(R.string.movioxp_runtime_minutes, minutes)
             } ?: runtime
-        }).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
+        }).joinToString(stringResource(R.string.movioxp_cinema_metadata_separator))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(metadata, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

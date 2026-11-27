@@ -640,6 +640,7 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	cinema-feature-content
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	cinema-profile
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	ghijkl
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	min
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	mnopqr
 2	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	series
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	stuvwx
