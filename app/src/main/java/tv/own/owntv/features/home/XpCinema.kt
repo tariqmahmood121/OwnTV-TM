@@ -3,6 +3,7 @@ package tv.own.owntv.features.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,6 +37,18 @@ import coil3.compose.AsyncImage
 import tv.own.owntv.R
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.theme.OwnTVTheme
+
+internal val XpCinemaBackground = Color(0xFF0C0C11)
+internal val XpCinemaInter = FontFamily(
+    Font(R.font.inter_variable, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.inter_variable, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.inter_variable, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.inter_variable, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.inter_variable, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
+)
+
+internal fun xpNextFeatured(index: Int, count: Int): Int =
+    if (count <= 1) 0 else ((index.coerceAtLeast(0) % count) + 1) % count
 
 internal val LocalXpCinema = staticCompositionLocalOf { false }
 internal val LocalXpCinemaDetails = staticCompositionLocalOf<suspend (XpMeta) -> XpDetailMetadata?> { { null } }
@@ -53,35 +69,43 @@ internal fun xpCinemaCertificate(raw: String?): String? =
 @Composable
 internal fun XpCinemaRail(
     profileStatus: Color,
+    profileName: String,
     selected: Int,
     focus: FocusRequester,
     onSelect: (Int) -> Unit,
     onProfile: () -> Unit,
-    onMenu: () -> Unit,
+    onSwitchProfile: (() -> Unit)?,
     onExit: () -> Unit,
 ) {
-    Column(Modifier.width(68.dp).fillMaxHeight().background(OwnTVTheme.colors.surfaceContainerLow).padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        XpCinemaRailButton(stringResource(R.string.movioxp_account_menu), OwnTVIcon.PERSON, false, onClick = onProfile) {
-            Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(8.dp).background(profileStatus, CircleShape))
-        }
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.width(if (expanded) 196.dp else 56.dp).fillMaxHeight()
+        .background(XpCinemaBackground.copy(alpha = if (expanded) .97f else 1f))
+        .onFocusChanged { expanded = it.hasFocus }.focusGroup().padding(horizontal = 5.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.Start) {
+        XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, expanded, onClick = onProfile, indicator = profileStatus)
+        if (expanded && onSwitchProfile != null) XpCinemaRailButton(stringResource(R.string.movioxp_switch_profile),
+            OwnTVIcon.SWAP, false, expanded, onClick = onSwitchProfile)
         Spacer(Modifier.weight(1f))
         val labels = listOf(R.string.moviotv_xp_nav_search, R.string.moviotv_nav_home, R.string.moviotv_xp_nav_discover,
-            R.string.moviotv_nav_series, R.string.moviotv_xp_nav_library, R.string.moviotv_xp_nav_settings)
-        val icons = listOf(OwnTVIcon.SEARCH, OwnTVIcon.HOME, OwnTVIcon.TREND, OwnTVIcon.SERIES, OwnTVIcon.FAVORITE, OwnTVIcon.GEAR)
+            R.string.moviotv_nav_series, R.string.movioxp_my_library)
+        val icons = listOf(OwnTVIcon.SEARCH, OwnTVIcon.HOME, OwnTVIcon.TREND, OwnTVIcon.SERIES, OwnTVIcon.FAVORITE)
         labels.forEachIndexed { index, label ->
-            XpCinemaRailButton(stringResource(label), icons[index], selected == index,
+            XpCinemaRailButton(stringResource(label), icons[index], selected == index, expanded,
                 modifier = if (selected == index) Modifier.focusRequester(focus) else Modifier,
                 onClick = { onSelect(index) })
         }
         Spacer(Modifier.weight(1f))
-        val logo = stringResource(R.string.movioxp_logo_menu_xp)
-        val brand = stringResource(R.string.moviotv_xp_title)
-        XpCinemaRailButton(brand, OwnTVIcon.PLAY_CIRCLE, false, onClick = onMenu) {
-            Text(logo, color = XpRemotePink, fontWeight = FontWeight.Bold, fontSize = 10.sp,
-                modifier = Modifier.align(Alignment.TopEnd).padding(end = 5.dp))
+        if (expanded) {
+            val movio = stringResource(R.string.movioxp_logo_menu_movio)
+            val xp = stringResource(R.string.movioxp_logo_menu_xp)
+            Text(androidx.compose.ui.text.buildAnnotatedString {
+                append(movio)
+                pushStyle(androidx.compose.ui.text.SpanStyle(color = XpRemotePink))
+                append(xp)
+                pop()
+            }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(9.dp, 4.dp))
         }
-        XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, onClick = onExit)
+        XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, expanded, onClick = onExit)
     }
 }
 
@@ -90,24 +114,25 @@ private fun XpCinemaRailButton(
     label: String,
     icon: OwnTVIcon,
     selected: Boolean,
+    expanded: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    decoration: @Composable BoxScope.() -> Unit = {},
+    indicator: Color? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(11.dp)
-    Box(modifier.size(55.dp, 37.dp).clip(shape)
-        .background(if (focused) OwnTVTheme.colors.surfaceContainerHighest else Color.Transparent)
-        .border(if (focused) 1.dp else 0.dp, if (focused) XpRemotePink else Color.Transparent, shape)
+    val shape = RoundedCornerShape(8.dp)
+    Row(modifier.fillMaxWidth().height(35.dp).clip(shape)
+        .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .8f) else Color.Transparent, shape)
         .semantics { contentDescription = label }.onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick),
-        contentAlignment = Alignment.Center) {
-        OwnTVIcon(icon, if (selected) XpRemotePink else OwnTVTheme.colors.onSurface,
-            Modifier.size(if (focused) 16.dp else 21.dp).align(if (focused) Alignment.TopCenter else Alignment.Center)
-                .padding(top = if (focused) 2.dp else 0.dp))
-        if (selected) Box(Modifier.align(Alignment.CenterStart).width(3.dp).height(18.dp).background(XpRemotePink, CircleShape))
-        if (focused) Text(label, color = OwnTVTheme.colors.onSurface, fontSize = 8.sp, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomCenter))
-        decoration()
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(44.dp, 35.dp), contentAlignment = Alignment.Center) {
+            OwnTVIcon(icon, if (selected) XpRemotePink else Color.White, Modifier.size(20.dp))
+            if (selected) Box(Modifier.align(Alignment.CenterStart).width(2.dp).height(16.dp).background(XpRemotePink, CircleShape))
+            if (indicator != null) Box(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 6.dp)
+                .size(6.dp).background(indicator, CircleShape))
+        }
+        if (expanded) Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -116,7 +141,7 @@ internal fun XpCinemaKeyboard(value: TextFieldValue, onEdit: (TextFieldValue) ->
     val colors = OwnTVTheme.colors
     BasicTextField(value, onEdit, singleLine = true,
         keyboardOptions = KeyboardOptions(showKeyboardOnFocus = false),
-        textStyle = TextStyle(color = colors.onSurface, fontSize = 18.sp),
+        textStyle = TextStyle(color = colors.onSurface, fontSize = 18.sp, fontFamily = XpCinemaInter),
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainerLow, RoundedCornerShape(8.dp)).padding(8.dp),
         decorationBox = { inner ->
             Box {
@@ -190,22 +215,28 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
 }
 
 @Composable
-internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onPlay: () -> Unit, onInfo: () -> Unit) {
+internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit) {
     val loadDetails = LocalXpCinemaDetails.current
-    val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = loadDetails(item) }
+    val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = null; value = loadDetails(item) }
     val colors = OwnTVTheme.colors
     val shape = RoundedCornerShape(20.dp)
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 8.dp)) {
-        val artHeight = (maxWidth * .31f).coerceIn(188.dp, 325.dp)
+    BoxWithConstraints(Modifier.fillMaxWidth().onFocusChanged { onFocus(it.hasFocus) }.focusGroup().padding(horizontal = 15.dp, vertical = 8.dp)) {
+        val artHeight = (maxWidth * .40f).coerceIn(205.dp, 385.dp)
         Box(Modifier.fillMaxWidth().heightIn(min = artHeight).clip(shape).background(colors.surfaceContainerLow)) {
             val backdrop = details?.backdrop ?: item.backdrop
-            AsyncImage(backdrop ?: item.poster, null, Modifier.matchParentSize(),
-                contentScale = if (backdrop == null) ContentScale.Fit else ContentScale.Crop, alignment = Alignment.CenterEnd)
+            androidx.compose.animation.Crossfade(backdrop to item.poster, modifier = Modifier.matchParentSize(),
+                animationSpec = androidx.compose.animation.core.tween(220)) { (wide, poster) ->
+                AsyncImage(wide ?: poster, null, Modifier.fillMaxSize(),
+                    contentScale = if (wide == null) ContentScale.Fit else ContentScale.Crop, alignment = Alignment.CenterEnd)
+            }
             Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
-                listOf(colors.background, colors.background.copy(alpha = .85f), Color.Transparent))))
-            Column(Modifier.align(Alignment.CenterStart).fillMaxWidth(.58f).padding(15.dp),
+                listOf(XpCinemaBackground, XpCinemaBackground.copy(alpha = .76f), Color.Transparent))))
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(.58f).padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(item.name, color = colors.onSurface, fontSize = 27.sp, fontWeight = FontWeight.Bold,
+                val logo = details?.titleLogo ?: item.titleLogo
+                if (logo != null) AsyncImage(logo, item.name, Modifier.width(205.dp).height(67.dp),
+                    contentScale = ContentScale.Fit, alignment = Alignment.CenterStart)
+                else Text(item.name, color = colors.onSurface, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 XpCinemaMetadata(item, details, showYear, 3)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

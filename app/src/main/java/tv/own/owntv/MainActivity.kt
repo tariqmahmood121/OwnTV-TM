@@ -331,7 +331,9 @@ open class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 val prefs = getSharedPreferences("moviotv_visual_v7", MODE_PRIVATE)
                 if (BuildConfig.MOVIOXP_RELEASE && !prefs.getBoolean("appearance_defaults_v3", false)) {
-                    tv.own.owntv.ui.theme.MovioAppearanceDefaults.applyMissing(movioVisualSettings)
+                    tv.own.owntv.ui.theme.MovioAppearanceDefaults.applyMissing(movioVisualSettings,
+                        cinemaTv = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+                            android.content.res.Configuration.UI_MODE_TYPE_TELEVISION)
                     prefs.edit().putBoolean("appearance_defaults_v3", true).apply()
                 }
                 if (!prefs.getBoolean("palette_initialised", false)) {

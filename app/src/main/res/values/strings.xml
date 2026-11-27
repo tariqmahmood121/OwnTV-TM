@@ -215,4 +215,6 @@
     <string name="movioxp_cinema_rating">★ %1$s</string>
     <string name="movioxp_cinema_browse">Browse titles</string>
     <string name="movioxp_cinema_results">Search results</string>
+    <string name="movioxp_my_library">My MOVIOXP</string>
+    <string name="movioxp_inter_licence">Inter · SIL Open Font License</string>
 </resources>

@@ -153,6 +153,7 @@ internal data class XpDetailMetadata(
     val backdrop: String? = null,
     val ukCertificate: String? = null,
     val synopsis: String? = null,
+    val titleLogo: String? = null,
 ) {
     companion object {
         fun parse(meta: JSONObject): XpDetailMetadata {
@@ -172,7 +173,7 @@ internal data class XpDetailMetadata(
             val backdrop = (meta.opt("background") as? String)?.takeIf(String::isNotBlank)
             val synopsis = (meta.opt("description") as? String)?.takeIf(String::isNotBlank)
             return XpDetailMetadata(names("genres"), runtime, names("cast"), names("director"), names("writer"),
-                backdrop, xpUkCertificate(meta), synopsis)
+                backdrop, xpUkCertificate(meta), synopsis, (meta.opt("logo") as? String)?.takeIf(String::isNotBlank))
         }
     }
 }

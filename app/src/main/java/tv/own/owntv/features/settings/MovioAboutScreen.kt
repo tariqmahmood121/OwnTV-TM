@@ -96,6 +96,17 @@ fun MovioAboutScreen(
                 style = stageText(13, 400), color = StageColors.Muted)
             Text(stringResource(R.string.moviotv_xp_about_font_licences),
                 style = stageText(13, 400), color = StageColors.Muted)
+            if (tv.own.owntv.features.home.LocalXpCinema.current) {
+                var showInter by remember { mutableStateOf(false) }
+                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_inter_licence),
+                    tv.own.owntv.ui.components.OwnTVIcon.INFO) { showInter = !showInter }
+                if (showInter) {
+                    val inter = remember(context) {
+                        context.assets.open("movioxp_licences/inter-ofl.txt").bufferedReader().use { it.readText() }
+                    }
+                    Text(inter, style = stageText(11, 400), color = StageColors.Muted)
+                }
+            }
             val licence = remember(context) { runCatching {
                 context.assets.open("movioxp_licences/gpl-3.0.txt").bufferedReader().use { it.readText() }
             }.getOrDefault("") }

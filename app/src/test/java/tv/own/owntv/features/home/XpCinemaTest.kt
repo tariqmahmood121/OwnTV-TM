@@ -24,6 +24,14 @@ class XpCinemaTest {
         assertEquals(empty, xpCinemaEdit(empty, null))
     }
 
+    @Test fun featureRotationAdvancesWithoutImmediateRepeats() {
+        assertEquals(0, xpNextFeatured(0, 0))
+        assertEquals(0, xpNextFeatured(0, 1))
+        assertEquals(1, xpNextFeatured(0, 3))
+        assertEquals(2, xpNextFeatured(1, 3))
+        assertEquals(0, xpNextFeatured(2, 3))
+    }
+
     @Test fun onlyRecognisedUkCertificatesAreDisplayed() {
         assertEquals("12A", xpCinemaCertificate(" 12a "))
         assertEquals("PG", xpCinemaCertificate("PG"))

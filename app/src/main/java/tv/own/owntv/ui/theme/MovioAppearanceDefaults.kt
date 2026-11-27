@@ -10,12 +10,12 @@ internal object MovioAppearanceDefaults {
     val fontSize: Int get() = if (BuildConfig.MOVIOXP_RELEASE) 95 else UiFontScale.DEFAULT
     val screenZoom: Int get() = if (BuildConfig.MOVIOXP_RELEASE) 85 else UiZoom.DEFAULT
 
-    suspend fun applyMissing(settings: SettingsRepository) {
+    suspend fun applyMissing(settings: SettingsRepository, cinemaTv: Boolean = false) {
         val saved = settings.exportSettings()
-        if (!saved.has("ui_zoom_percent")) settings.setUiZoomPercent(screenZoom)
+        if (!saved.has("ui_zoom_percent")) settings.setUiZoomPercent(if (cinemaTv) 100 else screenZoom)
         if (!saved.has("font_size_percent")) {
             val font = settings.fontCustomization.first()
-            settings.setFontCustomization(font.copy(sizePercent = fontSize))
+            settings.setFontCustomization(font.copy(sizePercent = if (cinemaTv) 100 else fontSize))
         }
     }
 }

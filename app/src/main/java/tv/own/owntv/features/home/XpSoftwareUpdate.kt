@@ -84,7 +84,7 @@ internal class XpSoftwareUpdater(private val context: Context) {
         const val QA_URL = "https://moviotv.opticalzoo.com/downloads/qa/movioxp-version.json"
     }
     private val prefs = context.getSharedPreferences("movioxp_software_updates", Context.MODE_PRIVATE)
-    private val qa = BuildConfig.VERSION_NAME.contains("-qa", true) || BuildConfig.VERSION_NAME in setOf("4.0 A", "4.0 B")
+    private val qa = BuildConfig.VERSION_NAME.contains("-qa", true) || BuildConfig.VERSION_NAME in setOf("4.0 A", "4.0 B", "4.0 C")
     val channel = if (qa) "qa" else "stable"
     val versionName = BuildConfig.VERSION_NAME
     val versionCode = BuildConfig.VERSION_CODE.toLong()
