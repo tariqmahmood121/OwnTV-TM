@@ -35,6 +35,7 @@
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	db-probed
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	destination-ready
 1	performance	app/src/main/java/tv/own/owntv/MainActivity.kt	first-composition
+1	protocol	app/src/main/java/tv/own/owntv/MainActivity.kt	mobile-shell
 1	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	moviotv_profile_theme_v72
 1	preference-key	app/src/main/java/tv/own/owntv/MainActivity.kt	moviotv_visual_v7
 2	technical	app/src/main/java/tv/own/owntv/MainActivity.kt	none
@@ -260,7 +261,7 @@
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	genre:
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	genre:$it
 2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	history
-32	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	home
+33	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	home
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	horror
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	http
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	https
@@ -293,6 +294,8 @@
 4	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_catalogues
 2	preference-key	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_playback
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_recent_searches
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_simulation_labels
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	movioxp_simulation_posters
 14	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	name
 1	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	options
 2	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	own-live:
@@ -697,6 +700,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	4.0 A
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	4.0 B
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	4.0 C
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	4.0 D
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK checksum mismatch
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	APK package, version or signature mismatch
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpSoftwareUpdate.kt	Accept
@@ -1572,6 +1576,11 @@
 1	technical	app/src/main/java/tv/own/owntv/features/shell/components/WeatherConditionIcon.kt	snow
 1	technical	app/src/main/java/tv/own/owntv/features/shell/components/WeatherConditionIcon.kt	sunny
 1	technical	app/src/main/java/tv/own/owntv/features/shell/components/WeatherConditionIcon.kt	thunder
+1	protocol	app/src/main/java/tv/own/owntv/features/simulation/XpTvSimulation.kt	-qa
+1	protocol	app/src/main/java/tv/own/owntv/features/simulation/XpTvSimulation.kt	[0-9]+\\.[0-9]+ [A-Z]
+2	protocol	app/src/main/java/tv/own/owntv/features/simulation/XpTvSimulation.kt	font_$profile
+1	protocol	app/src/main/java/tv/own/owntv/features/simulation/XpTvSimulation.kt	movioxp_tv_simulation
+2	protocol	app/src/main/java/tv/own/owntv/features/simulation/XpTvSimulation.kt	zoom_$profile
 1	technical	app/src/main/java/tv/own/owntv/features/sports/SportsCalendarScreen.kt	${scoreText(m.sport, m.home?.score)} – ${scoreText(m.sport, m.away?.score)}
 1	technical	app/src/main/java/tv/own/owntv/features/sports/SportsCalendarScreen.kt	${sportEmoji(s)} ${bySport[s].orEmpty().size}
 1	technical	app/src/main/java/tv/own/owntv/features/sports/SportsCalendarScreen.kt	${sportEmoji(sport)} ${name.uppercase(locale)}

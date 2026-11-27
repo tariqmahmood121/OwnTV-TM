@@ -158,7 +158,7 @@ fun OwnTVShell(
     var movioChoice by remember {
         mutableStateOf(tv.own.owntv.features.home.MovioLayoutChoice.fromSaved(movioPreferences.getString("layout", null)))
     }
-    val movioTouch = when (movioChoice) {
+    val movioTouch = if (tv.own.owntv.features.simulation.LocalXpActiveSimulation.current != null) false else when (movioChoice) {
         tv.own.owntv.features.home.MovioLayoutChoice.MOBILE -> true
         tv.own.owntv.features.home.MovioLayoutChoice.TV -> false
         tv.own.owntv.features.home.MovioLayoutChoice.AUTO ->

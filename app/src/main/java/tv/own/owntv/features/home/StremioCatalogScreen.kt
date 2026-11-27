@@ -816,6 +816,9 @@ fun StremioCatalogScreen(
 ) {
     val context = LocalContext.current
     val playbackActive = LocalXpPlaybackActive.current
+    val simulation = tv.own.owntv.features.simulation.LocalXpActiveSimulation.current
+    val startSimulation = tv.own.owntv.features.simulation.LocalXpSimulationStart.current
+    var confirmSimulation by remember { mutableStateOf(false) }
     val television = (androidx.compose.ui.platform.LocalConfiguration.current.uiMode and
         android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     val focusManager = LocalFocusManager.current
@@ -992,9 +995,11 @@ fun StremioCatalogScreen(
     val personalGridState = key(catalogueProfile) { rememberSaveableStateHolder() }
     val ratingKey = "xp_show_rating_$favoritesProfileId"
     val yearKey = "xp_show_year_$favoritesProfileId"
-    val displayPrefs = remember(context) { context.getSharedPreferences("movioxp_playback", Context.MODE_PRIVATE) }
+    val displayPrefs = remember(context, simulation) {
+        context.getSharedPreferences(if (simulation != null) "movioxp_simulation_labels" else "movioxp_playback", Context.MODE_PRIVATE)
+    }
     var showRating by remember(ratingKey) { mutableStateOf(displayPrefs.getBoolean(ratingKey, true)) }
-    val legacyShowYear = MovioMoviePrefs.get(context, favoritesProfileId).showYear
+    val legacyShowYear = simulation != null || MovioMoviePrefs.get(context, favoritesProfileId).showYear
     var showYear by remember(yearKey, legacyShowYear) { mutableStateOf(displayPrefs.getBoolean(yearKey, legacyShowYear)) }
     DisposableEffect(ratingKey, yearKey, legacyShowYear) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
@@ -1004,7 +1009,9 @@ fun StremioCatalogScreen(
         displayPrefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { displayPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    val libraryPrefs = remember(context) { context.getSharedPreferences("moviotv_poster_grid_v75", Context.MODE_PRIVATE) }
+    val libraryPrefs = remember(context, simulation) {
+        context.getSharedPreferences(if (simulation != null) "movioxp_simulation_posters" else "moviotv_poster_grid_v75", Context.MODE_PRIVATE)
+    }
     val libraryZoomKey = "xp_library_zoom_$favoritesProfileId"
     val homeZoomKey = "xp_home_zoom_$favoritesProfileId"
     val discoverZoomKey = "xp_discover_zoom_$favoritesProfileId"
@@ -1017,7 +1024,7 @@ fun StremioCatalogScreen(
     var homeScale by remember(homeZoomKey) {
         mutableStateOf(libraryPrefs.getFloat(homeZoomKey, 1f).coerceIn(0.65f, 1.85f))
     }
-    val deviceLayout = if (television) 0 else if (androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600) 2 else 1
+    val deviceLayout = if (simulation != null) 3 else if (television) 0 else if (androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600) 2 else 1
     val displayScope = "$catalogueProfile|$deviceLayout"
     val localDisplay = remember(displayScope) { XpV4DisplayPreferences(context, displayScope) }
     val tvCardSizeKey = "xp_tv_card_size_$favoritesProfileId"
@@ -1028,14 +1035,22 @@ fun StremioCatalogScreen(
         mutableStateOf(localDisplay.cards(libraryPrefs.getFloat(tvCardSizeKey, 0.8f)))
     }
     val displayShell: tv.own.owntv.features.shell.ShellViewModel = koinViewModel()
-    val appZoom by displayShell.uiZoomPercent.collectAsStateWithLifecycle()
+    val deviceZoom by displayShell.uiZoomPercent.collectAsStateWithLifecycle()
     val appFont by displayShell.fontCustomization.collectAsStateWithLifecycle()
+    fun currentScale(): Pair<Int, Int> = simulation?.scale(favoritesProfileId)?.let { it.zoom to it.font }
+        ?: (deviceZoom to appFont.sizePercent)
+    fun setDisplayScale(zoom: Int, font: Int) {
+        if (simulation != null) simulation.setScale(favoritesProfileId, zoom, font) else {
+            displayShell.setUiZoom(zoom)
+            displayShell.setFontCustomization(appFont.copy(sizePercent = font))
+        }
+    }
     var previousDisplay by remember(displayScope) { mutableStateOf(localDisplay.previous()) }
     var previewDisplay by remember(displayScope) { mutableStateOf<XpDisplaySnapshot?>(null) }
     var previewSeconds by remember { mutableIntStateOf(15) }
     var confirmDisplayReset by remember { mutableStateOf(false) }
     fun displaySnapshot() = XpDisplaySnapshot(navPosition, tvCardScale, homeScale, discoverScale, libraryScale,
-        showRating, showYear, appZoom, appFont.sizePercent)
+        showRating, showYear, currentScale().first, currentScale().second)
     fun rememberDisplay() {
         previousDisplay = displaySnapshot()
         previousDisplay?.let(localDisplay::savePrevious)
@@ -1052,15 +1067,14 @@ fun StremioCatalogScreen(
         libraryPrefs.edit().putFloat(homeZoomKey, value.home).putFloat(discoverZoomKey, value.discover)
             .putFloat(libraryZoomKey, value.library).apply()
         displayPrefs.edit().putBoolean(ratingKey, value.rating).putBoolean(yearKey, value.year).apply()
-        displayShell.setUiZoom(value.zoom)
-        displayShell.setFontCustomization(appFont.copy(sizePercent = value.font))
+        setDisplayScale(value.zoom, value.font)
     }
     fun finishDisplayPreview(keep: Boolean) {
         val previous = previewDisplay ?: return
         if (!keep) {
             applyDisplay(previous)
             scope.launch {
-                snapshotFlow { appZoom to appFont.sizePercent }.first { it == (previous.zoom to previous.font) }
+                snapshotFlow { currentScale() }.first { it == (previous.zoom to previous.font) }
                 localDisplay.clearPending()
             }
         } else {
@@ -1074,7 +1088,7 @@ fun StremioCatalogScreen(
         localDisplay.pending()?.let { previous ->
             applyDisplay(previous)
             // Keep the recovery record until both settings have been applied by DataStore.
-            snapshotFlow { appZoom to appFont.sizePercent }.first { it == (previous.zoom to previous.font) }
+            snapshotFlow { currentScale() }.first { it == (previous.zoom to previous.font) }
             localDisplay.clearPending()
         }
     }
@@ -2019,6 +2033,11 @@ fun StremioCatalogScreen(
     Box(
         modifier.fillMaxSize().background(XpBackground).onPreviewKeyEvent { event ->
             val key = event.nativeKeyEvent
+            if (simulation != null && !playbackActive && key.source == android.view.InputDevice.SOURCE_DPAD &&
+                key.keyCode == android.view.KeyEvent.KEYCODE_MOVE_HOME) {
+                if (key.action == android.view.KeyEvent.ACTION_UP && !key.isCanceled) changeSection("home")
+                return@onPreviewKeyEvent true
+            }
             if (showBottomNavigation && !playbackActive && key.action == android.view.KeyEvent.ACTION_DOWN &&
                 key.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
                 jump(XpRemoteHold.Direction.BOTTOM)
@@ -2613,12 +2632,11 @@ fun StremioCatalogScreen(
                         XpAppearanceOptions(onMore = {
                             onOpenSettingsGroup?.invoke(tv.own.owntv.features.shell.components.SettingsGroup.APPEARANCE.ordinal)
                                 ?: onOpenAppSettings?.invoke()
-                        }, preview = { zoom, font ->
+                        }, simulationScale = simulation?.scale(favoritesProfileId), preview = { zoom, font ->
                             val previous = displaySnapshot()
                             if ((zoom != previous.zoom || font != previous.font) && localDisplay.savePending(previous)) {
                                 previewDisplay = previous
-                                displayShell.setUiZoom(zoom)
-                                displayShell.setFontCustomization(appFont.copy(sizePercent = font))
+                                setDisplayScale(zoom, font)
                             }
                         })
                         if (television) {
@@ -2669,13 +2687,13 @@ fun StremioCatalogScreen(
                             rememberDisplay()
                             showRating = !showRating
                             displayPrefs.edit().putBoolean(ratingKey, showRating).apply()
-                            XpCentralDataSync.markSetting(context, favoritesProfileId, ratingKey, showRating)
+                            if (simulation == null) XpCentralDataSync.markSetting(context, favoritesProfileId, ratingKey, showRating)
                         }
                         XpSettingsOption(stringResource(R.string.movioxp_show_year), selected = showYear) {
                             rememberDisplay()
                             showYear = !showYear
                             displayPrefs.edit().putBoolean(yearKey, showYear).apply()
-                            XpCentralDataSync.markSetting(context, favoritesProfileId, yearKey, showYear)
+                            if (simulation == null) XpCentralDataSync.markSetting(context, favoritesProfileId, yearKey, showYear)
                         }
                         XpSettingsOption(stringResource(R.string.movioxp_display_reset)) { confirmDisplayReset = true }
                         XpSettingsOption(stringResource(R.string.movioxp_display_previous), enabled = previousDisplay != null) {
@@ -2684,7 +2702,7 @@ fun StremioCatalogScreen(
                                 applyDisplay(previous)
                             }
                         }
-                        XpSettingsOption(stringResource(R.string.moviotv_xp_settings_display_layout_more)) {
+                        if (simulation == null) XpSettingsOption(stringResource(R.string.moviotv_xp_settings_display_layout_more)) {
                             onOpenSettingsGroup?.invoke(tv.own.owntv.features.shell.components.SettingsGroup.LAYOUT.ordinal)
                                 ?: onOpenAppSettings?.invoke()
                         }
@@ -2820,6 +2838,14 @@ fun StremioCatalogScreen(
                             color = XpMuted, fontSize = 13.sp)
                     }
                     if (television) XpSettingsOption(stringResource(R.string.moviotv_xp_nav_addons)) { changeSection("addons") }
+                    if (startSimulation != null && !television) {
+                        XpSettingsAccordion(title = stringResource(R.string.movioxp_sim_developer),
+                            summary = stringResource(R.string.movioxp_sim_summary),
+                            expanded = expandedSettingsGroup == 7,
+                            onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 7) null else 7 }) {
+                            XpSettingsOption(stringResource(R.string.movioxp_sim_enable)) { confirmSimulation = true }
+                        }
+                    }
                     XpSettingsOption(stringResource(R.string.moviotv_xp_about_heading)) {
                         showXpAbout = true
                     }
@@ -3473,6 +3499,19 @@ fun StremioCatalogScreen(
                 onExit = { confirmExit = true })
         }
         }
+        if (confirmSimulation && startSimulation != null) {
+            XpQa5Dialog(stringResource(R.string.movioxp_sim_enable), stringResource(R.string.common_cancel),
+                { confirmSimulation = false }) {
+                Text(stringResource(R.string.movioxp_sim_confirm), color = XpMuted)
+                XpDialogActions {
+                    XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE) { confirmSimulation = false }
+                    XpDialogButton(stringResource(R.string.movioxp_sim_enable), OwnTVIcon.LIVE_TV) {
+                        confirmSimulation = false
+                        startSimulation()
+                    }
+                }
+            }
+        }
         if (confirmDisplayReset) {
             XpQa5Dialog(stringResource(R.string.movioxp_display_reset), stringResource(R.string.common_cancel),
                 { confirmDisplayReset = false }) {
@@ -3482,8 +3521,8 @@ fun StremioCatalogScreen(
                     XpDialogButton(stringResource(R.string.movioxp_display_reset), OwnTVIcon.REFRESH) {
                         rememberDisplay()
                         applyDisplay(XpDisplaySnapshot(XpNavigationPosition.BELOW_HEADER, 0.8f, 1f, 1f, 1f, true, true,
-                            if (cinema) 100 else tv.own.owntv.ui.theme.MovioAppearanceDefaults.screenZoom,
-                            if (cinema) 100 else tv.own.owntv.ui.theme.MovioAppearanceDefaults.fontSize))
+                            if (cinema || simulation != null) 100 else tv.own.owntv.ui.theme.MovioAppearanceDefaults.screenZoom,
+                            if (cinema || simulation != null) 100 else tv.own.owntv.ui.theme.MovioAppearanceDefaults.fontSize))
                         confirmDisplayReset = false
                     }
                 }

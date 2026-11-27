@@ -217,4 +217,21 @@
     <string name="movioxp_cinema_results">Search results</string>
     <string name="movioxp_my_library">My MOVIOXP</string>
     <string name="movioxp_inter_licence">Inter · SIL Open Font License</string>
+    <string name="movioxp_sim_developer">Developer Tools</string>
+    <string name="movioxp_sim_summary">Run the TV layout on this device</string>
+    <string name="movioxp_sim_enable">TV Simulation Mode</string>
+    <string name="movioxp_sim_confirm">Open the TV interface in landscape? You can exit simulation at any time.</string>
+    <string name="movioxp_sim_exit">Exit Simulation</string>
+    <string name="movioxp_sim_720">720p</string>
+    <string name="movioxp_sim_1080">1080p</string>
+    <string name="movioxp_sim_4k">4K</string>
+    <string name="movioxp_sim_remote_left">Remote left</string>
+    <string name="movioxp_sim_remote_right">Remote right</string>
+    <string name="movioxp_sim_remote_show">Show remote</string>
+    <string name="movioxp_sim_up">Up</string>
+    <string name="movioxp_sim_down">Down</string>
+    <string name="movioxp_sim_left">Left</string>
+    <string name="movioxp_sim_right">Right</string>
+    <string name="movioxp_sim_ok">OK</string>
+    <string name="movioxp_sim_menu">Menu</string>
 </resources>

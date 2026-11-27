@@ -213,6 +213,7 @@ private fun XpChoice(title: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 internal fun XpAppearanceOptions(
     onMore: () -> Unit,
+    simulationScale: tv.own.owntv.features.simulation.XpSimulatedScale? = null,
     preview: (zoom: Int, font: Int) -> Unit = { _, _ -> },
 ) {
     val shell: ShellViewModel = koinViewModel()
@@ -220,36 +221,40 @@ internal fun XpAppearanceOptions(
     val theme by shell.themeMode.collectAsStateWithLifecycle()
     val accent by shell.accent.collectAsStateWithLifecycle()
     val font by shell.fontCustomization.collectAsStateWithLifecycle()
-    val zoom by shell.uiZoomPercent.collectAsStateWithLifecycle()
+    val deviceZoom by shell.uiZoomPercent.collectAsStateWithLifecycle()
+    val zoom = simulationScale?.zoom ?: deviceZoom
+    val fontPercent = simulationScale?.font ?: font.sizePercent
     val muted = OwnTVTheme.colors.onSurfaceVariant
-    XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_theme))
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ThemeMode.entries.forEach { mode ->
-            val label = stringResource(when (mode) {
-                ThemeMode.DARK -> R.string.settings_theme_dark
-                ThemeMode.LIGHT -> R.string.settings_theme_light
-                ThemeMode.SYSTEM -> R.string.settings_theme_system
-            })
-            XpChoice(label, mode == theme) { settings.setThemeMode(mode) }
-        }
-    }
-    XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_accent))
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        AccentColor.entries.forEach { option ->
-            XpChoice(stringResource(option.labelRes), option == accent) {
-                settings.setCustomAccent("")
-                settings.setAccent(option)
+    if (simulationScale == null) {
+        XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_theme))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ThemeMode.entries.forEach { mode ->
+                val label = stringResource(when (mode) {
+                    ThemeMode.DARK -> R.string.settings_theme_dark
+                    ThemeMode.LIGHT -> R.string.settings_theme_light
+                    ThemeMode.SYSTEM -> R.string.settings_theme_system
+                })
+                XpChoice(label, mode == theme) { settings.setThemeMode(mode) }
             }
         }
-    }
-    XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_font))
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        AppFontFamily.entries.forEach { family ->
-            XpChoice(fontFamilyLabel(family), family == font.mainFamily) {
-                shell.setFontCustomization(font.copy(mainFamily = family, popupFamily = family))
+        XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_accent))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AccentColor.entries.forEach { option ->
+                XpChoice(stringResource(option.labelRes), option == accent) {
+                    settings.setCustomAccent("")
+                    settings.setAccent(option)
+                }
+            }
+        }
+        XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_font))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppFontFamily.entries.forEach { family ->
+                XpChoice(fontFamilyLabel(family), family == font.mainFamily) {
+                    shell.setFontCustomization(font.copy(mainFamily = family, popupFamily = family))
+                }
             }
         }
     }
@@ -257,24 +262,24 @@ internal fun XpAppearanceOptions(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         XpChoice(stringResource(R.string.moviotv_xp_settings_decrease), false) {
-            preview(zoom, UiFontScale.clamp(font.sizePercent - UiFontScale.STEP))
+            preview(zoom, UiFontScale.clamp(fontPercent - UiFontScale.STEP))
         }
-        Text(stringResource(R.string.common_percent, font.sizePercent), color = OwnTVTheme.colors.onSurface, fontSize = 16.sp)
+        Text(stringResource(R.string.common_percent, fontPercent), color = OwnTVTheme.colors.onSurface, fontSize = 16.sp)
         XpChoice(stringResource(R.string.moviotv_xp_settings_increase), false) {
-            preview(zoom, UiFontScale.clamp(font.sizePercent + UiFontScale.STEP))
+            preview(zoom, UiFontScale.clamp(fontPercent + UiFontScale.STEP))
         }
     }
     XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_zoom))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         XpChoice(stringResource(R.string.moviotv_xp_settings_decrease), false) {
-            preview(UiZoom.clamp(zoom - 5), font.sizePercent)
+            preview(UiZoom.clamp(zoom - 5), fontPercent)
         }
         Text(stringResource(R.string.common_percent, zoom), color = OwnTVTheme.colors.onSurface, fontSize = 16.sp)
         XpChoice(stringResource(R.string.moviotv_xp_settings_increase), false) {
-            preview(UiZoom.clamp(zoom + 5), font.sizePercent)
+            preview(UiZoom.clamp(zoom + 5), fontPercent)
         }
     }
     Text(stringResource(R.string.moviotv_xp_display_help), color = muted, fontSize = 12.sp)
-    XpSettingsOption(stringResource(R.string.moviotv_xp_display_more)) { onMore() }
+    if (simulationScale == null) XpSettingsOption(stringResource(R.string.moviotv_xp_display_more)) { onMore() }
 }

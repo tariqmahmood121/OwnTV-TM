@@ -45,6 +45,11 @@ import tv.own.owntv.features.profiles.ProfileGateSessionViewModel
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import tv.own.owntv.features.setup.Onboarding
 import tv.own.owntv.features.shell.OwnTVShell
+import tv.own.owntv.features.simulation.LocalXpSimulationStart
+import tv.own.owntv.features.simulation.XpTvSimulation
+import tv.own.owntv.features.simulation.XpTvSimulationViewport
+import tv.own.owntv.core.nav.MainSection
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import tv.own.owntv.features.shell.ShellViewModel
 import tv.own.owntv.ui.theme.BlurredBackdrop
 import tv.own.owntv.ui.theme.LocalBackground
@@ -277,6 +282,9 @@ open class MainActivity : ComponentActivity() {
             return
         }
         setContent {
+            val simulation = remember { XpTvSimulation(this@MainActivity) }
+            val mobileShellState = rememberSaveableStateHolder()
+            var simulationSection by remember { mutableStateOf(MainSection.HOME) }
             var xpSplashTimedOut by remember { mutableStateOf(false) }
             if (BuildConfig.MOVIOXP_RELEASE) LaunchedEffect(Unit) {
                 kotlinx.coroutines.delay(SPLASH_TIMEOUT_MS + STARTUP_SETTLE_TIMEOUT_MS)
@@ -617,15 +625,27 @@ open class MainActivity : ComponentActivity() {
                                 onAddProfile = { gateSession.startAddingProfile() },
                                 modifier = Modifier.fillMaxSize(),
                             )
-                            shellReady -> OwnTVShell(
-                                selectedSection = selectedSection,
+                            shellReady -> {
+                                val profile = activeProfileId ?: -1L
+                                val simulating = simulation.active && !tvMode
+                                val simulatedScale = simulation.scale(profile)
+                                fun stopSimulation() {
+                                    player.stop()
+                                    simulation.stop()
+                                }
+                                val shell: @androidx.compose.runtime.Composable () -> Unit = {
+                                OwnTVShell(
+                                selectedSection = if (simulating) simulationSection else selectedSection,
                                 visibleSections = visibleSections,
-                                onSelectSection = viewModel::selectSection,
+                                onSelectSection = { if (simulating) simulationSection = it else viewModel.selectSection(it) },
                                 themeMode = themeMode,
-                                uiZoomPercent = uiZoomPercent,
-                                onSetZoom = viewModel::setUiZoom,
-                                fontCustomization = fontCustomization,
-                                onSetFontCustomization = viewModel::setFontCustomization,
+                                uiZoomPercent = if (simulating) simulatedScale.zoom else uiZoomPercent,
+                                onSetZoom = { if (simulating) simulation.setScale(profile, it, simulatedScale.font) else viewModel.setUiZoom(it) },
+                                fontCustomization = if (simulating) fontCustomization.copy(sizePercent = simulatedScale.font) else fontCustomization,
+                                onSetFontCustomization = {
+                                    if (simulating) simulation.setScale(profile, simulatedScale.zoom, it.sizePercent)
+                                    else viewModel.setFontCustomization(it)
+                                },
                                 avatarId = avatarId,
                                 onSetAvatar = viewModel::setAvatar,
                                 avatarPath = avatarPath,
@@ -642,7 +662,7 @@ open class MainActivity : ComponentActivity() {
                                 pendingDeepLink = pendingDeepLink,
                                 onDeepLinkConsumed = { pendingDeepLink = null },
                                 isOffline = !isOnline,
-                                onExitApp = { finish() },
+                                onExitApp = { if (simulating) stopSimulation() else finish() },
                                 onStartupSettled = { startupSettled = true },
                                 onSwitchProfile = {
                                     // Stop playback and return to the "Who's watching?" gate — no app restart.
@@ -654,6 +674,19 @@ open class MainActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
+                                }
+                                if (simulating) {
+                                    XpTvSimulationViewport(this@MainActivity, simulation, simulatedScale, ::stopSimulation, shell)
+                                } else {
+                                    val startSimulation: (() -> Unit)? = if (simulation.available && !tvMode) ({
+                                        simulationSection = MainSection.HOME
+                                        simulation.start()
+                                    }) else null
+                                    CompositionLocalProvider(LocalXpSimulationStart provides startSimulation) {
+                                        mobileShellState.SaveableStateProvider("mobile-shell", shell)
+                                    }
+                                }
+                            }
                             // No unexpected combination of asynchronous state may fall through to
                             // the shell. The known loading/onboarding/gate cases are above; a blank
                             // frame is safer than rendering protected content if a new state is added.
