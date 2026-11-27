@@ -2,7 +2,9 @@ package tv.own.owntv.features.simulation
 
 import android.graphics.Bitmap
 import android.os.SystemClock
-import android.os.ParcelFileDescriptor
+import android.util.Base64
+import android.util.Log
+import java.io.ByteArrayOutputStream
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +90,12 @@ class XpCinemaVisualTest {
         saveScreenshot("04-exit-confirmation")
         back.performTouchInput { click() }
         compose.onNodeWithText(action).assertIsDisplayed()
+        back.performTouchInput { click() }
+        awaitText(exploreAction)
+        compose.onNodeWithText(exploreAction).assertIsDisplayed()
+        back.performTouchInput { click() }
+        compose.onNodeWithTag("cinema-home-list").assertIsDisplayed()
+        compose.onNodeWithText(activity.getString(R.string.movioxp_exit_confirm)).assertDoesNotExist()
     }
 
     private fun saveScreenshot(name: String) {
@@ -96,13 +104,10 @@ class XpCinemaVisualTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         val scaled = Bitmap.createScaledBitmap(screenshot, 1200, screenshot.height * 1200 / screenshot.width, true)
-        val (stdout, stdin) = instrumentation.uiAutomation.executeShellCommandRw(
-            "cat > /data/local/tmp/cinema-visual-$name.jpg",
-        )
-        ParcelFileDescriptor.AutoCloseOutputStream(stdin).use {
-            check(scaled.compress(Bitmap.CompressFormat.JPEG, 84, it))
-        }
-        ParcelFileDescriptor.AutoCloseInputStream(stdout).use { it.readBytes() }
+        val bytes = ByteArrayOutputStream()
+        check(scaled.compress(Bitmap.CompressFormat.JPEG, 84, bytes))
+        Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP).chunked(2400)
+            .forEachIndexed { index, chunk -> Log.i("CinemaVisual", "$name $index $chunk") }
         if (scaled !== screenshot) scaled.recycle()
         screenshot.recycle()
     }

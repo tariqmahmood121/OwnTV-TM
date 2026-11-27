@@ -4866,6 +4866,10 @@ private fun XpMoreCard(row: String, width: Dp, landscape: Boolean, restore: Stri
     onOpen: () -> Unit,
 ) {
     val key = xpMoreKey(row)
+    val openCollection = {
+        onFocused(key)
+        onOpen()
+    }
     val focus = remember(key) { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     LaunchedEffect(restore) {
@@ -4886,7 +4890,7 @@ private fun XpMoreCard(row: String, width: Dp, landscape: Boolean, restore: Stri
             .focusRequester(focus).onFocusChanged {
                 focused = it.hasFocus
                 if (focused) onFocused(key)
-            }.clickable(onClick = onOpen).padding(6.dp), contentAlignment = Alignment.Center) {
+            }.clickable(onClick = openCollection).padding(6.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 DrawOwnTVIcon(icon, Color.White, Modifier.size(if (landscape) 19.dp else 34.dp))
                 Text(title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
@@ -4899,7 +4903,7 @@ private fun XpMoreCard(row: String, width: Dp, landscape: Boolean, restore: Stri
         focused = it.hasFocus
         if (focused) onFocused(key)
     }.border(if (focused) 2.dp else 0.dp, XpRemotePink, RoundedCornerShape(10.dp))
-        .clickable(onClick = onOpen).padding(3.dp)) {
+        .clickable(onClick = openCollection).padding(3.dp)) {
         Box(Modifier.fillMaxWidth().height(width * (if (landscape) 0.56f else 1.46f))
             .clip(RoundedCornerShape(10.dp)).background(XpPanel), contentAlignment = Alignment.Center) {
             DrawOwnTVIcon(OwnTVIcon.CHEVRON, if (focused) XpRemotePink else XpText, Modifier.size(36.dp))
