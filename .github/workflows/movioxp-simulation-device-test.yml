@@ -43,6 +43,18 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: bash gradlew :app:connectedX86_64DebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=tv.own.owntv.features.simulation.XpSimulationRemoteTest --stacktrace
+      - name: Show emulator test failures
+        if: failure()
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          for report in Path("app/build/outputs/androidTest-results").rglob("TEST-*.xml"):
+              for case in ElementTree.parse(report).iter("testcase"):
+                  for error in list(case.findall("failure")) + list(case.findall("error")):
+                      print(case.attrib.get("name"), error.attrib.get("message", ""))
+                      print((error.text or "")[:6000])
+          PYTHON
       - uses: actions/upload-artifact@v7
         if: always()
         with:
