@@ -71,7 +71,7 @@ class XpPlaybackIdentityTest {
 
     @Test fun explicitSortingOverridesCatalogueDefaults() {
         assertEquals(1, xpCategorySort("xp_trending", null))
-        assertEquals(2, xpCategorySort("xp_upcoming", null))
+        assertEquals(1, xpCategorySort("xp_upcoming", null))
         assertEquals(1, xpCategorySort("xp_latest", null))
         assertEquals(5, xpCategorySort("xp_upcoming", 5))
     }

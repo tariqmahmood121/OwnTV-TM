@@ -207,6 +207,7 @@ internal data class XpMeta(
     val ukCertificate: String? = null,
     val titleLogo: String? = null,
     val genre: String? = null,
+    val runtime: String? = null,
 )
 data class XpPlaybackSource(
     val url: String,
@@ -1513,7 +1514,18 @@ fun StremioCatalogScreen(
         trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
         showCinemaFeature, featureRetry, homeSources.values.any { it != null }, featureSettings,
         xpFeaturedCategories.associateWith { id -> discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty() }
-            .plus("xp_trending" to (trendingCandidates + enrichedBackdrops))) {
+            .plus("xp_trending" to (trendingCandidates + enrichedBackdrops)),
+        prepareMetadata = { item ->
+            val imdb = (item.imdbId ?: item.id).takeIf(XpPlaybackIdentity::isImdbId)
+            val metadata = imdb?.let { XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, it) }
+                ?.optJSONObject("meta")
+            val details = metadata?.let(XpDetailMetadata::parse)
+            val rating = metadata?.optString("imdbRating")?.takeIf { it.toDoubleOrNull()?.let { n -> n > 0 && n <= 10 } == true }
+            item.copy(genre = details?.genres?.firstOrNull() ?: item.genre,
+                description = details?.synopsis ?: item.description, ukCertificate = details?.ukCertificate ?: item.ukCertificate,
+                titleLogo = details?.titleLogo ?: item.titleLogo, runtime = details?.runtime ?: item.runtime,
+                rating = rating ?: item.rating, ratingSource = if (rating != null) "IMDb" else item.ratingSource)
+        }) {
         val cachedCentral = centralConnection?.let { connection ->
             repository.cachedBody(XpCatalogueRepository.Key(catalogueProfile, connection.apiBase, "trending"))
                 ?.let { runCatching { XpCentralMetadata.parseCatalog(JSONObject(it)) }.getOrNull() }
@@ -2153,9 +2165,9 @@ fun StremioCatalogScreen(
         directoryLoading = false
     }
 
-    LaunchedEffect(television, page, focusedHomeRow) {
+    LaunchedEffect(television, cinema, page, focusedHomeRow) {
         val row = focusedHomeRow ?: return@LaunchedEffect
-        if (!television || page != "home") return@LaunchedEffect
+        if (!television || cinema || page != "home") return@LaunchedEffect
         snapshotFlow {
             val layout = homeListState.layoutInfo
             val item = layout.visibleItemsInfo.firstOrNull { it.key == row }
@@ -3135,7 +3147,10 @@ fun StremioCatalogScreen(
                         cinemaCategoryPage = id
                         returnHomePoster = null
                         if (series || id == "series") {
-                            if (!series) page = "series"
+                            if (!series) {
+                                page = "series"
+                                lastCinemaDiscoverCategory = id
+                            }
                             seriesCategory = id
                             lastCinemaSeriesCategory = id
                         } else {
@@ -3246,8 +3261,8 @@ fun StremioCatalogScreen(
                     }
                     val nextPage = pages[loadPage]?.next
                     if (cinemaCollectionId != null) {
-                        val heading = providerRow?.catalog?.name
-                            ?: options.firstOrNull { it.id == category }?.label
+                        val heading = options.firstOrNull { it.id == category }?.label
+                            ?: providerRow?.catalog?.name
                             ?: XpHomeConfig.genreName(category) ?: stringResource(R.string.moviotv_xp_nav_discover)
                         XpCinemaCategoryGrid(heading, gridTitles, homePosterWidth, returnHomePoster,
                             onFocus = ::trackHomePoster, onOpen = { openItem(it) }, onInfo = { openDetails(it, false) },
@@ -3378,7 +3393,7 @@ fun StremioCatalogScreen(
                         }
                         XpFilterDropdown(
                             title = stringResource(R.string.movioxp_search_filter),
-                            selectedLabel = sortLabels[effectiveSort],
+                            selectedLabel = stringResource(R.string.movioxp_search_filter) + " · " + sortLabels[effectiveSort],
                             options = sortLabels.mapIndexed { index, label -> index.toString() to label },
                             expanded = expandedFilter == sortLabels.first(),
                             onToggle = { expandedFilter = if (expandedFilter == sortLabels.first()) null else sortLabels.first() },
@@ -3560,16 +3575,20 @@ fun StremioCatalogScreen(
                 ) {
                     if (showCinemaFeature) item(key = "xp-cinema-feature") {
                         if (hero != null) {
-                            val item = withSavedResume(hero)
-                            XpCinemaFeature(item, showYear, onFocus = { focused ->
-                                    featuredFocused = focused
-                                    if (focused) scope.launch {
-                                        withFrameNanos { }
-                                        homeListState.animateScrollToItem(0)
-                                    }
-                                },
-                                onPlay = { openItem(item) }, onInfo = { openDetails(item, false) },
-                                height = featureHeight)
+                            androidx.compose.animation.Crossfade(hero, animationSpec = androidx.compose.animation.core.tween(220)) { featured ->
+                                val item = withSavedResume(featured)
+                                XpCinemaFeature(item, showYear, onFocus = { focused ->
+                                        featuredFocused = focused
+                                        if (focused) scope.launch {
+                                            withFrameNanos { }
+                                            if (homeListState.firstVisibleItemScrollOffset != 0 || homeListState.firstVisibleItemIndex != 0) {
+                                                homeListState.animateScrollToItem(0)
+                                            }
+                                        }
+                                    },
+                                    onPlay = { openItem(item) }, onInfo = { openDetails(item, false) },
+                                    height = featureHeight)
+                            }
                         } else Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {

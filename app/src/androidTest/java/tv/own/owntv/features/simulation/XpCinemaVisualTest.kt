@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -87,6 +89,11 @@ class XpCinemaVisualTest {
         saveScreenshot("05-simulator-remote")
 
         val home = compose.onNodeWithTag("cinema-home-list")
+        val resume = activity.getString(R.string.moviotv_xp_continue_watching)
+        home.performScrollToNode(hasText(resume))
+        compose.onNodeWithContentDescription("The Matrix").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.mainClock.advanceTimeBy(700)
+        saveScreenshot("11-focused-shelf-card")
         home.performScrollToNode(hasText(action))
         val actionShelf = compose.onNodeWithTag("home-collection:xp_action")
         compose.waitUntil(90_000) {
@@ -124,6 +131,31 @@ class XpCinemaVisualTest {
         back.performTouchInput { click() }
         compose.onNodeWithTag("cinema-home-list").assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.movioxp_exit_confirm)).assertDoesNotExist()
+        fun rail(destination: Int) {
+            compose.onNodeWithContentDescription(activity.getString(destination), useUnmergedTree = true).performClick()
+        }
+        rail(R.string.moviotv_xp_nav_search)
+        awaitText(activity.getString(R.string.movioxp_cinema_browse))
+        saveScreenshot("07-cinema-search")
+        rail(R.string.moviotv_xp_nav_discover)
+        val selector = compose.onNodeWithTag("cinema-category-selector")
+        selector.assertIsDisplayed()
+        selector.performScrollToNode(hasText(action))
+        saveScreenshot("08-discover-selector")
+        compose.onNodeWithText(action).performClick()
+        compose.onNodeWithTag("cinema-category-grid").assertIsDisplayed()
+        compose.onNodeWithText(action).assertIsDisplayed()
+        saveScreenshot("09-discover-grid")
+        back.performTouchInput { click() }
+        selector.assertIsDisplayed()
+        rail(R.string.moviotv_nav_series)
+        val allSeries = activity.getString(R.string.moviotv_xp_all_series)
+        selector.assertIsDisplayed()
+        awaitText(allSeries)
+        compose.onNodeWithText(allSeries).performClick()
+        compose.onNodeWithTag("cinema-category-grid").assertIsDisplayed()
+        saveScreenshot("10-series-grid")
+
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun shell(command: String) {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }

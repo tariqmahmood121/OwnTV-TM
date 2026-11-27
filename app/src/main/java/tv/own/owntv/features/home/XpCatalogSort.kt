@@ -27,5 +27,5 @@ internal fun sortXpTitles(titles: List<XpMeta>, mode: Int): List<XpMeta> = when 
     else -> titles
 }
 
-internal fun xpCategorySort(category: String?, explicit: Int?): Int =
-    explicit ?: if (category == "xp_upcoming") 2 else 1
+@Suppress("UNUSED_PARAMETER")
+internal fun xpCategorySort(category: String?, explicit: Int?): Int = explicit ?: 1

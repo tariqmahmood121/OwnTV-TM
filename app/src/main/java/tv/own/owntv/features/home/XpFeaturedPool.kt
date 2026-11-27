@@ -45,7 +45,7 @@ internal class XpFeaturedPool(context: Context, profile: String) {
             XpMeta(item.getString("id"), "movie", item.getString("name"), optional("poster"),
                 optional("description"), optional("year"), optional("rating"), tmdbId = optional("tmdb"),
                 imdbId = optional("imdb"), ratingSource = optional("ratingSource"), backdrop = optional("backdrop"),
-                ukCertificate = optional("certificate"), titleLogo = optional("logo"), genre = optional("genre"))
+                ukCertificate = optional("certificate"), titleLogo = optional("logo"), genre = optional("genre"), runtime = optional("runtime"))
         })
     }.getOrDefault(emptyList())
 
@@ -58,7 +58,7 @@ internal class XpFeaturedPool(context: Context, profile: String) {
                 .put("description", it.description).put("year", it.releaseInfo)
                 .put("rating", it.rating).put("ratingSource", it.ratingSource).put("imdb", it.imdbId).put("tmdb", it.tmdbId)
                 .put("backdrop", it.backdrop).put("certificate", it.ukCertificate).put("logo", it.titleLogo)
-                .put("genre", it.genre)
+                .put("genre", it.genre).put("runtime", it.runtime)
         }).toString()
         prefs.edit().putString(key(source), encoded).apply()
     }
@@ -68,6 +68,21 @@ internal val xpFeaturedCategories = listOf("xp_trending", "xp_action", "xp_lates
 
 internal data class XpFeatureSettings(val enabled: Boolean = true, val seconds: Int = 20, val trendingOnly: Boolean = false)
 internal val xpFeatureIntervals = listOf(20, 30, 60, 120)
+
+internal fun xpFeatureRotationBuckets(
+    sources: Map<String, List<XpMeta>>, trendingOnly: Boolean, cursor: Int, current: String,
+    recent: List<String>, today: java.time.LocalDate,
+): List<Pair<Int, List<XpMeta>>> {
+    val order = if (trendingOnly) xpFeaturedCategories.take(1) else xpFeaturedCategories
+    return (1..order.size).mapNotNull { step ->
+        val index = (cursor + step).mod(order.size)
+        val options = xpFeatureCandidates(sources[order[index]].orEmpty().filter {
+            it.id != current && xpFullReleaseDate(it)?.isAfter(today) == false
+        })
+        val fresh = options.filterNot { it.id in recent }
+        options.takeIf { it.isNotEmpty() }?.let { index to fresh.ifEmpty { it } }
+    }
+}
 
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)
 
@@ -83,6 +98,7 @@ internal fun rememberXpFeaturedMovie(
     catalogueReady: Boolean,
     settings: XpFeatureSettings,
     categories: Map<String, List<XpMeta>>,
+    prepareMetadata: suspend (XpMeta) -> XpMeta,
     readCatalogueCache: suspend () -> List<XpMeta>,
 ): XpFeaturedState {
     val context = LocalContext.current
@@ -94,6 +110,7 @@ internal fun rememberXpFeaturedMovie(
     val remainingKey = "$profileKey|remaining|${settings.seconds}"
     val lastTitleKey = "$profileKey|title"
     val cursorKey = "$profileKey|cursor"
+    val lastFeatureSource = authorizedSources.joinToString("|", prefix = "current:")
     var cached by remember(profile, authorizedSources) { mutableStateOf(emptyList<XpMeta>()) }
     var hero by remember(profile, authorizedSources) { mutableStateOf<XpMeta?>(null) }
     var waiting by remember(profile, enabled, active, retry) { mutableStateOf(true) }
@@ -116,7 +133,7 @@ internal fun rememberXpFeaturedMovie(
     }
     LaunchedEffect(enabled, active, authorizedSources, catalogueReady, retry) {
         if (!enabled || !active) return@LaunchedEffect
-        val stored = withContext(Dispatchers.IO) { authorizedSources.flatMap(pool::read) }
+        val stored = withContext(Dispatchers.IO) { pool.read(lastFeatureSource) + authorizedSources.flatMap(pool::read) }
         cached = xpFeatureCandidates(stored)
         xpDebug("Featured pool read ${cached.size} entries at ${SystemClock.elapsedRealtime() - started} ms")
         if (cached.isEmpty()) cached = xpFeatureCandidates(readCatalogueCache())
@@ -135,6 +152,7 @@ internal fun rememberXpFeaturedMovie(
             if (ready(item)) {
                 hero = item
                 session.edit().putString(lastTitleKey, item.id).apply()
+                withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(item)) }
                 xpDebug("Featured first ready at ${SystemClock.elapsedRealtime() - started} ms")
                 break
             }
@@ -150,20 +168,17 @@ internal fun rememberXpFeaturedMovie(
         var completed = false
         try {
             kotlinx.coroutines.delay((remaining - 4_000).coerceAtLeast(0))
-            val order = if (settings.trendingOnly) xpFeaturedCategories.take(1) else xpFeaturedCategories
             val cursor = session.getInt(cursorKey, -1)
             val prior = session.getString("$profileKey|recent", "").orEmpty().split('|').filter(String::isNotBlank)
             val recent = (listOf(current.id) + prior).distinct().take(5)
-            val now = java.time.LocalDate.now()
+            val options = xpFeatureRotationBuckets(rotationSources, settings.trendingOnly, cursor, current.id,
+                recent, java.time.LocalDate.now())
             var next: XpMeta? = null
             var nextCursor = cursor
-            for (step in 1..order.size) {
-                val index = (cursor + step).mod(order.size)
-                val options = xpFeatureCandidates(rotationSources[order[index]].orEmpty())
-                    .filter { it.id != current.id && xpFullReleaseDate(it)?.isAfter(now) == false }
-                val candidate = (options.filterNot { it.id in recent }.ifEmpty { options }).randomOrNull()
-                if (candidate != null && ready(candidate)) {
-                    next = candidate
+            for ((index, candidates) in options) {
+                val candidate = candidates.shuffled().take(2).firstOrNull { ready(it) }
+                if (candidate != null) {
+                    next = withTimeoutOrNull(1_000) { prepareMetadata(candidate) } ?: candidate
                     nextCursor = index
                     break
                 }
@@ -175,6 +190,7 @@ internal fun rememberXpFeaturedMovie(
                 session.edit().putInt(cursorKey, nextCursor).putString(lastTitleKey, next.id)
                     .putString("$profileKey|recent", recent.joinToString("|")).apply()
                 hero = next
+                withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(next)) }
             } else {
                 rotationCycle++
             }

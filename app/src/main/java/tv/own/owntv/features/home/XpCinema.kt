@@ -192,7 +192,7 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
     val muted = OwnTVTheme.colors.onSurfaceVariant
     val kind = stringResource(if (item.type == "series") R.string.moviotv_nav_series else R.string.movioxp_cinema_film)
     val metadata = listOfNotNull(kind, (details?.genres?.firstOrNull() ?: item.genre),
-        xpReleaseYear(item)?.takeIf { showYear }, details?.runtime).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
+        xpReleaseYear(item)?.takeIf { showYear }, details?.runtime ?: item.runtime).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(metadata, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

@@ -12,4 +12,21 @@ class XpFeaturedPoolTest {
             movie.copy(type = "series"), movie, movie.copy(name = "Duplicate"), other))
         assertEquals(listOf(movie, other), candidates)
     }
+
+    @Test
+    fun rotationSkipsEmptyFutureUnknownAndCurrentTitles() {
+        val movie = XpMeta("now", "movie", "Title", "poster.jpg", null, "2025-12-01", null, backdrop = "wide.jpg")
+        val recent = movie.copy(id = "recent")
+        val fresh = movie.copy(id = "fresh")
+        val data = mapOf(
+            "xp_trending" to listOf(movie, movie.copy(id = "year", releaseInfo = "2025")),
+            "xp_action" to listOf(movie.copy(id = "future", releaseInfo = "2027-01-01")),
+            "xp_latest" to listOf(fresh, recent),
+        )
+        val today = java.time.LocalDate.parse("2026-11-27")
+        assertEquals(listOf(2 to listOf(fresh)), xpFeatureRotationBuckets(data, false, -1, movie.id, listOf(recent.id), today))
+        assertEquals(emptyList<Pair<Int, List<XpMeta>>>(), xpFeatureRotationBuckets(data, true, -1, movie.id, emptyList(), today))
+        assertEquals(listOf(20, 30, 60, 120), xpFeatureIntervals)
+        assertEquals(20, XpFeatureSettings().seconds)
+    }
 }
