@@ -199,7 +199,10 @@
     <string name="movioxp_display_previous">Restore Previous Settings</string>
     <string name="movioxp_display_reset_message">Reset the navigation position, card size, zoom, font size and poster labels?</string>
     <string name="movioxp_display_keep_prompt">Keep these display settings?</string>
-    <string name="movioxp_display_countdown">Reverting in %1$d seconds.</string>
+    <plurals name="movioxp_display_countdown">
+        <item quantity="one">Reverting in %1$d second.</item>
+        <item quantity="other">Reverting in %1$d seconds.</item>
+    </plurals>
     <string name="movioxp_display_keep">Keep Changes</string>
     <string name="movioxp_display_revert">Revert</string>
 </resources>

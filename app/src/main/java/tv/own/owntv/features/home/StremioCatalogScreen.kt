@@ -3243,7 +3243,7 @@ fun StremioCatalogScreen(
                 androidx.compose.ui.unit.Density(context.resources.displayMetrics.density, 1f)) {
                 XpQa5Dialog(stringResource(R.string.movioxp_display_keep_prompt), stringResource(R.string.common_cancel),
                     { finishDisplayPreview(false) }) {
-                    Text(stringResource(R.string.movioxp_display_countdown, previewSeconds), color = XpMuted)
+                    Text(pluralStringResource(R.plurals.movioxp_display_countdown, previewSeconds, previewSeconds), color = XpMuted)
                     XpDialogActions {
                         XpDialogButton(stringResource(R.string.movioxp_display_revert), OwnTVIcon.CLOSE) { finishDisplayPreview(false) }
                         XpDialogButton(stringResource(R.string.movioxp_display_keep), OwnTVIcon.CHECK) { finishDisplayPreview(true) }
