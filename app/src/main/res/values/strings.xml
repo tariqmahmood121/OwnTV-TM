@@ -229,6 +229,7 @@
     <string name="movioxp_sim_remote_left">Remote left</string>
     <string name="movioxp_sim_remote_right">Remote right</string>
     <string name="movioxp_sim_remote_show">Show remote</string>
+    <string name="movioxp_sim_touch_mode">Touch mode</string>
     <string name="movioxp_sim_up">Up</string>
     <string name="movioxp_sim_down">Down</string>
     <string name="movioxp_sim_left">Left</string>

@@ -32,6 +32,13 @@ class XpCinemaTest {
         assertEquals(0, xpNextFeatured(2, 3))
     }
 
+    @Test fun featuredBackdropDoesNotFallBackToPoster() {
+        assertNull(xpCinemaLandscape(null, "poster"))
+        assertNull(xpCinemaLandscape(" ", "poster"))
+        assertNull(xpCinemaLandscape(" poster ", "poster"))
+        assertEquals("background", xpCinemaLandscape(" background ", "poster"))
+    }
+
     @Test fun onlyRecognisedUkCertificatesAreDisplayed() {
         assertEquals("12A", xpCinemaCertificate(" 12a "))
         assertEquals("PG", xpCinemaCertificate("PG"))

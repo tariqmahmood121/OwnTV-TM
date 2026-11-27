@@ -37,6 +37,7 @@ class XpSimulationRemoteTest {
     @Test
     fun touchRemoteNavigatesTheComposeFocusTreeAndDismissesAnInViewportOverlay() {
         val activity = compose.activity
+        var shortSelections = 0
         var selections = 0
         var backPresses = 0
         var directionRepeats = 0
@@ -59,7 +60,8 @@ class XpSimulationRemoteTest {
                     } else false
                 }) {
                     Row {
-                        Text("Top left", Modifier.size(120.dp).testTag("tl").focusRequester(initialFocus).clickable {})
+                        Text("Top left", Modifier.size(120.dp).testTag("tl").focusRequester(initialFocus)
+                            .clickable { shortSelections++ })
                         Text("Top right", Modifier.size(120.dp).testTag("tr").clickable {})
                     }
                     Row {
@@ -83,6 +85,7 @@ class XpSimulationRemoteTest {
             compose.onNodeWithContentDescription(activity.getString(label)).performTouchInput { click() }
         }
         compose.onNodeWithTag("tl").assertIsFocused()
+        press(R.string.movioxp_sim_ok)
         press(R.string.movioxp_sim_right)
         compose.onNodeWithTag("tr").assertIsFocused()
         press(R.string.movioxp_sim_down)
@@ -107,6 +110,7 @@ class XpSimulationRemoteTest {
         compose.onNodeWithTag("dialog").assertDoesNotExist()
         press(R.string.common_back)
         compose.runOnIdle {
+            assertEquals(1, shortSelections)
             assertEquals(1, selections)
             assertEquals(1, backPresses)
             check(longestSelect >= 2_000) { "Select duration: $longestSelect ms" }

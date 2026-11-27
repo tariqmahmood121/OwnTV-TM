@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -320,7 +321,7 @@ private fun XpRemoteKey(input: XpSimulationInput, label: Int, key: Int, modifier
             KeyEvent.KEYCODE_DPAD_RIGHT -> tv.own.owntv.ui.components.OwnTVIcon.CHEVRON
             else -> null
         }
-        if (icon != null) tv.own.owntv.ui.components.OwnTVIcon(icon, Color.White, Modifier.width(19.dp))
+        if (icon != null) tv.own.owntv.ui.components.OwnTVIcon(icon, Color.White, Modifier.size(19.dp))
         else Text(title, color = Color.White, fontSize = 12.sp)
     }
 }
