@@ -4,8 +4,8 @@ on:
   push:
     branches: [movioxp-v4-feature-cache]
     paths-ignore:
-      - docs/movioxp-v4-g-visual-review.md
-      - .github/workflows/movioxp-v4-g-reviewed-release.yml
+      - docs/movioxp-v4-h-review.md
+      - .github/workflows/movioxp-v4-h-reviewed-release.yml
       - .github/workflows/movioxp-simulation-device-test.yml
   workflow_dispatch:
     inputs:
