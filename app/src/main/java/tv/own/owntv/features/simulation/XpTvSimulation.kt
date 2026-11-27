@@ -11,6 +11,7 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,7 +41,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.pointerInput
@@ -144,7 +149,13 @@ internal fun XpTvSimulationViewport(
         }
     }
     val view = LocalView.current
-    val input = remember(activity, view) { XpSimulationInput(activity, view) }
+    val viewportFocus = remember { FocusRequester() }
+    val hasViewportFocus = remember { mutableStateOf(false) }
+    val input = remember(activity, view, viewportFocus) {
+        XpSimulationInput(activity, view) {
+            if (!hasViewportFocus.value) viewportFocus.requestFocus()
+        }
+    }
     val overlay = remember { XpSimulationOverlay() }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val below = xpSimulationRemoteBelow(maxWidth.value, maxHeight.value)
@@ -156,7 +167,11 @@ internal fun XpTvSimulationViewport(
                     LocalXpActiveSimulation provides simulation,
                     LocalXpSimulationStart provides null,
                     LocalXpSimulationOverlay provides overlay) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize()
+                        .focusRequester(viewportFocus)
+                        .onFocusChanged { hasViewportFocus.value = it.hasFocus }
+                        .focusRestorer()
+                        .focusGroup()) {
                         content()
                         XpSimulationOverlayContent(overlay)
                     }
@@ -262,7 +277,11 @@ private fun XpSimulationBottomRemote(input: XpSimulationInput) {
 }
 
 /** Deliver directly to the Compose Android view that owns the simulated focus tree. */
-internal class XpSimulationInput(private val activity: ComponentActivity, private val owner: View) {
+internal class XpSimulationInput(
+    private val activity: ComponentActivity,
+    private val owner: View,
+    private val recoverFocus: () -> Unit,
+) {
     fun send(down: Long, key: Int, action: Int, repeats: Int = 0, flags: Int = 0) {
         if (key == KeyEvent.KEYCODE_BACK) {
             if (action == KeyEvent.ACTION_UP && flags and KeyEvent.FLAG_CANCELED == 0) {
@@ -270,8 +289,9 @@ internal class XpSimulationInput(private val activity: ComponentActivity, privat
             }
             return
         }
-        if (action == KeyEvent.ACTION_DOWN && repeats == 0 && (owner.isInTouchMode || !owner.hasFocus())) {
-            owner.requestFocusFromTouch()
+        if (action == KeyEvent.ACTION_DOWN && repeats == 0) {
+            if (owner.isInTouchMode || !owner.hasFocus()) owner.requestFocusFromTouch()
+            recoverFocus()
         }
         owner.dispatchKeyEvent(KeyEvent(down, SystemClock.uptimeMillis(), action, key, repeats, 0,
             KeyCharacterMap.VIRTUAL_KEYBOARD, 0, flags, InputDevice.SOURCE_DPAD))

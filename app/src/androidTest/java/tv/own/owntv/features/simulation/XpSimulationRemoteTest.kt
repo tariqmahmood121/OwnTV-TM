@@ -84,8 +84,9 @@ class XpSimulationRemoteTest {
         fun press(label: Int) {
             compose.onNodeWithContentDescription(activity.getString(label)).performTouchInput { click() }
         }
-        compose.onNodeWithTag("tl").assertIsFocused()
+        // The first virtual press must acquire focus even if Android starts in touch mode.
         press(R.string.movioxp_sim_ok)
+        compose.onNodeWithTag("tl").assertIsFocused()
         press(R.string.movioxp_sim_right)
         compose.onNodeWithTag("tr").assertIsFocused()
         press(R.string.movioxp_sim_down)
