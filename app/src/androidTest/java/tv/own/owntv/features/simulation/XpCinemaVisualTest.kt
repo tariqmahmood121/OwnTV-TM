@@ -238,7 +238,7 @@ class XpCinemaVisualTest {
         saveScreenshot("10-series-grid")
         compose.onNodeWithTag("cinema-profile", useUnmergedTree = true).performClick()
         compose.onNodeWithText(activity.getString(R.string.moviotv_xp_nav_settings)).performClick()
-        compose.onNodeWithText(activity.getString(R.string.moviotv_xp_settings_display_heading)).performScrollTo().performClick()
+        compose.onNodeWithText(activity.getString(R.string.movioxp_cinema_appearance)).performScrollTo().performClick()
         val font = compose.onNodeWithText(activity.getString(R.string.movioxp_font_inter))
         font.performScrollTo().performClick()
         check(activity.getSharedPreferences("movioxp_feature_settings", 0).getString("$profileScope|cinema-font", null) == "INTER")
@@ -267,17 +267,19 @@ class XpCinemaVisualTest {
         val session = activity.getSharedPreferences("movioxp_feature_sessions", 0)
         val settings = activity.getSharedPreferences("movioxp_feature_settings", 0)
         fun currentTitle() = session.getString("$profileScope|title", null)
-        fun awaitRotation(seconds: Int) {
+        fun awaitRotation(seconds: Int, fullCycle: Boolean = false) {
             val prior = checkNotNull(currentTitle())
             val started = SystemClock.elapsedRealtime()
             compose.waitUntil(seconds * 1_000L + 15_000L) { currentTitle()?.let { it != prior } == true }
-            measurements.appendText("rotation_${seconds}_ms=${SystemClock.elapsedRealtime() - started}\n")
+            val elapsed = SystemClock.elapsedRealtime() - started
+            measurements.appendText("rotation_${seconds}_ms=$elapsed\n")
+            if (fullCycle) check(elapsed >= seconds * 750L) { "Rotation advanced early: $elapsed ms at the $seconds s setting" }
         }
         pressRemote(R.string.movioxp_sim_right)
         compose.onNodeWithText(moreInfo).performSemanticsAction(SemanticsActions.RequestFocus)
         compose.onNodeWithText(moreInfo).assertIsFocused()
         awaitRotation(20)
-        awaitRotation(20)
+        awaitRotation(20, fullCycle = true)
         val retained = currentTitle()
         compose.runOnIdle { mountHome = false }
         compose.onNodeWithTag("cinema-home-list").assertDoesNotExist()
@@ -286,7 +288,7 @@ class XpCinemaVisualTest {
         awaitArtwork(12_000)
         check(currentTitle() == retained)
         awaitRotation(60)
-        awaitRotation(60)
+        awaitRotation(60, fullCycle = true)
         compose.runOnIdle {
             mountHome = false
             showBadgeFixtures = true

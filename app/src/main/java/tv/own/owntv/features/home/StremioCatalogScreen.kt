@@ -2836,6 +2836,25 @@ fun StremioCatalogScreen(
                             }
                         }
                     }
+                    if (cinema) XpSettingsAccordion(
+                        title = stringResource(R.string.movioxp_cinema_appearance),
+                        summary = stringResource(R.string.movioxp_cinema_font_style),
+                        expanded = expandedSettingsGroup == 8,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 8) null else 8 },
+                    ) {
+                        XpSettingsFieldLabel(stringResource(R.string.movioxp_cinema_font_style))
+                        Text(stringResource(R.string.movioxp_cinema_font_preview), color = XpText,
+                            fontFamily = cinemaFont.family, fontSize = 21.sp,
+                            fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("cinema-font-preview"))
+                        XpCinemaFont.entries.forEach { option ->
+                            androidx.tv.material3.ProvideTextStyle(inheritedText.copy(fontFamily = option.family)) {
+                                XpSettingsOption(stringResource(option.label), cinemaFont == option) { saveCinemaFont(option) }
+                            }
+                        }
+                        XpSettingsOption(stringResource(R.string.movioxp_cinema_restore_font)) {
+                            saveCinemaFont(XpCinemaFont.MONTSERRAT)
+                        }
+                    }
                     XpSettingsAccordion(
                         title = stringResource(R.string.moviotv_xp_settings_display_heading),
                         summary = stringResource(R.string.moviotv_xp_settings_display_summary),
@@ -2864,18 +2883,6 @@ fun StremioCatalogScreen(
                                     localDisplay.saveCinema(false)
                                 }
                                 if (cinemaEnabled) {
-                                    XpSettingsFieldLabel(stringResource(R.string.movioxp_cinema_font_style))
-                                    Text(stringResource(R.string.movioxp_cinema_font_preview), color = XpText,
-                                        fontFamily = cinemaFont.family, fontSize = 21.sp,
-                                        fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("cinema-font-preview"))
-                                    XpCinemaFont.entries.forEach { option ->
-                                        androidx.tv.material3.ProvideTextStyle(inheritedText.copy(fontFamily = option.family)) {
-                                            XpSettingsOption(stringResource(option.label), cinemaFont == option) { saveCinemaFont(option) }
-                                        }
-                                    }
-                                    XpSettingsOption(stringResource(R.string.movioxp_cinema_restore_font)) {
-                                        saveCinemaFont(XpCinemaFont.MONTSERRAT)
-                                    }
                                     XpSettingsFieldLabel(stringResource(R.string.movioxp_feature_settings))
                                     XpSettingsOption(stringResource(R.string.movioxp_feature_auto), featureSettings.enabled) {
                                         saveFeatureSettings(featureSettings.copy(enabled = !featureSettings.enabled))
@@ -5262,7 +5269,14 @@ private fun XpCinemaCategoryGrid(
     onRetry: () -> Unit, modifier: Modifier = Modifier,
 ) {
     val state = rememberLazyGridState()
-    var focusedItem by remember { mutableStateOf<XpMeta?>(null) }
+    val initialFocus = remember(title) { FocusRequester() }
+    var focusedItem by remember(title) { mutableStateOf<XpMeta?>(null) }
+    LaunchedEffect(title, titles.isNotEmpty(), restore == null) {
+        if (titles.isNotEmpty() && restore == null && focusedItem == null) {
+            withFrameNanos { }
+            runCatching { initialFocus.requestFocus() }
+        }
+    }
     val latestLoad by rememberUpdatedState(onLoad)
     val scopeKey = "cinema-grid"
     LaunchedEffect(restore, titles) {
@@ -5273,7 +5287,7 @@ private fun XpCinemaCategoryGrid(
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             Box(Modifier.width(3.dp).height(20.dp).background(XpRemotePink, RoundedCornerShape(2.dp)))
-            Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val landscape = titles.firstOrNull()?.type?.isLiveCatalogueType() == true
@@ -5298,6 +5312,7 @@ private fun XpCinemaCategoryGrid(
                             onFocus(key)
                         },
                             onLongClick = { onInfo(item) }, onVeryLongClick = { onInfo(item) },
+                            initialRequester = initialFocus.takeIf { index == 0 },
                             landscape = landscape) { onOpen(item) }
                     }
                     if (loading || failed || titles.isEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {

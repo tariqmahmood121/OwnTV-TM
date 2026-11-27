@@ -82,14 +82,17 @@ internal fun xpFeatureRotationBuckets(
     recent: List<String>, today: java.time.LocalDate,
 ): List<Pair<Int, List<XpMeta>>> {
     val order = if (trendingOnly) xpFeaturedCategories.take(1) else xpFeaturedCategories
-    return (1..order.size).mapNotNull { step ->
+    val buckets = (1..order.size).mapNotNull { step ->
         val index = (cursor + step).mod(order.size)
         val options = xpFeatureCandidates(sources[order[index]].orEmpty().filter {
             it.id != current && xpFeatureReleased(it, today)
         })
-        val fresh = options.filterNot { it.id in recent }
-        options.takeIf { it.isNotEmpty() }?.let { index to fresh.ifEmpty { it } }
+        options.takeIf { it.isNotEmpty() }?.let { index to it }
     }
+    val freshBuckets = buckets.mapNotNull { (index, options) ->
+        options.filterNot { it.id in recent }.takeIf { it.isNotEmpty() }?.let { index to it }
+    }
+    return freshBuckets.ifEmpty { buckets }
 }
 
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)

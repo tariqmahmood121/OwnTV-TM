@@ -26,6 +26,7 @@ class XpFeaturedPoolTest {
         val today = java.time.LocalDate.parse("2026-11-27")
         val year = data.getValue("xp_trending").last()
         assertEquals(listOf(0 to listOf(year), 2 to listOf(fresh)), xpFeatureRotationBuckets(data, false, -1, movie.id, listOf(recent.id), today))
+        assertEquals(listOf(2 to listOf(fresh)), xpFeatureRotationBuckets(data, false, -1, movie.id, listOf(year.id, recent.id), today))
         assertEquals(listOf(0 to listOf(year)), xpFeatureRotationBuckets(data, true, -1, movie.id, emptyList(), today))
         org.junit.Assert.assertFalse(xpFeatureReleased(movie.copy(releaseInfo = "2026"), today))
         org.junit.Assert.assertFalse(xpFeatureReleased(movie.copy(releaseInfo = "2026-12-01"), today))
