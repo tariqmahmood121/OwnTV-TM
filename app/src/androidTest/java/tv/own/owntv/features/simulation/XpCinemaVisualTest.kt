@@ -301,7 +301,7 @@ class XpCinemaVisualTest {
         compose.waitForIdle()
         SystemClock.sleep(1_300)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+        val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot(compose.activity.window))
         val scaled = Bitmap.createScaledBitmap(screenshot, 1200, screenshot.height * 1200 / screenshot.width, true)
         val output = File(instrumentation.targetContext.filesDir, "cinema-visual").apply { mkdirs() }
         File(output, "$name.jpg").outputStream().use {

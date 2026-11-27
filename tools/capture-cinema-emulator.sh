@@ -8,6 +8,8 @@ test -n "$app_apk" && test -n "$test_apk"
 adb install -r -t "$app_apk"
 adb install -r -t "$test_apk"
 adb shell settings put secure immersive_mode_confirmations confirmed
+# The emulator's launcher can report an unrelated ANR on a busy runner.
+adb shell am force-stop com.google.android.apps.nexuslauncher
 adb shell am instrument -w -e package tv.own.owntv.features.simulation \
     com.oakstudios.movioxp.test/androidx.test.runner.AndroidJUnitRunner | tee cinema-instrumentation.txt
 
