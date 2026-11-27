@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import coil3.SingletonImageLoader
@@ -54,7 +55,7 @@ internal class XpFeaturedPool(context: Context, profile: String) {
         val candidates = xpFeatureCandidates(fresh + read(source))
         val encoded = JSONArray(candidates.map {
             JSONObject().put("id", it.id).put("name", it.name).put("poster", it.poster)
-                .put("description", it.description).put("year", xpReleaseYear(it))
+                .put("description", it.description).put("year", it.releaseInfo)
                 .put("rating", it.rating).put("ratingSource", it.ratingSource).put("imdb", it.imdbId).put("tmdb", it.tmdbId)
                 .put("backdrop", it.backdrop).put("certificate", it.ukCertificate).put("logo", it.titleLogo)
                 .put("genre", it.genre)
@@ -62,6 +63,11 @@ internal class XpFeaturedPool(context: Context, profile: String) {
         prefs.edit().putString(key(source), encoded).apply()
     }
 }
+
+internal val xpFeaturedCategories = listOf("xp_trending", "xp_action", "xp_latest", "xp_thriller", "xp_bollywood", "xp_horror")
+
+internal data class XpFeatureSettings(val enabled: Boolean = true, val seconds: Int = 20, val trendingOnly: Boolean = false)
+internal val xpFeatureIntervals = listOf(20, 30, 60, 120)
 
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)
 
@@ -75,16 +81,23 @@ internal fun rememberXpFeaturedMovie(
     active: Boolean,
     retry: Long,
     catalogueReady: Boolean,
+    settings: XpFeatureSettings,
+    categories: Map<String, List<XpMeta>>,
     readCatalogueCache: suspend () -> List<XpMeta>,
 ): XpFeaturedState {
     val context = LocalContext.current
     val started = remember(profile, retry) { SystemClock.elapsedRealtime() }
     val pool = remember(context, profile) { XpFeaturedPool(context, profile) }
+    val session = remember(context) { context.getSharedPreferences("movioxp_feature_sessions", Context.MODE_PRIVATE) }
+    val profileKey = profile
+    val rotationSources by rememberUpdatedState(categories)
+    val remainingKey = "$profileKey|remaining|${settings.seconds}"
+    val lastTitleKey = "$profileKey|title"
+    val cursorKey = "$profileKey|cursor"
     var cached by remember(profile, authorizedSources) { mutableStateOf(emptyList<XpMeta>()) }
     var hero by remember(profile, authorizedSources) { mutableStateOf<XpMeta?>(null) }
     var waiting by remember(profile, enabled, active, retry) { mutableStateOf(true) }
     val initialCandidates = xpFeatureCandidates(cached + candidates)
-    val rotationCandidates = xpFeatureCandidates(candidates + cached)
     suspend fun ready(item: XpMeta): Boolean {
         val backdrop = item.backdrop ?: return false
         val since = SystemClock.elapsedRealtime()
@@ -116,28 +129,58 @@ internal fun rememberXpFeaturedMovie(
     }
     LaunchedEffect(enabled, active, initialCandidates, retry) {
         if (!enabled || !active || hero != null) return@LaunchedEffect
-        for (item in initialCandidates) {
+        val last = session.getString(lastTitleKey, null)
+        val priority = initialCandidates.sortedByDescending { it.id == last }
+        for (item in priority) {
             if (ready(item)) {
                 hero = item
+                session.edit().putString(lastTitleKey, item.id).apply()
                 xpDebug("Featured first ready at ${SystemClock.elapsedRealtime() - started} ms")
                 break
             }
         }
     }
-    LaunchedEffect(enabled, rotationAllowed, hero?.id, rotationCandidates) {
+    var rotationCycle by remember(profile) { mutableStateOf(0) }
+    LaunchedEffect(enabled, rotationAllowed, hero?.id, settings, rotationCycle) {
         val current = hero ?: return@LaunchedEffect
-        if (!enabled || !rotationAllowed) return@LaunchedEffect
-        val options = rotationCandidates.filterNot { it.id == current.id }.shuffled()
-        if (options.isEmpty()) return@LaunchedEffect
-        while (true) {
-            val cycle = SystemClock.elapsedRealtime()
-            delay(52_000)
-            val next = options.take(2).firstOrNull { ready(it) }
-            delay((60_000 - (SystemClock.elapsedRealtime() - cycle)).coerceAtLeast(0))
-            if (next != null) {
-                hero = next
-                break
+        if (!enabled || !rotationAllowed || !settings.enabled) return@LaunchedEffect
+        val interval = settings.seconds * 1_000L
+        val remaining = session.getLong(remainingKey, interval).coerceIn(0, interval)
+        val deadline = SystemClock.elapsedRealtime() + remaining
+        var completed = false
+        try {
+            kotlinx.coroutines.delay((remaining - 4_000).coerceAtLeast(0))
+            val order = if (settings.trendingOnly) xpFeaturedCategories.take(1) else xpFeaturedCategories
+            val cursor = session.getInt(cursorKey, -1)
+            val prior = session.getString("$profileKey|recent", "").orEmpty().split('|').filter(String::isNotBlank)
+            val recent = (listOf(current.id) + prior).distinct().take(5)
+            val now = java.time.LocalDate.now()
+            var next: XpMeta? = null
+            var nextCursor = cursor
+            for (step in 1..order.size) {
+                val index = (cursor + step).mod(order.size)
+                val options = xpFeatureCandidates(rotationSources[order[index]].orEmpty())
+                    .filter { it.id != current.id && xpFullReleaseDate(it)?.isAfter(now) == false }
+                val candidate = (options.filterNot { it.id in recent }.ifEmpty { options }).randomOrNull()
+                if (candidate != null && ready(candidate)) {
+                    next = candidate
+                    nextCursor = index
+                    break
+                }
             }
+            delay((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+            completed = true
+            session.edit().putLong(remainingKey, interval).apply()
+            if (next != null) {
+                session.edit().putInt(cursorKey, nextCursor).putString(lastTitleKey, next.id)
+                    .putString("$profileKey|recent", recent.joinToString("|")).apply()
+                hero = next
+            } else {
+                rotationCycle++
+            }
+        } finally {
+            if (!completed) session.edit().putLong(remainingKey,
+                (deadline - SystemClock.elapsedRealtime()).coerceIn(0, interval)).apply()
         }
     }
     return XpFeaturedState(hero.takeIf { enabled && active }, waiting)

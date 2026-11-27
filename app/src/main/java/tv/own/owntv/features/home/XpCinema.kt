@@ -195,7 +195,7 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
         xpReleaseYear(item)?.takeIf { showYear }, details?.runtime).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(metadata, color = muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text(metadata, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             xpCinemaCertificate(details?.ukCertificate ?: item.ukCertificate)?.let { code ->
                 val color = when (code) {
                     "U" -> Color(0xFF23964C)

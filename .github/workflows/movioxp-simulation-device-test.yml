@@ -2,10 +2,10 @@ name: MovioXP simulator navigation device test
 
 on:
   push:
-    branches: [movioxp-v4-feature-cache]
+    branches: [movioxp-v4-cinema-i]
     paths-ignore:
-      - docs/movioxp-v4-h-review.md
-      - .github/workflows/movioxp-v4-h-reviewed-release.yml
+      - docs/movioxp-v4-i-review.md
+      - .github/workflows/movioxp-v4-i-reviewed-release.yml
       - .github/workflows/movioxp-simulation-device-test.yml
   workflow_dispatch:
     inputs:
@@ -23,8 +23,8 @@ jobs:
     timeout-minutes: 45
     env:
       MOVIOXP_RELEASE: 'true'
-      VERSION_NAME: '4.0 H'
-      VERSION_CODE: '100105'
+      VERSION_NAME: '4.0 I'
+      VERSION_CODE: '100106'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -77,7 +77,7 @@ jobs:
           path: cinema-visual/
 
   signed-qa:
-    if: github.ref_name == 'movioxp-v4-feature-cache' && inputs.visual_verified == true
+    if: github.ref_name == 'movioxp-v4-cinema-i' && inputs.visual_verified == true
     needs: emulator
     permissions:
       contents: write

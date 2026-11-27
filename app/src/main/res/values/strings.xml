@@ -77,7 +77,7 @@
     <string name="movioxp_home_default_rows">Show other add-on catalogue rows</string>
     <string name="movioxp_home_trending">Trending</string>
     <string name="movioxp_home_cinemeta_featured">Cinemeta Featured</string>
-    <string name="movioxp_home_latest">Latest releases</string>
+    <string name="movioxp_home_latest">Latest Releases</string>
     <string name="movioxp_home_cinema">In Cinemas</string>
     <string name="movioxp_home_upcoming">Upcoming</string>
     <string name="movioxp_season">Season %1$d</string>
@@ -95,6 +95,7 @@
     <string name="movioxp_filter_titles">Search titles</string>
     <string name="movioxp_filter_categories">Search categories</string>
     <string name="movioxp_grid_filter">Filter %1$s</string>
+    <string name="movioxp_search_filter">Filter</string>
     <string name="movioxp_sort">Sort</string>
     <string name="movioxp_show_rating">Show Rating</string>
     <string name="movioxp_show_year">Show Year</string>
@@ -212,12 +213,17 @@
     <string name="movioxp_tv_classic">Classic</string>
     <string name="movioxp_cinema_space">Space</string>
     <string name="movioxp_cinema_backspace">Delete</string>
+    <string name="movioxp_feature_settings">Featured Movie Settings</string>
+    <string name="movioxp_feature_auto">Automatic Rotation</string>
+    <string name="movioxp_feature_seconds">%1$d Seconds</string>
+    <string name="movioxp_feature_all">All Categories</string>
+    <string name="movioxp_feature_trending">Trending Only</string>
     <string name="movioxp_feature_loading">Finding a featured movie…</string>
     <string name="movioxp_feature_unavailable">Featured movies are temporarily unavailable</string>
-    <string name="movioxp_cinema_more_info">More info</string>
+    <string name="movioxp_cinema_more_info">More Info</string>
     <string name="movioxp_cinema_film">Film</string>
     <string name="movioxp_cinema_rating">★ %1$s</string>
-    <string name="movioxp_cinema_browse">Browse titles</string>
+    <string name="movioxp_cinema_browse">Browse Titles</string>
     <string name="movioxp_cinema_results">Search results</string>
     <string name="movioxp_my_library">My MOVIOXP</string>
     <string name="movioxp_inter_licence">Inter · SIL Open Font License</string>
