@@ -98,13 +98,15 @@ fun MovioAboutScreen(
                 style = stageText(13, 400), color = StageColors.Muted)
             if (tv.own.owntv.features.home.LocalXpCinema.current) {
                 var showInter by remember { mutableStateOf(false) }
-                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_inter_licence),
+                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_cinema_font_licences),
                     tv.own.owntv.ui.components.OwnTVIcon.INFO) { showInter = !showInter }
                 if (showInter) {
-                    val inter = remember(context) {
-                        context.assets.open("movioxp_licences/inter-ofl.txt").bufferedReader().use { it.readText() }
+                    val fontLicences = remember(context) {
+                        val directory = "movioxp_licences"
+                        context.assets.list(directory).orEmpty().filter { it.endsWith("-ofl.txt") }.sorted()
+                            .joinToString("\n\n") { context.assets.open("$directory/$it").bufferedReader().use { it.readText() } }
                     }
-                    Text(inter, style = stageText(11, 400), color = StageColors.Muted)
+                    Text(fontLicences, style = stageText(11, 400), color = StageColors.Muted)
                 }
             }
             val licence = remember(context) { runCatching {

@@ -248,4 +248,22 @@
     <string name="movioxp_sim_right">Right</string>
     <string name="movioxp_sim_ok">OK</string>
     <string name="movioxp_sim_menu">Menu</string>
+    <string name="movioxp_font_montserrat">Montserrat</string>
+    <string name="movioxp_font_inter">Inter</string>
+    <string name="movioxp_font_poppins">Poppins</string>
+    <string name="movioxp_font_manrope">Manrope</string>
+    <string name="movioxp_font_dm_sans">DM Sans</string>
+    <string name="movioxp_font_system">System Default</string>
+    <string name="movioxp_cinema_font_style">Font Style</string>
+    <string name="movioxp_cinema_font_preview">MovioXP Cinema Preview</string>
+    <string name="movioxp_cinema_restore_font">Restore Default Font</string>
+    <string name="movioxp_cinema_delete">Delete</string>
+    <string name="movioxp_cinema_all_titles">All Titles</string>
+    <string name="movioxp_cinema_hours_minutes">%1$dh %2$dm</string>
+    <plurals name="movioxp_cinema_seasons">
+        <item quantity="one">%1$d Season</item>
+        <item quantity="other">%1$d Seasons</item>
+    </plurals>
+    <string name="movioxp_wordmark_description">MovioXP</string>
+    <string name="movioxp_cinema_font_licences">Cinema Font Licences</string>
 </resources>

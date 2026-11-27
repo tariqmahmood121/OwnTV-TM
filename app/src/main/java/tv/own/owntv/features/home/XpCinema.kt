@@ -41,13 +41,27 @@ import tv.own.owntv.ui.theme.dissolveEdges
 import tv.own.owntv.ui.stage.backdropLeftWash
 
 internal val XpCinemaBackground = Color(0xFF0C0C11)
-internal val XpCinemaInter = FontFamily(
-    Font(R.font.inter_variable, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(R.font.inter_variable, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
-    Font(R.font.inter_variable, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
-    Font(R.font.inter_variable, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
-    Font(R.font.inter_variable, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
+private fun cinemaVariableFont(resource: Int) = FontFamily(
+    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold)
+        .map { Font(resource, it, variationSettings = FontVariation.Settings(FontVariation.weight(it.weight))) },
 )
+
+internal enum class XpCinemaFont(val label: Int, val family: FontFamily) {
+    MONTSERRAT(R.string.movioxp_font_montserrat, cinemaVariableFont(R.font.montserrat_variable)),
+    INTER(R.string.movioxp_font_inter, cinemaVariableFont(R.font.inter_variable)),
+    POPPINS(R.string.movioxp_font_poppins, FontFamily(
+        Font(R.font.poppins_regular), Font(R.font.poppins_medium, FontWeight.Medium),
+        Font(R.font.poppins_semibold, FontWeight.SemiBold), Font(R.font.poppins_bold, FontWeight.Bold),
+        Font(R.font.poppins_extrabold, FontWeight.ExtraBold),
+    )),
+    MANROPE(R.string.movioxp_font_manrope, cinemaVariableFont(R.font.manrope_variable)),
+    DM_SANS(R.string.movioxp_font_dm_sans, cinemaVariableFont(R.font.dmsans_variable)),
+    SYSTEM(R.string.movioxp_font_system, FontFamily.Default);
+
+    companion object {
+        fun restore(value: String?) = entries.firstOrNull { it.name == value } ?: MONTSERRAT
+    }
+}
 
 internal fun xpNextFeatured(index: Int, count: Int): Int =
     if (count <= 1) 0 else ((index.coerceAtLeast(0) % count) + 1) % count
@@ -146,7 +160,7 @@ internal fun XpCinemaKeyboard(value: TextFieldValue, onEdit: (TextFieldValue) ->
     val colors = OwnTVTheme.colors
     BasicTextField(value, onEdit, singleLine = true,
         keyboardOptions = KeyboardOptions(showKeyboardOnFocus = false),
-        textStyle = TextStyle(color = colors.onSurface, fontSize = 18.sp, fontFamily = XpCinemaInter),
+        textStyle = TextStyle(color = colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Medium, fontFamily = tv.own.owntv.ui.theme.LocalMainFontFamily.current),
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainerLow, RoundedCornerShape(8.dp)).padding(8.dp),
         decorationBox = { inner ->
             Box {
@@ -155,8 +169,11 @@ internal fun XpCinemaKeyboard(value: TextFieldValue, onEdit: (TextFieldValue) ->
                 inner()
             }
         })
-    val rows = listOf("ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ1234", "567890", ".,'&-:")
-    rows.forEachIndexed { row, letters ->
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        XpCinemaKey(stringResource(R.string.movioxp_cinema_space), Modifier.weight(1f)) { onEdit(xpCinemaEdit(value, " ")) }
+        XpCinemaKey(stringResource(R.string.movioxp_cinema_delete), Modifier.weight(1f)) { onEdit(xpCinemaEdit(value, null)) }
+    }
+    listOf("abcdef", "ghijkl", "mnopqr", "stuvwx", "yz1234", "567890").forEachIndexed { row, letters ->
         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             letters.forEachIndexed { column, letter ->
                 XpCinemaKey(letter.toString(), Modifier.weight(1f).then(
@@ -166,11 +183,7 @@ internal fun XpCinemaKeyboard(value: TextFieldValue, onEdit: (TextFieldValue) ->
             }
         }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        XpCinemaKey(stringResource(R.string.movioxp_cinema_space), Modifier.weight(1f)) { onEdit(xpCinemaEdit(value, " ")) }
-        XpCinemaKey(stringResource(R.string.movioxp_cinema_backspace), Modifier.weight(1f)) { onEdit(xpCinemaEdit(value, null)) }
-        XpCinemaKey(stringResource(R.string.movioxp_search_clear), Modifier.weight(1f)) { onEdit(TextFieldValue()) }
-    }
+    XpCinemaKey(stringResource(R.string.movioxp_search_clear), Modifier.fillMaxWidth()) { onEdit(TextFieldValue()) }
     XpAction(stringResource(R.string.moviotv_xp_nav_search), value.text.isBlank(), compact = true, onClick = onSubmit)
 }
 
@@ -192,10 +205,17 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
     val muted = OwnTVTheme.colors.onSurfaceVariant
     val kind = stringResource(if (item.type == "series") R.string.moviotv_nav_series else R.string.movioxp_cinema_film)
     val metadata = listOfNotNull(kind, (details?.genres?.firstOrNull() ?: item.genre),
-        xpReleaseYear(item)?.takeIf { showYear }, details?.runtime ?: item.runtime).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
+        xpReleaseYear(item)?.takeIf { showYear }, if (item.type == "series") details?.seasonCount?.let {
+            androidx.compose.ui.res.pluralStringResource(R.plurals.movioxp_cinema_seasons, it, it)
+        } else (details?.runtime ?: item.runtime)?.let { runtime ->
+            runtime.toIntOrNull()?.let { minutes ->
+                if (minutes >= 60) stringResource(R.string.movioxp_cinema_hours_minutes, minutes / 60, minutes % 60)
+                else stringResource(R.string.movioxp_runtime_minutes, minutes)
+            } ?: runtime
+        }).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(metadata, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text(metadata, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             xpCinemaCertificate(details?.ukCertificate ?: item.ukCertificate)?.let { code ->
                 val color = when (code) {
                     "U" -> Color(0xFF23964C)
@@ -204,17 +224,18 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
                     "15" -> Color(0xFFDC414B)
                     else -> Color(0xFFA91E32)
                 }
-                Box(Modifier.size(25.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
-                    Text(code, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                val diameter = with(androidx.compose.ui.platform.LocalDensity.current) { 21.sp.toDp() }
+                Box(Modifier.padding(start = 12.dp).size(diameter).background(color, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(code, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 }
             }
-            item.rating?.takeIf { item.ratingSource == null || item.ratingSource.equals("IMDb", true) }
+            (details?.imdbRating ?: xpCinemaImdbRating(item))
                 ?.takeIf { it.toDoubleOrNull()?.let { number -> number in 0.0..10.0 } == true }?.let { rating ->
                     Text(stringResource(R.string.movioxp_cinema_rating, rating), color = Color(0xFFFFD775), fontSize = 12.sp, maxLines = 1)
                 }
         }
         (details?.synopsis ?: item.description)?.takeIf(String::isNotBlank)?.let {
-            Text(it, color = muted, fontSize = 12.sp, maxLines = synopsisLines, overflow = TextOverflow.Ellipsis)
+            Text(it, color = muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = synopsisLines, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -243,17 +264,23 @@ internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifie
 internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit, height: androidx.compose.ui.unit.Dp) {
     val loadDetails = LocalXpCinemaDetails.current
     val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = null; value = loadDetails(item) }
-    BoxWithConstraints(Modifier.fillMaxWidth().onFocusChanged { onFocus(it.hasFocus) }.focusGroup()) {
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("cinema-feature-content").onFocusChanged { onFocus(it.hasFocus) }.focusGroup()) {
         Box(Modifier.fillMaxWidth().heightIn(min = height)) {
             Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(.64f).widthIn(max = 560.dp)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val logo = details?.titleLogo ?: item.titleLogo
-                if (logo != null) AsyncImage(logo, item.name, Modifier.width(205.dp).height(63.dp),
-                    contentScale = ContentScale.Fit, alignment = Alignment.CenterStart)
-                else Text(item.name, color = Color.White, fontSize = 39.sp, fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                XpCinemaMetadata(item, details, showYear, 3)
+                androidx.compose.animation.Crossfade(item to details,
+                    animationSpec = androidx.compose.animation.core.tween(220)) { (featured, metadata) ->
+                    Column(Modifier.semantics { contentDescription = featured.name },
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val logo = metadata?.titleLogo ?: featured.titleLogo
+                        if (logo != null) AsyncImage(logo, featured.name, Modifier.width(205.dp).height(63.dp),
+                            contentScale = ContentScale.Fit, alignment = Alignment.CenterStart)
+                        else Text(featured.name, color = Color.White, fontSize = 39.sp, fontWeight = FontWeight.ExtraBold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        XpCinemaMetadata(featured, metadata, showYear, 3)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     XpCinemaFeatureButton(stringResource(if (item.positionMs > 0L) R.string.movioxp_cinema_resume else R.string.movioxp_play_content),
                         OwnTVIcon.PLAY, primary = true, onClick = onPlay)
@@ -291,7 +318,7 @@ internal fun XpCinemaFocusedPreview(item: XpMeta) {
     val showYear = LocalXpPosterDisplay.current.second
     val artwork = details?.backdrop ?: item.backdrop
     Row(Modifier.fillMaxWidth().heightIn(max = 120.dp).clip(RoundedCornerShape(11.dp))
-        .background(OwnTVTheme.colors.surfaceContainerLow).padding(8.dp),
+        .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AsyncImage(artwork ?: item.poster, null, Modifier.width(130.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp)),
             contentScale = if (artwork == null) ContentScale.Fit else ContentScale.Crop)

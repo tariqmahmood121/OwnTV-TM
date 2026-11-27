@@ -17,6 +17,10 @@ internal fun xpFullReleaseDate(item: XpMeta): LocalDate? {
 internal fun xpRating(item: XpMeta): Double? =
     item.rating?.toDoubleOrNull()?.takeIf { it > 0 && it <= 10 }
 
+internal fun xpCinemaImdbRating(item: XpMeta): String? =
+    item.rating?.takeIf { xpRating(item) != null && (item.ratingSource.equals("IMDb", true) ||
+        item.ratingSource == null && XpPlaybackIdentity.isImdbId(item.imdbId ?: item.id)) }
+
 internal fun sortXpTitles(titles: List<XpMeta>, mode: Int): List<XpMeta> = when (mode) {
     1 -> titles.sortedWith(compareBy(nullsLast(reverseOrder()), ::xpFullReleaseDate))
     2 -> titles.sortedWith(compareBy(nullsLast(naturalOrder()), ::xpFullReleaseDate))

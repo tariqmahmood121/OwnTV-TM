@@ -32,13 +32,7 @@ internal fun XpStartupScreen(visible: Boolean) {
     AnimatedVisibility(visible, enter = EnterTransition.None, exit = fadeOut(tween(180))) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Image(painterResource(R.drawable.moviotv_launcher), null, Modifier.size(88.dp))
-                val movio = stringResource(R.string.movioxp_splash_movio)
-                val tv = stringResource(R.string.movioxp_splash_tv)
-                Text(buildAnnotatedString {
-                    withStyle(SpanStyle(color = Color.White)) { append(movio) }
-                    withStyle(SpanStyle(color = XpRemotePink)) { append(tv) }
-                }, fontSize = 44.sp, fontWeight = FontWeight.Black)
+                XpApprovedWordmark(Modifier.size(width = 320.dp, height = 92.dp))
                 Text(BuildConfig.VERSION_NAME, color = Color.White, fontSize = 14.sp)
                 val creator = stringResource(R.string.movioxp_splash_created_by)
                 val ziggs = stringResource(R.string.movioxp_splash_ziggs)
@@ -49,4 +43,10 @@ internal fun XpStartupScreen(visible: Boolean) {
             }
         }
     }
+}
+
+@Composable
+internal fun XpApprovedWordmark(modifier: Modifier = Modifier) {
+    Image(painterResource(R.drawable.movioxp_approved_wordmark),
+        stringResource(R.string.movioxp_wordmark_description), modifier.background(Color.Black))
 }

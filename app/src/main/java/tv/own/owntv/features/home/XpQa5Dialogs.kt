@@ -171,6 +171,8 @@ internal data class XpDetailMetadata(
     val ukCertificate: String? = null,
     val synopsis: String? = null,
     val titleLogo: String? = null,
+    val imdbRating: String? = null,
+    val seasonCount: Int? = null,
 ) {
     companion object {
         fun parse(meta: JSONObject): XpDetailMetadata {
@@ -190,7 +192,13 @@ internal data class XpDetailMetadata(
             val backdrop = (meta.opt("background") as? String)?.takeIf(String::isNotBlank)
             val synopsis = (meta.opt("description") as? String)?.takeIf(String::isNotBlank)
             return XpDetailMetadata(names("genres"), runtime, names("cast"), names("director"), names("writer"),
-                backdrop, xpUkCertificate(meta), synopsis, (meta.opt("logo") as? String)?.takeIf(String::isNotBlank))
+                backdrop, xpUkCertificate(meta), synopsis, (meta.opt("logo") as? String)?.takeIf(String::isNotBlank),
+                meta.optString("imdbRating").takeIf { it.toDoubleOrNull()?.let { n -> n > 0 && n <= 10 } == true },
+                meta.optInt("seasonCount").takeIf { it > 0 } ?: meta.optJSONArray("videos")?.let { videos ->
+                    (0 until videos.length()).mapNotNull { videos.optJSONObject(it)?.optInt("season") }
+                        .filter { it > 0 }.distinct().size.takeIf { it > 0 }
+                },
+            )
         }
     }
 }

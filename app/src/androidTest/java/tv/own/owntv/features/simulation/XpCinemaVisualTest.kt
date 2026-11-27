@@ -8,6 +8,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.LaunchedEffect
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.home.XpContinueStore
+import tv.own.owntv.features.home.catalogueProfileKey
+import androidx.compose.ui.test.assertIsFocused
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import java.io.File
 import androidx.activity.ComponentActivity
@@ -54,11 +56,13 @@ class XpCinemaVisualTest {
         val action = activity.getString(R.string.movioxp_home_action)
         val exploreAction = activity.getString(R.string.movioxp_explore_collection, action)
         var mountHome by mutableStateOf(true)
+        var profileScope = ""
         val coldStarted = SystemClock.elapsedRealtime()
         compose.setContent {
             val profiles: ProfilesViewModel = koinViewModel()
             var seeded by remember { mutableStateOf(false) }
             LaunchedEffect(profiles) {
+                profileScope = catalogueProfileKey(null, profiles.activeProfileId.value)
                 XpContinueStore.updateProgress(activity, profiles.activeProfileId.value, "tt0133093", "movie",
                     "The Matrix", "https://images.metahub.space/poster/medium/tt0133093/img", "1999", 900_000L, 8_160_000L)
                 seeded = true
@@ -89,11 +93,28 @@ class XpCinemaVisualTest {
         saveScreenshot("05-simulator-remote")
 
         val home = compose.onNodeWithTag("cinema-home-list")
-        val resume = activity.getString(R.string.moviotv_xp_continue_watching)
-        home.performScrollToNode(hasText(resume))
+        home.performScrollToIndex(1)
         compose.onNodeWithContentDescription("The Matrix").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.mainClock.advanceTimeBy(700)
+        val expandedCard = "cinema-expanded-card-metadata"
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(androidx.compose.ui.test.hasTestTag(expandedCard), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag(expandedCard, useUnmergedTree = true).assertIsDisplayed()
         saveScreenshot("11-focused-shelf-card")
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String) {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
+        }
+        shell("input keyevent 23")
+        val play = activity.getString(R.string.movioxp_play_content)
+        val sources = activity.getString(R.string.movioxp_find_sources)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(play) or hasText(sources)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onAllNodes(hasText(play) or hasText(sources))[0].assertIsFocused()
+        saveScreenshot("12-single-ok-detail")
+        shell("input keyevent 4")
         home.performScrollToNode(hasText(action))
         val actionShelf = compose.onNodeWithTag("home-collection:xp_action")
         compose.waitUntil(90_000) {
@@ -156,10 +177,6 @@ class XpCinemaVisualTest {
         compose.onNodeWithTag("cinema-category-grid").assertIsDisplayed()
         saveScreenshot("10-series-grid")
 
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        fun shell(command: String) {
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
-        }
         shell("svc wifi disable")
         shell("svc data disable")
         try {
@@ -177,7 +194,27 @@ class XpCinemaVisualTest {
             shell("svc wifi enable")
             shell("svc data enable")
         }
-
+        val session = activity.getSharedPreferences("movioxp_feature_sessions", 0)
+        val settings = activity.getSharedPreferences("movioxp_feature_settings", 0)
+        fun currentTitle() = session.getString("$profileScope|title", null)
+        fun awaitRotation(seconds: Int) {
+            val prior = checkNotNull(currentTitle())
+            val started = SystemClock.elapsedRealtime()
+            compose.waitUntil(seconds * 1_000L + 15_000L) { currentTitle()?.let { it != prior } == true }
+            measurements.appendText("rotation_${seconds}_ms=${SystemClock.elapsedRealtime() - started}\n")
+        }
+        compose.onNodeWithText(moreInfo).performSemanticsAction(SemanticsActions.RequestFocus)
+        awaitRotation(20)
+        awaitRotation(20)
+        val retained = currentTitle()
+        compose.runOnIdle { mountHome = false }
+        compose.onNodeWithTag("cinema-home-list").assertDoesNotExist()
+        settings.edit().putInt("$profileScope|seconds", 60).apply()
+        compose.runOnIdle { mountHome = true }
+        awaitArtwork(12_000)
+        check(currentTitle() == retained)
+        awaitRotation(60)
+        awaitRotation(60)
     }
 
     private fun saveScreenshot(name: String) {

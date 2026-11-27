@@ -17,6 +17,6 @@ for shot in $(adb shell run-as com.oakstudios.movioxp ls files/cinema-visual 2>/
 done
 grep -F 'OK (2 tests)' cinema-instrumentation.txt
 cat cinema-visual/timings.txt
-for expected in 01-cinema-home 02-explore-more 03-action-category 04-exit-confirmation 05-simulator-remote 06-warm-offline-home 07-cinema-search 08-discover-selector 09-discover-grid 10-series-grid 11-focused-shelf-card; do
+for expected in 01-cinema-home 02-explore-more 03-action-category 04-exit-confirmation 05-simulator-remote 06-warm-offline-home 07-cinema-search 08-discover-selector 09-discover-grid 10-series-grid 11-focused-shelf-card 12-single-ok-detail; do
     test -s "cinema-visual/$expected.jpg"
 done

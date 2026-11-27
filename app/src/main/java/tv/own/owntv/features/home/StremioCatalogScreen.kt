@@ -6,6 +6,7 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.Image
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -510,6 +511,7 @@ private object XpAddonProtocol {
                         releaseInfo = item.optString("released").take(10).takeIf { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
                             ?: item.optString("releaseInfo").takeIf { it.isNotBlank() },
                         rating = item.optString("imdbRating").takeIf { it.isNotBlank() },
+                        ratingSource = "IMDb",
                         backdrop = (item.opt("background") as? String)?.takeIf(String::isNotBlank),
                         genre = XpDetailMetadata.parse(item).genres.firstOrNull(),
                         ukCertificate = xpUkCertificate(item),
@@ -1178,11 +1180,13 @@ fun StremioCatalogScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val globalSearchFocus = remember { FocusRequester() }
     var cinemaCategoryPage by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
+    var cinemaSearchOrigin by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
     var openSearchKeyboard by remember { mutableStateOf(false) }
     fun enterSearch() {
         if (page != "search") {
             returnPage = page
-            searchType = when (page) {
+            if (cinema) cinemaSearchOrigin = cinemaCategoryPage
+            searchType = if (cinema) 0 else when (page) {
                 "discover", "movies" -> 1
                 "series" -> 2
                 else -> 0
@@ -1215,6 +1219,7 @@ fun StremioCatalogScreen(
     var centralSyncMessage by remember { mutableStateOf<String?>(null) }
     val firstSourceFocus = remember { FocusRequester() }
     val detailFocus = remember { FocusRequester() }
+    val firstEpisodeFocus = remember { FocusRequester() }
     val firstGridFocus = remember { FocusRequester() }
     val categoryRailFocus = remember { FocusRequester() }
     val bottomNavigationFocus = remember { FocusRequester() }
@@ -1313,6 +1318,14 @@ fun StremioCatalogScreen(
     val moveableAddons = managedAddons.map { it.url }
     val cinemaCollectionId = cinemaCategoryPage.takeIf { cinema && (page == "discover" || page == "series") }
     val featurePreferences = remember(context) { context.getSharedPreferences("movioxp_feature_settings", Context.MODE_PRIVATE) }
+    val cinemaFontKey = "$catalogueProfile|cinema-font"
+    var cinemaFont by remember(cinemaFontKey) {
+        mutableStateOf(XpCinemaFont.restore(featurePreferences.getString(cinemaFontKey, null)))
+    }
+    fun saveCinemaFont(font: XpCinemaFont) {
+        cinemaFont = font
+        featurePreferences.edit().putString(cinemaFontKey, font.name).apply()
+    }
     var featureSettings by remember(catalogueProfile) {
         mutableStateOf(XpFeatureSettings(
             featurePreferences.getBoolean("$catalogueProfile|enabled", true),
@@ -1498,7 +1511,11 @@ fun StremioCatalogScreen(
             }
         }
     }
-    var featuredFocused by remember { mutableStateOf(false) }
+    var featuredFocused by remember(catalogueProfile) { mutableStateOf(false) }
+    var featureKeyHeld by remember { mutableStateOf(false) }
+    LaunchedEffect(featuredFocused, page) {
+        if (!featuredFocused || page != "home") featureKeyHeld = false
+    }
     val featureVisible by remember(homeListState) {
         androidx.compose.runtime.derivedStateOf {
             homeListState.layoutInfo.visibleItemsInfo.any {
@@ -1506,15 +1523,21 @@ fun StremioCatalogScreen(
             }
         }
     }
-    val rotateFeature = showCinemaFeature && featureVisible && !featuredFocused && selected == null &&
+    val rotateFeature = showCinemaFeature && featureVisible && !featureKeyHeld && selected == null &&
         !playbackActive && !showAccountMenu && !showLogoMenu && !confirmExit && !manageCentralProfiles &&
         !addProfileOpen && !showAddHomeCategory
     val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val feature = rememberXpFeaturedMovie(featureAllowed, catalogueProfile, featuredSources,
         trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
         showCinemaFeature, featureRetry, homeSources.values.any { it != null }, featureSettings,
-        xpFeaturedCategories.associateWith { id -> discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty() }
-            .plus("xp_trending" to (trendingCandidates + enrichedBackdrops)),
+        xpFeaturedCategories.associateWith { id ->
+            val items = if (id == "xp_trending") trendingCandidates + enrichedBackdrops
+                else discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty()
+            items.map { item ->
+                val date = enrichedCatalogueMetadata[item.type to item.id]?.first
+                if (date == null) item else item.copy(releaseInfo = date)
+            }
+        },
         prepareMetadata = { item ->
             val imdb = (item.imdbId ?: item.id).takeIf(XpPlaybackIdentity::isImdbId)
             val metadata = imdb?.let { XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, it) }
@@ -1693,8 +1716,8 @@ fun StremioCatalogScreen(
         selected = withSavedResume(item)
     }
 
-    fun openItem(item: XpMeta, resume: Boolean = false) {
-        if (!television && !resume && (item.type == "movie" || item.type == "series")) {
+    fun openItem(item: XpMeta, resume: Boolean = false, directly: Boolean = false) {
+        if (!directly && (cinema || !television && !resume) && (item.type == "movie" || item.type == "series")) {
             openDetails(item, showSources = false)
             return
         }
@@ -2108,6 +2131,12 @@ fun StremioCatalogScreen(
             }
         }
     }
+    LaunchedEffect(selected?.id, selected?.type, showManualSources, playbackActive, cinema) {
+        if (cinema && selected != null && !showManualSources && !playbackActive) {
+            withFrameNanos { }
+            runCatching { detailFocus.requestFocus() }
+        }
+    }
     LaunchedEffect(selected?.id, selected?.type, streamsLoading, selectedStreams.size, autoSelectSource, manualSourceSelection, showManualSources, playbackActive) {
         if (!playbackActive && selected != null && !streamsLoading) runCatching {
             if (manualSourceSelection && showManualSources && selectedStreams.isNotEmpty()) firstSourceFocus.requestFocus()
@@ -2136,7 +2165,11 @@ fun StremioCatalogScreen(
             selected != null && showManualSources -> showManualSources = false
             selected != null -> closeDetails()
             adding -> adding = false
-            page == "search" -> changeSection(returnPage)
+            page == "search" -> {
+                val origin = cinemaSearchOrigin
+                changeSection(returnPage)
+                if (cinema) cinemaCategoryPage = origin
+            }
             openedHomeCollection -> {
                 openedHomeCollection = false
                 returnHomePoster = homeCollectionReturn
@@ -2201,6 +2234,11 @@ fun StremioCatalogScreen(
     Box(
         modifier.fillMaxSize().background(XpBackground).onPreviewKeyEvent { event ->
             val key = event.nativeKeyEvent
+            if (featuredFocused && page == "home" &&
+                key.keyCode in setOf(android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER,
+                    android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                featureKeyHeld = key.action == android.view.KeyEvent.ACTION_DOWN
+            }
             if (simulation != null && !playbackActive && key.source == android.view.InputDevice.SOURCE_DPAD &&
                 key.keyCode == android.view.KeyEvent.KEYCODE_MOVE_HOME) {
                 if (key.action == android.view.KeyEvent.ACTION_UP && !key.isCanceled) changeSection("home")
@@ -2242,7 +2280,7 @@ fun StremioCatalogScreen(
             }
         },
     ) {
-        val font = if (cinema) XpCinemaInter else tv.own.owntv.ui.theme.LocalMainFontFamily.current
+        val font = if (cinema) cinemaFont.family else tv.own.owntv.ui.theme.LocalMainFontFamily.current
         val inheritedText = androidx.tv.material3.LocalTextStyle.current
         val inheritedColors = tv.own.owntv.ui.theme.OwnTVTheme.colors
         val cinemaColors = if (!cinema) inheritedColors else inheritedColors.copy(
@@ -2326,7 +2364,8 @@ fun StremioCatalogScreen(
                 }
                 if (television) XpV4Wordmark { showLogoMenu = true } else XpHeaderControl(compactPhone, stringResource(R.string.moviotv_xp_title),
                     onClick = { showLogoMenu = true }, large = true) {
-                    Image(painter = androidx.compose.ui.res.painterResource(R.drawable.moviotv_launcher),
+                    Image(painter = androidx.compose.ui.res.painterResource(if (BuildConfig.MOVIOXP_RELEASE)
+                        R.drawable.movioxp_cinema_triangle else R.drawable.moviotv_launcher),
                         contentDescription = null, modifier = Modifier.size(39.dp))
                 }
             }
@@ -2647,6 +2686,7 @@ fun StremioCatalogScreen(
                         .padding(horizontal = 34.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    if (cinema) XpApprovedWordmark(Modifier.width(235.dp).height(62.dp))
                     Text(stringResource(R.string.movioxp_account_login_title), color = XpText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     Text(
                         stringResource(R.string.moviotv_xp_central_account_help),
@@ -2819,6 +2859,18 @@ fun StremioCatalogScreen(
                                     localDisplay.saveCinema(false)
                                 }
                                 if (cinemaEnabled) {
+                                    XpSettingsFieldLabel(stringResource(R.string.movioxp_cinema_font_style))
+                                    Text(stringResource(R.string.movioxp_cinema_font_preview), color = XpText,
+                                        fontFamily = cinemaFont.family, fontSize = 21.sp,
+                                        fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("cinema-font-preview"))
+                                    XpCinemaFont.entries.forEach { option ->
+                                        androidx.tv.material3.ProvideTextStyle(inheritedText.copy(fontFamily = option.family)) {
+                                            XpSettingsOption(stringResource(option.label), cinemaFont == option) { saveCinemaFont(option) }
+                                        }
+                                    }
+                                    XpSettingsOption(stringResource(R.string.movioxp_cinema_restore_font)) {
+                                        saveCinemaFont(XpCinemaFont.MONTSERRAT)
+                                    }
                                     XpSettingsFieldLabel(stringResource(R.string.movioxp_feature_settings))
                                     XpSettingsOption(stringResource(R.string.movioxp_feature_auto), featureSettings.enabled) {
                                         saveFeatureSettings(featureSettings.copy(enabled = !featureSettings.enabled))
@@ -3332,7 +3384,7 @@ fun StremioCatalogScreen(
                             centralConnection != null && XpCentralMetadata.category(id) != null
                     }
                 }
-                val browseCategory = categoryIds.firstOrNull()
+                val browseCategory = cinemaSearchOrigin?.takeIf { it in categoryIds } ?: categoryIds.firstOrNull()
                 val previewSource = browseCategory?.let { xpDiscoverSource(it, installedAddons) }
                 var catalogue by remember(catalogueProfile, browseCategory) { mutableStateOf<List<XpMeta>>(emptyList()) }
                 LaunchedEffect(browseCategory, previewSource, catalogueProfile, centralConnection, searchText.isBlank()) {
@@ -3403,6 +3455,12 @@ fun StremioCatalogScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        if (cinemaSearchOrigin != null) {
+                            XpSettingsOption(stringResource(R.string.movioxp_cinema_all_titles)) {
+                                cinemaSearchOrigin = null
+                                searchType = 0
+                            }
+                        }
                         Text(stringResource(R.string.movioxp_cinema_browse), color = XpText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         if (returnPage != "library" && returnPage != "series") categoryIds.forEach { id ->
                             val label = XpHomeConfig.categories.firstOrNull { it.id == id }?.let { stringResource(it.labelRes) }
@@ -3575,20 +3633,17 @@ fun StremioCatalogScreen(
                 ) {
                     if (showCinemaFeature) item(key = "xp-cinema-feature") {
                         if (hero != null) {
-                            androidx.compose.animation.Crossfade(hero, animationSpec = androidx.compose.animation.core.tween(220)) { featured ->
-                                val item = withSavedResume(featured)
-                                XpCinemaFeature(item, showYear, onFocus = { focused ->
-                                        featuredFocused = focused
-                                        if (focused) scope.launch {
-                                            withFrameNanos { }
-                                            if (homeListState.firstVisibleItemScrollOffset != 0 || homeListState.firstVisibleItemIndex != 0) {
-                                                homeListState.animateScrollToItem(0)
-                                            }
-                                        }
-                                    },
-                                    onPlay = { openItem(item) }, onInfo = { openDetails(item, false) },
-                                    height = featureHeight)
-                            }
+                            val item = withSavedResume(hero)
+                            XpCinemaFeature(item, showYear, onFocus = { focused ->
+                                featuredFocused = focused
+                                if (focused) scope.launch {
+                                    withFrameNanos { }
+                                    if (homeListState.firstVisibleItemScrollOffset != 0 || homeListState.firstVisibleItemIndex != 0) {
+                                        homeListState.animateScrollToItem(0)
+                                    }
+                                }
+                            }, onPlay = { openItem(item, directly = true) }, onInfo = { openDetails(item, false) },
+                                height = featureHeight)
                         } else Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -4141,8 +4196,12 @@ fun StremioCatalogScreen(
                 XpQa5Dialog(item.name, stringResource(R.string.movioxp_close), ::closeDetails, width = 880.dp,
                     primaryAction = {
                         XpDialogButton(stringResource(if (autoSelectSource) R.string.movioxp_play_content else R.string.movioxp_find_sources), OwnTVIcon.PLAY,
-                            enabled = !chooseEpisode, requester = detailFocus, primary = true) {
-                            manualSourceSelection = !autoSelectSource || selectedStreams.isEmpty()
+                            enabled = !chooseEpisode || cinema, requester = detailFocus, primary = true) {
+                            if (chooseEpisode) {
+                                runCatching { firstEpisodeFocus.requestFocus() }
+                                return@XpDialogButton
+                            }
+                            manualSourceSelection = !autoSelectSource || selectedStreams.isEmpty() && !streamsLoading
                             showManualSources = manualSourceSelection
                         }
                     }) { wide ->
@@ -4162,12 +4221,12 @@ fun StremioCatalogScreen(
                             }
                             val line = listOfNotNull(xpReleaseYear(item), rating, runtime)
                                 .plus(metadata?.genres.orEmpty()).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
-                            if (cinema) XpCinemaMetadata(playbackMetadata(item).copy(description = null),
-                                metadata?.copy(synopsis = null), showYear, 2)
+                            if (cinema) XpCinemaMetadata(playbackMetadata(item), metadata, showYear, 3)
                             else if (line.isNotBlank()) Text(line, color = XpAccent, fontSize = 14.sp)
-                            item.description?.takeIf(String::isNotBlank)?.let { description ->
+                            val fullDescription = metadata?.synopsis ?: item.description
+                            fullDescription?.takeIf(String::isNotBlank)?.let { description ->
                                 var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
-                                Text(description, color = XpMuted, fontSize = 15.sp,
+                                if (expanded || !cinema) Text(description, color = XpMuted, fontSize = 15.sp,
                                     maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis)
                                 if (description.length > 140) {
                                     XpDialogButton(stringResource(if (expanded) R.string.movioxp_read_less else R.string.movioxp_read_more),
@@ -4223,7 +4282,8 @@ fun StremioCatalogScreen(
                         }
                         XpDialogButton(if (state == null) episodeName else stringResource(R.string.movioxp_episode_state, episodeName, state),
                             if (watched && !partial) OwnTVIcon.CHECK else OwnTVIcon.PLAY,
-                            primary = episode == selectedEpisode || episode == nextUnwatched) {
+                            primary = episode == selectedEpisode || episode == nextUnwatched,
+                            requester = firstEpisodeFocus.takeIf { cinema && episode == (nextUnwatched ?: seasonEpisodes.firstOrNull()) }) {
                             selectedEpisode = episode
                             pagePrefs.edit().putString(episodePreference(item.id), episode.id).apply()
                             manualSourceSelection = true
@@ -4679,8 +4739,7 @@ private fun XpHeaderControl(
 private fun androidx.compose.foundation.layout.BoxScope.XpPosterBadges(item: XpMeta) {
     if (item.type != "movie" && item.type != "series") return
     val (showRating, showYear) = LocalXpPosterDisplay.current
-    val rating = xpRating(item).takeIf { !LocalXpCinema.current || item.ratingSource.equals("IMDb", true) ||
-        (item.ratingSource == null && XpPlaybackIdentity.isImdbId(item.imdbId ?: item.id)) }
+    val rating = if (LocalXpCinema.current) xpCinemaImdbRating(item)?.toDoubleOrNull() else xpRating(item)
     if (showRating && rating != null) {
         Row(Modifier.align(Alignment.TopStart).padding(4.dp)
             .clip(RoundedCornerShape(5.dp)).background(Color.Black.copy(alpha = .78f)).padding(horizontal = 5.dp, vertical = 2.dp),
@@ -4780,10 +4839,18 @@ private fun XpPoster(
         if (backdrop != null) width * 2.35f else width,
         animationSpec = androidx.compose.animation.core.tween(140),
     ).value else width
+    val reveal = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(expanded, focused, backdrop != null) {
+        if (expanded && focused) {
+            // Wait for width and metadata layout to settle before revealing the complete card.
+            delay(155)
+            reveal.bringIntoView()
+        }
+    }
     val posterDisplay = LocalXpPosterDisplay.current
     var centerDownAt by remember { mutableStateOf<Long?>(null) }
     Column(
-        Modifier.width(cardWidth).clip(RoundedCornerShape(12.dp))
+        Modifier.width(cardWidth).bringIntoViewRequester(reveal).clip(RoundedCornerShape(12.dp))
             .then(if (!cinema) Modifier.border(if (focused) 3.dp else 1.dp,
                 if (focused) XpFocus else Color.Transparent, RoundedCornerShape(12.dp))
                 .background(if (focused) XpFocus.copy(alpha = .22f) else Color.Transparent) else Modifier)
@@ -4817,7 +4884,7 @@ private fun XpPoster(
                     else -> false
                 }
             }
-            .clickable(onClick = onClick).focusable(),
+            .clickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         val artworkSize = if (landscape) Modifier.aspectRatio(16f / 9f) else Modifier.height(width * 1.46f)
@@ -4851,7 +4918,9 @@ private fun XpPoster(
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(7.dp))
                 }
             }
-            if (!landscape && backdrop == null) XpPosterBadges(item)
+            if (!landscape) XpPosterBadges(
+                details?.imdbRating?.let { item.copy(rating = it, ratingSource = "IMDb") } ?: item
+            )
             else if (landscape && item.liveNow) {
                 Text(stringResource(R.string.movioxp_live_now), color = Color.White, fontSize = 11.sp,
                     modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
@@ -4871,7 +4940,9 @@ private fun XpPoster(
         }
         if (!cinemaMovie) Text(item.name, color = if (focused) XpFocus else XpText, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
             minLines = if (landscape) 1 else 2, maxLines = if (landscape) 1 else 2, overflow = TextOverflow.Ellipsis)
-        if (expanded && focused) XpCinemaMetadata(item, details, posterDisplay.second, 2)
+        if (expanded && focused) Box(Modifier.testTag("cinema-expanded-card-metadata")) {
+            XpCinemaMetadata(item, details, posterDisplay.second, 2)
+        }
         if (landscape && item.eventTime != null) {
             Text(item.eventTime, color = XpMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

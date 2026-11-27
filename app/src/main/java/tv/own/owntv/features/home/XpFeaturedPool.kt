@@ -69,6 +69,14 @@ internal val xpFeaturedCategories = listOf("xp_trending", "xp_action", "xp_lates
 internal data class XpFeatureSettings(val enabled: Boolean = true, val seconds: Int = 20, val trendingOnly: Boolean = false)
 internal val xpFeatureIntervals = listOf(20, 30, 60, 120)
 
+internal fun xpFeatureReleased(item: XpMeta, today: java.time.LocalDate): Boolean {
+    val exact = xpFullReleaseDate(item)
+    if (exact != null) return !exact.isAfter(today)
+    // A provider's past release year is sufficient for eligibility, never for full-date sorting.
+    val year = xpReleaseYear(item)?.toIntOrNull() ?: return false
+    return year in 1888 until today.year
+}
+
 internal fun xpFeatureRotationBuckets(
     sources: Map<String, List<XpMeta>>, trendingOnly: Boolean, cursor: Int, current: String,
     recent: List<String>, today: java.time.LocalDate,
@@ -77,7 +85,7 @@ internal fun xpFeatureRotationBuckets(
     return (1..order.size).mapNotNull { step ->
         val index = (cursor + step).mod(order.size)
         val options = xpFeatureCandidates(sources[order[index]].orEmpty().filter {
-            it.id != current && xpFullReleaseDate(it)?.isAfter(today) == false
+            it.id != current && xpFeatureReleased(it, today)
         })
         val fresh = options.filterNot { it.id in recent }
         options.takeIf { it.isNotEmpty() }?.let { index to fresh.ifEmpty { it } }
@@ -147,7 +155,8 @@ internal fun rememberXpFeaturedMovie(
     LaunchedEffect(enabled, active, initialCandidates, retry) {
         if (!enabled || !active || hero != null) return@LaunchedEffect
         val last = session.getString(lastTitleKey, null)
-        val priority = initialCandidates.sortedByDescending { it.id == last }
+        val priority = if (last == null) initialCandidates.shuffled()
+            else initialCandidates.sortedByDescending { it.id == last }
         for (item in priority) {
             if (ready(item)) {
                 hero = item
@@ -173,12 +182,22 @@ internal fun rememberXpFeaturedMovie(
             val recent = (listOf(current.id) + prior).distinct().take(5)
             val options = xpFeatureRotationBuckets(rotationSources, settings.trendingOnly, cursor, current.id,
                 recent, java.time.LocalDate.now())
+            xpDebug("Featured rotation: ${options.size} eligible categories after cursor $cursor")
             var next: XpMeta? = null
             var nextCursor = cursor
+            var attemptedCursor = cursor
             for ((index, candidates) in options) {
-                val candidate = candidates.shuffled().take(2).firstOrNull { ready(it) }
+                val remainingPreparation = deadline - SystemClock.elapsedRealtime()
+                if (remainingPreparation <= 0) break
+                attemptedCursor = index
+                val candidate = candidates.shuffled().take(2).firstOrNull {
+                    val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_400)
+                    allowance > 0 && withTimeoutOrNull(allowance) { ready(it) } == true
+                }
                 if (candidate != null) {
-                    next = withTimeoutOrNull(1_000) { prepareMetadata(candidate) } ?: candidate
+                    val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_000)
+                    next = (if (allowance > 0) withTimeoutOrNull(allowance) { prepareMetadata(candidate) } else null)
+                        ?: candidate
                     nextCursor = index
                     break
                 }
@@ -192,6 +211,7 @@ internal fun rememberXpFeaturedMovie(
                 hero = next
                 withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(next)) }
             } else {
+                session.edit().putInt(cursorKey, attemptedCursor).apply()
                 rotationCycle++
             }
         } finally {
