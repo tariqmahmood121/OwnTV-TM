@@ -91,6 +91,8 @@ internal fun xpSimulationRemoteBelow(width: Float, height: Float): Boolean =
 internal fun xpSimulationAvailable(release: Boolean, debug: Boolean, versionName: String): Boolean =
     release && (debug || versionName.contains("-qa", ignoreCase = true) || versionName.matches(Regex("[0-9]+\\.[0-9]+ [A-Z]")))
 
+internal fun xpIsLongBack(downMs: Long, upMs: Long): Boolean = upMs - downMs >= 2_000L
+
 internal val LocalXpSimulationStart = staticCompositionLocalOf<(() -> Unit)?> { null }
 internal val LocalXpActiveSimulation = staticCompositionLocalOf<XpTvSimulation?> { null }
 
@@ -103,6 +105,7 @@ internal class XpTvSimulation(context: Context) {
         private set
     var resolution by mutableStateOf(XpTvResolution.FULL_HD)
     var side by mutableStateOf(XpRemoteSide.RIGHT)
+    var onLongBack: (() -> Unit)? = null
     val available = xpSimulationAvailable(BuildConfig.MOVIOXP_RELEASE, BuildConfig.DEBUG, BuildConfig.VERSION_NAME)
 
     fun start() { if (available) active = true }
@@ -152,7 +155,7 @@ internal fun XpTvSimulationViewport(
     val viewportFocus = remember { FocusRequester() }
     val hasViewportFocus = remember { mutableStateOf(false) }
     val input = remember(activity, view, viewportFocus) {
-        XpSimulationInput(activity, view) {
+        XpSimulationInput(activity, view, { simulation.onLongBack }) {
             if (!hasViewportFocus.value) viewportFocus.requestFocus()
         }
     }
@@ -264,15 +267,22 @@ private fun XpSimulationRemote(input: XpSimulationInput) {
 @Composable
 private fun XpSimulationBottomRemote(input: XpSimulationInput) {
     Row(Modifier.fillMaxWidth().background(Color(0xFF17171F)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        XpRemoteKey(input, R.string.movioxp_sim_up, KeyEvent.KEYCODE_DPAD_UP, Modifier.weight(1f), true)
-        XpRemoteKey(input, R.string.movioxp_sim_down, KeyEvent.KEYCODE_DPAD_DOWN, Modifier.weight(1f), true)
-        XpRemoteKey(input, R.string.movioxp_sim_left, KeyEvent.KEYCODE_DPAD_LEFT, Modifier.weight(1f), true)
-        XpRemoteKey(input, R.string.movioxp_sim_right, KeyEvent.KEYCODE_DPAD_RIGHT, Modifier.weight(1f), true)
-        XpRemoteKey(input, R.string.movioxp_sim_ok, KeyEvent.KEYCODE_DPAD_CENTER, Modifier.weight(1f), false)
-        XpRemoteKey(input, R.string.common_back, KeyEvent.KEYCODE_BACK, Modifier.weight(1f), false)
-        XpRemoteKey(input, R.string.moviotv_nav_home, KeyEvent.KEYCODE_MOVE_HOME, Modifier.weight(1f), false)
-        XpRemoteKey(input, R.string.movioxp_sim_menu, KeyEvent.KEYCODE_MENU, Modifier.weight(1f), false)
+        horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically) {
+        XpRemoteKey(input, R.string.common_back, KeyEvent.KEYCODE_BACK, Modifier.width(48.dp), false)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            XpRemoteKey(input, R.string.movioxp_sim_up, KeyEvent.KEYCODE_DPAD_UP, Modifier.width(42.dp), true)
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                XpRemoteKey(input, R.string.movioxp_sim_left, KeyEvent.KEYCODE_DPAD_LEFT, Modifier.width(42.dp), true)
+                XpRemoteKey(input, R.string.movioxp_sim_ok, KeyEvent.KEYCODE_DPAD_CENTER, Modifier.width(42.dp), false)
+                XpRemoteKey(input, R.string.movioxp_sim_right, KeyEvent.KEYCODE_DPAD_RIGHT, Modifier.width(42.dp), true)
+            }
+            XpRemoteKey(input, R.string.movioxp_sim_down, KeyEvent.KEYCODE_DPAD_DOWN, Modifier.width(42.dp), true)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            XpRemoteKey(input, R.string.moviotv_nav_home, KeyEvent.KEYCODE_MOVE_HOME, Modifier.width(48.dp), false)
+            XpRemoteKey(input, R.string.movioxp_sim_menu, KeyEvent.KEYCODE_MENU, Modifier.width(48.dp), false)
+        }
     }
 }
 
@@ -280,12 +290,15 @@ private fun XpSimulationBottomRemote(input: XpSimulationInput) {
 internal class XpSimulationInput(
     private val activity: ComponentActivity,
     private val owner: View,
+    private val longBack: () -> (() -> Unit)?,
     private val recoverFocus: () -> Unit,
 ) {
     fun send(down: Long, key: Int, action: Int, repeats: Int = 0, flags: Int = 0) {
         if (key == KeyEvent.KEYCODE_BACK) {
             if (action == KeyEvent.ACTION_UP && flags and KeyEvent.FLAG_CANCELED == 0) {
-                activity.onBackPressedDispatcher.onBackPressed()
+                val home = longBack()
+                if (home != null && xpIsLongBack(down, SystemClock.uptimeMillis())) home()
+                else activity.onBackPressedDispatcher.onBackPressed()
             }
             return
         }

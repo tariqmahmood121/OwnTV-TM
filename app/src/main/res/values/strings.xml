@@ -194,6 +194,7 @@
     <string name="movioxp_search_remove">Remove %1$s</string>
     <string name="movioxp_search_clear">Clear search</string>
     <string name="movioxp_search_clear_all">Clear all</string>
+    <string name="movioxp_explore_collection">Explore More %1$s</string>
     <string name="movioxp_more_collection">More…</string>
     <string name="movioxp_full_collection">View full collection</string>
     <string name="movioxp_display_reset">Restore Factory Defaults</string>

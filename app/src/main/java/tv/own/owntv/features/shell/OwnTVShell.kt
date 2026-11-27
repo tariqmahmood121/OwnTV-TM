@@ -23,6 +23,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1198,6 +1199,27 @@ fun OwnTVShell(
     // MainActivity behind this shell) shows through the gaps between and around panels. Solid otherwise.
     val shellBase = if (LocalGlass.current.enabled) Color.Transparent else tv.own.owntv.ui.theme.LocalStagePalette.current.page
 
+    val xpTv = tv.own.owntv.BuildConfig.MOVIOXP_RELEASE && !movioTouch
+    var movioHomeReset by remember { mutableIntStateOf(0) }
+    val returnToMovioHome by rememberUpdatedState {
+        if (playerMode != PlayerMode.NONE) exitPlayer()
+        showAvatarPicker = false
+        showPlaylistPicker = false
+        showExit = false
+        searchReturn = null
+        movioBackHistory.clear()
+        if (selectedSection != MainSection.HOME) {
+            movioPoppingBack = true
+            onSelectSection(MainSection.HOME)
+        }
+        movioHomeReset++
+    }
+    val activeSimulation = tv.own.owntv.features.simulation.LocalXpActiveSimulation.current
+    DisposableEffect(activeSimulation) {
+        activeSimulation?.onLongBack = { returnToMovioHome() }
+        onDispose { activeSimulation?.onLongBack = null }
+    }
+
     // Long-press Back (the second way in). Deliberately timed from the FIRST KeyDown rather than counted from
     // key repeats: several TVs re-fire KeyDown while a key is held, so a repeat-counting version fires
     // the long-press the instant Back is touched. Short Back is never consumed, so every existing Back
@@ -1208,7 +1230,7 @@ fun OwnTVShell(
     var shortcutKeyCode by remember { mutableStateOf(android.view.KeyEvent.KEYCODE_UNKNOWN) }
     var shortcutLongFired by remember { mutableStateOf(false) }
     var shortcutHoldJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    val longPressBackArmed = playerMode == PlayerMode.MINI && !showExit && !showAvatarPicker && !showPlaylistPicker
+    val longPressBackArmed = !xpTv && playerMode == PlayerMode.MINI && !showExit && !showAvatarPicker && !showPlaylistPicker
     // Media keys (the third way in) act on the docked window wherever focus is — but only if nothing nearer
     // claimed them first, which is why this is a bubbling handler: a focused browse list still gets its
     // CH+/CH− paging, and the full-screen HUD still owns zapping.
@@ -1232,6 +1254,12 @@ fun OwnTVShell(
                     if (railHasFocus) railFocused = true
                 }
                 if (e.key != Key.Back) return@onPreviewKeyEvent false
+                val back = e.nativeKeyEvent
+                if (xpTv && e.type == KeyEventType.KeyUp && !back.isCanceled &&
+                    tv.own.owntv.features.simulation.xpIsLongBack(back.downTime, back.eventTime)) {
+                    returnToMovioHome()
+                    return@onPreviewKeyEvent true
+                }
                 when (e.type) {
                     KeyEventType.KeyDown -> {
                         if (longPressBackArmed && backHoldJob == null) {
@@ -2427,6 +2455,7 @@ fun OwnTVShell(
         }
       }
       CompositionLocalProvider(
+          tv.own.owntv.features.home.LocalXpHomeReset provides movioHomeReset,
           tv.own.owntv.features.home.LocalXpPlaybackActive provides
               (playerMode == PlayerMode.FULLSCREEN && movioXpPlayback != null),
           tv.own.owntv.features.home.LocalXpRestorePoster provides (returnToMovioPoster && !movioTouch),

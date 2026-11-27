@@ -16,7 +16,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -37,6 +36,8 @@ import coil3.compose.AsyncImage
 import tv.own.owntv.R
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.theme.OwnTVTheme
+import tv.own.owntv.ui.theme.dissolveEdges
+import tv.own.owntv.ui.stage.backdropLeftWash
 
 internal val XpCinemaBackground = Color(0xFF0C0C11)
 internal val XpCinemaInter = FontFamily(
@@ -217,30 +218,36 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
     }
 }
 
+internal fun xpCinemaHeroHeight(width: androidx.compose.ui.unit.Dp) =
+    (width * .48f).coerceIn(218.dp, 475.dp)
+
+@Composable
+internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        androidx.compose.animation.Crossfade(backdrop,
+            modifier = Modifier.matchParentSize().dissolveEdges(start = .22f, bottom = .38f),
+            animationSpec = androidx.compose.animation.core.tween(220)) { wide ->
+            AsyncImage(wide, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                alignment = Alignment.CenterEnd)
+        }
+        Box(Modifier.matchParentSize().backdropLeftWash(
+            0f to .86f, .29f to .57f, .64f to .12f, .9f to 0f))
+    }
+}
+
 @Composable
 internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit) {
     val loadDetails = LocalXpCinemaDetails.current
     val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = null; value = loadDetails(item) }
-    val backdrop = xpCinemaLandscape(item.backdrop, item.poster) ?: return
     BoxWithConstraints(Modifier.fillMaxWidth().onFocusChanged { onFocus(it.hasFocus) }.focusGroup()) {
-        val artHeight = (maxWidth * .48f).coerceIn(218.dp, 475.dp)
-        Box(Modifier.fillMaxWidth().heightIn(min = artHeight).background(XpCinemaBackground)) {
-            androidx.compose.animation.Crossfade(backdrop, modifier = Modifier.matchParentSize(),
-                animationSpec = androidx.compose.animation.core.tween(220)) { wide ->
-                AsyncImage(wide, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            }
-            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
-                0f to XpCinemaBackground, .35f to XpCinemaBackground.copy(alpha = .75f),
-                    .84f to Color.Transparent)))
-            Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-                listOf(Color.Transparent, Color.Transparent, XpCinemaBackground))))
+        Box(Modifier.fillMaxWidth().heightIn(min = xpCinemaHeroHeight(maxWidth))) {
             Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(.64f).widthIn(max = 560.dp)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val logo = details?.titleLogo ?: item.titleLogo
                 if (logo != null) AsyncImage(logo, item.name, Modifier.width(205.dp).height(63.dp),
                     contentScale = ContentScale.Fit, alignment = Alignment.CenterStart)
-                else Text(item.name, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
+                else Text(item.name, color = Color.White, fontSize = 39.sp, fontWeight = FontWeight.ExtraBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 XpCinemaMetadata(item, details, showYear, 3)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
