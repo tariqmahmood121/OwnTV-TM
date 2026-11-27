@@ -41,11 +41,12 @@ class XpSimulationRemoteTest {
         var selections = 0
         var backPresses = 0
         var homeShortcuts = 0
+        var exitRequests = 0
         var directionRepeats = 0
         var longestSelect = 0L
         compose.setContent {
             val initialFocus = remember { FocusRequester() }
-            val simulation = remember { XpTvSimulation(activity).apply { onLongBack = { homeShortcuts++ } } }
+            val simulation = remember { XpTvSimulation(activity).apply { onLongBack = { exitRequests++ }; onHome = { homeShortcuts++ } } }
             var modal by remember { mutableStateOf(false) }
             BackHandler { backPresses++ }
             XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
@@ -114,11 +115,13 @@ class XpSimulationRemoteTest {
         compose.onNodeWithTag("dialog").assertDoesNotExist()
         press(R.string.common_back)
         hold(R.string.common_back, 2_200)
+        press(R.string.moviotv_nav_home)
         compose.runOnIdle {
             assertEquals(1, shortSelections)
             assertEquals(1, selections)
             assertEquals(1, backPresses)
             assertEquals(1, homeShortcuts)
+            assertEquals(1, exitRequests)
             check(longestSelect >= 2_000) { "Select duration: $longestSelect ms" }
             check(directionRepeats > 0) { "Held direction did not repeat" }
         }

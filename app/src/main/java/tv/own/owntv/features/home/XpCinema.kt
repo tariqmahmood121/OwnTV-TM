@@ -218,9 +218,6 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
     }
 }
 
-internal fun xpCinemaHeroHeight(width: androidx.compose.ui.unit.Dp) =
-    (width * .48f).coerceIn(218.dp, 475.dp)
-
 @Composable
 internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifier) {
     Box(modifier) {
@@ -236,11 +233,11 @@ internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifie
 }
 
 @Composable
-internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit) {
+internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit, height: androidx.compose.ui.unit.Dp) {
     val loadDetails = LocalXpCinemaDetails.current
     val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = null; value = loadDetails(item) }
     BoxWithConstraints(Modifier.fillMaxWidth().onFocusChanged { onFocus(it.hasFocus) }.focusGroup()) {
-        Box(Modifier.fillMaxWidth().heightIn(min = xpCinemaHeroHeight(maxWidth))) {
+        Box(Modifier.fillMaxWidth().heightIn(min = height)) {
             Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(.64f).widthIn(max = 560.dp)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {

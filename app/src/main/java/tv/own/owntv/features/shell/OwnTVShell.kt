@@ -1,6 +1,7 @@
 package tv.own.owntv.features.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.tv.material3.Text
 import tv.own.owntv.features.home.moviotvSettingsPinch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -1174,12 +1175,13 @@ fun OwnTVShell(
         if (openedSeries == null && searchReturn == MainSection.SERIES && selectedSection == MainSection.SERIES) returnToSearch()
     }
 
+    val xpTv = tv.own.owntv.BuildConfig.MOVIOXP_RELEASE && !movioTouch
     BackHandler {
         when {
+            showExit -> showExit = false
             playerMode == PlayerMode.FULLSCREEN -> exitPlayer()
             showAvatarPicker -> showAvatarPicker = false
             showPlaylistPicker -> showPlaylistPicker = false
-            showExit -> showExit = false
             // Settings is reached through More now, so Back out of its root goes back there — one
             // level out, not two. `SettingsScreen` passes its own `onBack` for the same purpose, but
             // its root handler does not always win against this one, which left Back looking dead on
@@ -1190,7 +1192,8 @@ fun OwnTVShell(
             // Reached from a Search result: Back returns to Search once, its query, tab and row kept.
             searchReturn == selectedSection && focusedLayer != ShellLayer.SIDEBAR -> returnToSearch()
             smartBackEnabled && movioBackHistory.isNotEmpty() -> movioGoBack()
-            focusedLayer == ShellLayer.SIDEBAR -> showExit = true
+            xpTv && selectedSection == MainSection.HOME -> Unit
+            focusedLayer == ShellLayer.SIDEBAR && !xpTv -> showExit = true
             else -> focusRail()
         }
     }
@@ -1199,7 +1202,6 @@ fun OwnTVShell(
     // MainActivity behind this shell) shows through the gaps between and around panels. Solid otherwise.
     val shellBase = if (LocalGlass.current.enabled) Color.Transparent else tv.own.owntv.ui.theme.LocalStagePalette.current.page
 
-    val xpTv = tv.own.owntv.BuildConfig.MOVIOXP_RELEASE && !movioTouch
     var movioHomeReset by remember { mutableIntStateOf(0) }
     val returnToMovioHome by rememberUpdatedState {
         if (playerMode != PlayerMode.NONE) exitPlayer()
@@ -1216,8 +1218,12 @@ fun OwnTVShell(
     }
     val activeSimulation = tv.own.owntv.features.simulation.LocalXpActiveSimulation.current
     DisposableEffect(activeSimulation) {
-        activeSimulation?.onLongBack = { returnToMovioHome() }
-        onDispose { activeSimulation?.onLongBack = null }
+        activeSimulation?.onLongBack = { showExit = true }
+        activeSimulation?.onHome = { returnToMovioHome() }
+        onDispose {
+            activeSimulation?.onLongBack = null
+            activeSimulation?.onHome = null
+        }
     }
 
     // Long-press Back (the second way in). Deliberately timed from the FIRST KeyDown rather than counted from
@@ -1257,7 +1263,7 @@ fun OwnTVShell(
                 val back = e.nativeKeyEvent
                 if (xpTv && e.type == KeyEventType.KeyUp && !back.isCanceled &&
                     tv.own.owntv.features.simulation.xpIsLongBack(back.downTime, back.eventTime)) {
-                    returnToMovioHome()
+                    showExit = true
                     return@onPreviewKeyEvent true
                 }
                 when (e.type) {
@@ -2334,7 +2340,18 @@ fun OwnTVShell(
     // The Settings PIN before a long-press change, when the Settings lock asks for it.
     tv.own.owntv.features.settings.lock.MenuChangeGateHost()
     if (showExit) {
-        ExitDialog(onConfirm = onExitApp, onDismiss = { showExit = false })
+        if (xpTv) {
+            tv.own.owntv.features.home.XpQa5Dialog(stringResource(R.string.movioxp_exit),
+                stringResource(R.string.common_cancel), { showExit = false }) {
+                Text(stringResource(R.string.movioxp_exit_confirm))
+                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_exit),
+                    tv.own.owntv.ui.components.OwnTVIcon.POWER) {
+                    showExit = false
+                    if (playerMode != PlayerMode.NONE) exitPlayer()
+                    onExitApp()
+                }
+            }
+        } else ExitDialog(onConfirm = onExitApp, onDismiss = { showExit = false })
     }
     if (showAvatarPicker) {
         AvatarPickerDialog(

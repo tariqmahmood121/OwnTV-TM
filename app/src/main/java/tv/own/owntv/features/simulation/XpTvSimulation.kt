@@ -106,6 +106,7 @@ internal class XpTvSimulation(context: Context) {
     var resolution by mutableStateOf(XpTvResolution.FULL_HD)
     var side by mutableStateOf(XpRemoteSide.RIGHT)
     var onLongBack: (() -> Unit)? = null
+    var onHome: (() -> Unit)? = null
     val available = xpSimulationAvailable(BuildConfig.MOVIOXP_RELEASE, BuildConfig.DEBUG, BuildConfig.VERSION_NAME)
 
     fun start() { if (available) active = true }
@@ -155,7 +156,7 @@ internal fun XpTvSimulationViewport(
     val viewportFocus = remember { FocusRequester() }
     val hasViewportFocus = remember { mutableStateOf(false) }
     val input = remember(activity, view, viewportFocus) {
-        XpSimulationInput(activity, view, { simulation.onLongBack }) {
+        XpSimulationInput(activity, view, { simulation.onLongBack }, { simulation.onHome }) {
             if (!hasViewportFocus.value) viewportFocus.requestFocus()
         }
     }
@@ -291,6 +292,7 @@ internal class XpSimulationInput(
     private val activity: ComponentActivity,
     private val owner: View,
     private val longBack: () -> (() -> Unit)?,
+    private val homeAction: () -> (() -> Unit)?,
     private val recoverFocus: () -> Unit,
 ) {
     fun send(down: Long, key: Int, action: Int, repeats: Int = 0, flags: Int = 0) {
@@ -301,6 +303,13 @@ internal class XpSimulationInput(
                 else activity.onBackPressedDispatcher.onBackPressed()
             }
             return
+        }
+        if (key == KeyEvent.KEYCODE_MOVE_HOME) {
+            val home = homeAction()
+            if (home != null) {
+                if (action == KeyEvent.ACTION_UP && flags and KeyEvent.FLAG_CANCELED == 0) home()
+                return
+            }
         }
         if (action == KeyEvent.ACTION_DOWN && repeats == 0) {
             if (owner.isInTouchMode || !owner.hasFocus()) owner.requestFocusFromTouch()
@@ -348,6 +357,7 @@ private fun XpRemoteKey(input: XpSimulationInput, label: Int, key: Int, modifier
             })
         }, contentAlignment = Alignment.Center) {
         val icon = when (key) {
+            KeyEvent.KEYCODE_MOVE_HOME -> tv.own.owntv.ui.components.OwnTVIcon.HOME
             KeyEvent.KEYCODE_DPAD_UP -> tv.own.owntv.ui.components.OwnTVIcon.CHEVRON_UP
             KeyEvent.KEYCODE_DPAD_DOWN -> tv.own.owntv.ui.components.OwnTVIcon.CHEVRON_DOWN
             KeyEvent.KEYCODE_DPAD_LEFT -> tv.own.owntv.ui.components.OwnTVIcon.CHEVRON_LEFT
