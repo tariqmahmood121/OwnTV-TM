@@ -2,6 +2,7 @@ package tv.own.owntv.features.simulation
 
 import android.graphics.Bitmap
 import android.os.SystemClock
+import android.os.ParcelFileDescriptor
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +28,6 @@ import tv.own.owntv.core.theme.ThemeMode
 import tv.own.owntv.features.home.StremioCatalogScreen
 import tv.own.owntv.features.home.XpExitConfirmation
 import tv.own.owntv.ui.theme.OwnTVTheme
-import java.io.File
 
 class XpCinemaVisualTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -96,8 +96,13 @@ class XpCinemaVisualTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         val scaled = Bitmap.createScaledBitmap(screenshot, 1200, screenshot.height * 1200 / screenshot.width, true)
-        val output = File(instrumentation.targetContext.filesDir, "cinema-visual").apply { mkdirs() }
-        File(output, "$name.jpg").outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 84, it) }
+        val (stdout, stdin) = instrumentation.uiAutomation.executeShellCommandRw(
+            "cat > /data/local/tmp/cinema-visual-$name.jpg",
+        )
+        ParcelFileDescriptor.AutoCloseOutputStream(stdin).use {
+            check(scaled.compress(Bitmap.CompressFormat.JPEG, 84, it))
+        }
+        ParcelFileDescriptor.AutoCloseInputStream(stdout).use { it.readBytes() }
         if (scaled !== screenshot) scaled.recycle()
         screenshot.recycle()
     }
