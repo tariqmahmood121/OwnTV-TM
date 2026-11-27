@@ -99,6 +99,8 @@ class XpSimulationRemoteTest {
         fun hold(label: Int, durationMs: Long) {
             val button = compose.onNodeWithContentDescription(activity.getString(label))
             button.performTouchInput { down(center) }
+            // The simulator uses elapsed time for key-up and coroutine delay for repeat.
+            compose.mainClock.advanceTimeBy(durationMs)
             SystemClock.sleep(durationMs)
             button.performTouchInput { up() }
         }
