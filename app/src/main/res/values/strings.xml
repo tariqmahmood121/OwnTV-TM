@@ -169,6 +169,7 @@
     <string name="movioxp_update_size_mb">%1$d MB</string>
     <string name="movioxp_update_percent">%1$d%%</string>
     <string name="movioxp_discover_sports">Sports</string>
+    <string name="movioxp_cinema_resume">Resume</string>
     <string name="movioxp_resume_at">Resume from %1$s</string>
     <string name="movioxp_restart_content">Restart from beginning</string>
     <string name="movioxp_play_content">Play</string>

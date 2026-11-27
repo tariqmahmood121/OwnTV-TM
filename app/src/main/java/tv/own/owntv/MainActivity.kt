@@ -319,7 +319,7 @@ open class MainActivity : ComponentActivity() {
                     (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) !=
                     android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
             }
-            val isImmersiveVideo = touchscreen && viewModel.playerMode.value == PlayerMode.FULLSCREEN &&
+            val isImmersiveVideo = touchscreen && (simulation.active || viewModel.playerMode.value == PlayerMode.FULLSCREEN) &&
                 !isInPictureInPictureMode
             LaunchedEffect(isImmersiveVideo, touchscreen) {
                 if (touchscreen) {

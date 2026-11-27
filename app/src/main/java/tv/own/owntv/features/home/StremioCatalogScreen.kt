@@ -1193,6 +1193,12 @@ fun StremioCatalogScreen(
     val firstGridFocus = remember { FocusRequester() }
     val categoryRailFocus = remember { FocusRequester() }
     val bottomNavigationFocus = remember { FocusRequester() }
+    LaunchedEffect(simulation, cinema) {
+        if (simulation != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { bottomNavigationFocus.requestFocus() }
+        }
+    }
     val topNavigationFocus = remember { FocusRequester() }
     fun changeSection(destination: String) {
         keyboard?.hide()
@@ -1364,11 +1370,27 @@ fun StremioCatalogScreen(
     }
 
     val visibleRows = if (page == "home") rows.filter { metas[rowKey(it) to it].orEmpty().isNotEmpty() } else rows
-    val trendingMovies = if (cinema && page == "home" && activeProfile?.isKids != true) {
+    val trendingCandidates = if (cinema && page == "home" && activeProfile?.isKids != true) {
         discoverMetas[discoveryDataKey("xp_trending", homeSources["xp_trending"])].orEmpty()
-            .filter { it.type == "movie" && (it.backdrop != null || it.poster != null) }
+            .filter { it.type == "movie" }
             .distinctBy { it.id }.take(12)
     } else emptyList()
+    val featuredBackdrops = remember(catalogueProfile) { mutableStateMapOf<String, String>() }
+    LaunchedEffect(catalogueProfile, trendingCandidates) {
+        trendingCandidates.filter { xpCinemaLandscape(it.backdrop, it.poster) == null }
+            .take(6).forEach { item ->
+                if (item.id.matches(Regex("tt[0-9]+")) && item.id !in featuredBackdrops) {
+                    val meta = XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, item.id)
+                        ?.optJSONObject("meta")
+                    val backdrop = meta?.let { XpDetailMetadata.parse(it).backdrop }
+                    xpCinemaLandscape(backdrop, item.poster)?.let { featuredBackdrops[item.id] = it }
+                }
+            }
+    }
+    val trendingMovies = trendingCandidates.mapNotNull { item ->
+        (xpCinemaLandscape(item.backdrop, item.poster) ?: featuredBackdrops[item.id])
+            ?.let { item.copy(backdrop = it) }
+    }
     var featuredIndex by remember(catalogueProfile) { mutableIntStateOf(0) }
     var featuredFocused by remember { mutableStateOf(false) }
     val hero = trendingMovies.getOrNull(featuredIndex) ?: trendingMovies.firstOrNull()
@@ -4509,7 +4531,9 @@ private fun XpPoster(
             expanded = true
         } else expanded = false
     }
-    val backdrop = if (expanded && focused) details?.backdrop ?: item.backdrop else null
+    val backdrop = if (expanded && focused) {
+        xpCinemaLandscape(details?.backdrop, item.poster) ?: xpCinemaLandscape(item.backdrop, item.poster)
+    } else null
     val cinemaMovie = cinema && !landscape && !item.type.isLiveCatalogueType()
     val cardWidth = if (cinema && cinemaShelf) androidx.compose.animation.core.animateDpAsState(
         if (backdrop != null) width * 2.35f else width,
@@ -4539,8 +4563,9 @@ private fun XpPoster(
                         true
                     }
                     android.view.KeyEvent.ACTION_UP -> {
-                        val heldMs = centerDownAt?.let { android.os.SystemClock.uptimeMillis() - it } ?: 0L
+                        val heldMs = centerDownAt?.let { android.os.SystemClock.uptimeMillis() - it }
                         centerDownAt = null
+                        if (heldMs == null || event.nativeKeyEvent.isCanceled) return@onPreviewKeyEvent true
                         when {
                             heldMs >= 3_000L -> onVeryLongClick()
                             heldMs >= 2_000L -> onLongClick()

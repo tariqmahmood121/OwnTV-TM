@@ -47,7 +47,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import org.json.JSONObject
+import tv.own.owntv.features.simulation.LocalXpSimulationOverlay
+import tv.own.owntv.features.simulation.XpSimulationDialog
 import tv.own.owntv.ui.theme.OwnTVTheme
+import tv.own.owntv.ui.theme.LocalMainFontFamily
 
 @Composable
 internal fun XpQa5Dialog(
@@ -60,7 +63,11 @@ internal fun XpQa5Dialog(
     titleContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.(wide: Boolean) -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    val overlay = LocalXpSimulationOverlay.current
+    val font = LocalMainFontFamily.current
+    val textStyle = androidx.tv.material3.LocalTextStyle.current
+    val panel: @Composable (FocusRequester?) -> Unit = { closeFocus ->
+        CompositionLocalProvider(LocalMainFontFamily provides font, androidx.tv.material3.LocalTextStyle provides textStyle) {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center) {
             val wide = minOf(maxWidth, width) >= 610.dp
@@ -78,11 +85,19 @@ internal fun XpQa5Dialog(
                             fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, onClick = onDismiss)
+                    XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, requester = closeFocus, onClick = onDismiss)
                 }
                 content(wide)
                 primaryAction?.invoke()
             }
+        }
+        }
+    }
+    if (overlay != null) {
+        XpSimulationDialog(overlay, onDismiss) { panel(it) }
+    } else {
+        Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            panel(null)
         }
     }
 }
