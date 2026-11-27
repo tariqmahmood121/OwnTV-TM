@@ -209,7 +209,10 @@ internal fun xpUkCertificate(meta: JSONObject): String? {
 @Composable
 internal fun XpExitConfirmation(onCancel: () -> Unit, onConfirm: () -> Unit) {
     XpQa5Dialog(stringResource(R.string.movioxp_exit), stringResource(R.string.common_cancel), onCancel) {
-        Text(stringResource(R.string.movioxp_exit_confirm))
-        XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, onClick = onConfirm)
+        Text(stringResource(R.string.movioxp_exit_confirm), color = OwnTVTheme.colors.onSurfaceVariant)
+        XpDialogActions {
+            XpDialogButton(stringResource(R.string.common_cancel), OwnTVIcon.CLOSE, onClick = onCancel)
+            XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, onClick = onConfirm)
+        }
     }
 }
