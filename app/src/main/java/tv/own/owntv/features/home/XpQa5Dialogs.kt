@@ -150,6 +150,9 @@ internal data class XpDetailMetadata(
     val cast: List<String>,
     val directors: List<String>,
     val writers: List<String>,
+    val backdrop: String? = null,
+    val ukCertificate: String? = null,
+    val synopsis: String? = null,
 ) {
     companion object {
         fun parse(meta: JSONObject): XpDetailMetadata {
@@ -166,7 +169,21 @@ internal data class XpDetailMetadata(
             }
             val runtime = meta.opt("runtime")?.takeUnless { it == JSONObject.NULL }
                 ?.toString()?.trim()?.takeIf(String::isNotBlank)
-            return XpDetailMetadata(names("genres"), runtime, names("cast"), names("director"), names("writer"))
+            val backdrop = (meta.opt("background") as? String)?.takeIf(String::isNotBlank)
+            val synopsis = (meta.opt("description") as? String)?.takeIf(String::isNotBlank)
+            return XpDetailMetadata(names("genres"), runtime, names("cast"), names("director"), names("writer"),
+                backdrop, xpUkCertificate(meta), synopsis)
         }
     }
+}
+
+
+// Accept a UK-labelled classification only. Generic and US ratings have different meanings.
+internal fun xpUkCertificate(meta: JSONObject): String? {
+    val certs = meta.optJSONObject("certifications")
+    return xpCinemaCertificate(listOfNotNull(
+        meta.opt("ukCertification") as? String,
+        certs?.opt("GB") as? String,
+        certs?.opt("UK") as? String,
+    ).firstOrNull { xpCinemaCertificate(it) != null })
 }

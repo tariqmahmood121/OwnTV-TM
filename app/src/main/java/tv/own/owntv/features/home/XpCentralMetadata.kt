@@ -103,6 +103,8 @@ internal object XpCentralMetadata {
                     tmdbId = tmdb,
                     imdbId = imdb,
                     ratingSource = field("rating_source") ?: if (tmdb != null) "TMDB" else null,
+                    backdrop = field("background"),
+                    ukCertificate = xpUkCertificate(item),
                 ))
             }
         }.distinctBy { it.type to it.id }

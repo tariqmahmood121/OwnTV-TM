@@ -205,4 +205,14 @@
     </plurals>
     <string name="movioxp_display_keep">Keep Changes</string>
     <string name="movioxp_display_revert">Revert</string>
+    <string name="movioxp_tv_interface">TV Interface</string>
+    <string name="movioxp_tv_cinema">Cinema</string>
+    <string name="movioxp_tv_classic">Classic</string>
+    <string name="movioxp_cinema_space">Space</string>
+    <string name="movioxp_cinema_backspace">Delete</string>
+    <string name="movioxp_cinema_more_info">More info</string>
+    <string name="movioxp_cinema_film">Film</string>
+    <string name="movioxp_cinema_rating">★ %1$s</string>
+    <string name="movioxp_cinema_browse">Browse titles</string>
+    <string name="movioxp_cinema_results">Search results</string>
 </resources>

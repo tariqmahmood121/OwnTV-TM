@@ -44,6 +44,9 @@ internal data class XpDisplaySnapshot(
 internal class XpV4DisplayPreferences(context: android.content.Context, private val scope: String) {
     private val prefs = context.getSharedPreferences("movioxp_display_v4", android.content.Context.MODE_PRIVATE)
 
+    fun cinema(): Boolean = prefs.getBoolean("$scope:cinema", true)
+    fun saveCinema(value: Boolean) { prefs.edit().putBoolean("$scope:cinema", value).apply() }
+
     fun navigation(): XpNavigationPosition = XpNavigationPosition.entries.getOrElse(prefs.getInt("$scope:navigation", 1)) {
         XpNavigationPosition.BELOW_HEADER
     }
