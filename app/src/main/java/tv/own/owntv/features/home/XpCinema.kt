@@ -101,7 +101,8 @@ internal fun XpCinemaRail(
         .background(XpCinemaBackground.copy(alpha = if (expanded) .97f else 1f))
         .onFocusChanged { expanded = it.hasFocus }.focusGroup().padding(horizontal = 5.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.Start) {
-        XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, expanded, onClick = onProfile, indicator = profileStatus)
+        XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, expanded,
+            modifier = Modifier.testTag("cinema-profile"), onClick = onProfile, indicator = profileStatus)
         if (expanded && onSwitchProfile != null) XpCinemaRailButton(stringResource(R.string.movioxp_switch_profile),
             OwnTVIcon.SWAP, false, expanded, onClick = onSwitchProfile)
         Spacer(Modifier.weight(1f))
@@ -196,7 +197,7 @@ private fun XpCinemaKey(label: String, modifier: Modifier, onClick: () -> Unit) 
         .background(if (focused) colors.primaryContainer else colors.surfaceContainerLow)
         .border(if (focused) 1.dp else 0.dp, if (focused) XpRemotePink else Color.Transparent, shape)
         .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).padding(3.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = colors.onSurface, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = colors.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

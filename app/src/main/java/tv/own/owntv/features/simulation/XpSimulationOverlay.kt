@@ -42,6 +42,7 @@ internal fun XpSimulationDialog(
     dismissOnBack: Boolean = true,
     dismissOnOutside: Boolean = true,
     focusGroupByDefault: Boolean = false,
+    initialFocus: FocusRequester? = null,
     content: @Composable (FocusRequester) -> Unit,
 ) {
     val dismiss = rememberUpdatedState(onDismiss)
@@ -49,7 +50,7 @@ internal fun XpSimulationDialog(
     val back = rememberUpdatedState(dismissOnBack)
     val outside = rememberUpdatedState(dismissOnOutside)
     val groupFocus = rememberUpdatedState(focusGroupByDefault)
-    val panel: @Composable () -> Unit = remember {
+    val panel: @Composable () -> Unit = remember(initialFocus) {
         {
             val focus = remember { FocusRequester() }
             BackHandler { if (back.value) dismiss.value() }
@@ -67,7 +68,7 @@ internal fun XpSimulationDialog(
             }
             LaunchedEffect(focus) {
                 withFrameNanos { }
-                focus.requestFocus()
+                (initialFocus ?: focus).requestFocus()
             }
         }
     }

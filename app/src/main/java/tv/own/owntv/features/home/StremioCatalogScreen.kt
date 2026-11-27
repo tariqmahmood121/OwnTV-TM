@@ -1181,11 +1181,15 @@ fun StremioCatalogScreen(
     val globalSearchFocus = remember { FocusRequester() }
     var cinemaCategoryPage by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
     var cinemaSearchOrigin by rememberSaveable(catalogueProfile) { mutableStateOf<String?>(null) }
+    var cinemaAllTitles by rememberSaveable(catalogueProfile) { mutableStateOf(false) }
     var openSearchKeyboard by remember { mutableStateOf(false) }
     fun enterSearch() {
         if (page != "search") {
             returnPage = page
-            if (cinema) cinemaSearchOrigin = cinemaCategoryPage
+            if (cinema) {
+                cinemaSearchOrigin = cinemaCategoryPage
+                cinemaAllTitles = false
+            }
             searchType = if (cinema) 0 else when (page) {
                 "discover", "movies" -> 1
                 "series" -> 2
@@ -2117,7 +2121,14 @@ fun StremioCatalogScreen(
         val match = XpSourcePreference.playedMatch(saved, candidates)
         val preferred = match ?: candidates.firstOrNull { source ->
             selectedStreams.any { it.url == source.url && it.addon.url == preferredAddonUrl }
-        } ?: candidates.firstOrNull() ?: return@LaunchedEffect
+        } ?: candidates.firstOrNull()
+        if (preferred == null) {
+            if (cinema && manualSourceSelection.not() && item.type in setOf("movie", "series")) {
+                manualSourceSelection = true
+                showManualSources = true
+            }
+            return@LaunchedEffect
+        }
         val sources = (listOf(preferred) + candidates.filterNot { it == preferred }).take(6)
         autoStartedItem = itemKey
         startPlayback(playbackWithResume(item)) { position ->
@@ -2131,16 +2142,10 @@ fun StremioCatalogScreen(
             }
         }
     }
-    LaunchedEffect(selected?.id, selected?.type, showManualSources, playbackActive, cinema) {
-        if (cinema && selected != null && !showManualSources && !playbackActive) {
-            withFrameNanos { }
-            runCatching { detailFocus.requestFocus() }
-        }
-    }
     LaunchedEffect(selected?.id, selected?.type, streamsLoading, selectedStreams.size, autoSelectSource, manualSourceSelection, showManualSources, playbackActive) {
         if (!playbackActive && selected != null && !streamsLoading) runCatching {
             if (manualSourceSelection && showManualSources && selectedStreams.isNotEmpty()) firstSourceFocus.requestFocus()
-            else if (selectedStreams.isEmpty() || !showManualSources) detailFocus.requestFocus()
+            else if (!cinema && (selectedStreams.isEmpty() || !showManualSources)) detailFocus.requestFocus()
         }
     }
     val homeReset = LocalXpHomeReset.current
@@ -3384,7 +3389,9 @@ fun StremioCatalogScreen(
                             centralConnection != null && XpCentralMetadata.category(id) != null
                     }
                 }
-                val browseCategory = cinemaSearchOrigin?.takeIf { it in categoryIds } ?: categoryIds.firstOrNull()
+                val browseCategory = cinemaSearchOrigin?.takeIf { !cinemaAllTitles && it in categoryIds }
+                    ?: categoryIds.firstOrNull()
+                val personalSearch = returnPage == "library" && !cinemaAllTitles
                 val previewSource = browseCategory?.let { xpDiscoverSource(it, installedAddons) }
                 var catalogue by remember(catalogueProfile, browseCategory) { mutableStateOf<List<XpMeta>>(emptyList()) }
                 LaunchedEffect(browseCategory, previewSource, catalogueProfile, centralConnection, searchText.isBlank()) {
@@ -3404,7 +3411,7 @@ fun StremioCatalogScreen(
                 }
                 val personal = continueTitles + favoriteTitles + historyTitles + watchlistTitles
                 val matches = searchHits.map { it.meta }.filter { item ->
-                    (returnPage != "library" || personal.any { XpPlaybackIdentity.sameTitle(it, item) }) &&
+                    (!personalSearch || personal.any { XpPlaybackIdentity.sameTitle(it, item) }) &&
                         when (searchType) {
                             1 -> item.type == "movie"
                             2 -> item.type == "series"
@@ -3413,9 +3420,9 @@ fun StremioCatalogScreen(
                         }
                 }
                 val results = if (searchText.isBlank()) {
-                    if (returnPage == "library") personal.distinctBy { it.type to it.id }
+                    if (personalSearch) personal.distinctBy { it.type to it.id }
                     else catalogue.filter { searchType != 2 || it.type == "series" }
-                } else if (returnPage == "library") matches else sortedTitles(matches)
+                } else if (personalSearch) matches else sortedTitles(matches)
                 val suggestions = if (searchText.isBlank()) recentSearches else if (showSearchSuggestions && !searchLoading) matches
                     .map { it.name }.distinctBy { it.lowercase(java.util.Locale.ROOT) }
                     .filter { XpRecentSearches.rank(it, searchText.trim()) < 3 }
@@ -3455,14 +3462,14 @@ fun StremioCatalogScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        if (cinemaSearchOrigin != null) {
+                        if (!cinemaAllTitles && (cinemaSearchOrigin != null || personalSearch)) {
                             XpSettingsOption(stringResource(R.string.movioxp_cinema_all_titles)) {
-                                cinemaSearchOrigin = null
+                                cinemaAllTitles = true
                                 searchType = 0
                             }
                         }
                         Text(stringResource(R.string.movioxp_cinema_browse), color = XpText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        if (returnPage != "library" && returnPage != "series") categoryIds.forEach { id ->
+                        if (!personalSearch) categoryIds.forEach { id ->
                             val label = XpHomeConfig.categories.firstOrNull { it.id == id }?.let { stringResource(it.labelRes) }
                                 ?: XpHomeConfig.genreName(id) ?: return@forEach
                             XpSettingsOption(label, selected = false) {
@@ -4194,8 +4201,8 @@ fun StremioCatalogScreen(
             } else {
                 val chooseEpisode = item.type == "series" && XpPlaybackIdentity.isImdbId(item.id) && selectedEpisode == null
                 XpQa5Dialog(item.name, stringResource(R.string.movioxp_close), ::closeDetails, width = 880.dp,
-                    primaryAction = {
-                        XpDialogButton(stringResource(if (autoSelectSource) R.string.movioxp_play_content else R.string.movioxp_find_sources), OwnTVIcon.PLAY,
+                    initialFocus = detailFocus.takeIf { cinema }, primaryAction = {
+                        XpDialogButton(stringResource(if (cinema || autoSelectSource) R.string.movioxp_play_content else R.string.movioxp_find_sources), OwnTVIcon.PLAY,
                             enabled = !chooseEpisode || cinema, requester = detailFocus, primary = true) {
                             if (chooseEpisode) {
                                 runCatching { firstEpisodeFocus.requestFocus() }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,7 @@ internal fun XpQa5Dialog(
     primaryAction: (@Composable () -> Unit)? = null,
     titleIcon: OwnTVIcon? = null,
     titleContent: (@Composable () -> Unit)? = null,
+    initialFocus: FocusRequester? = null,
     content: @Composable ColumnScope.(wide: Boolean) -> Unit,
 ) {
     val overlay = LocalXpSimulationOverlay.current
@@ -96,10 +99,14 @@ internal fun XpQa5Dialog(
         }
     }
     if (overlay != null) {
-        XpSimulationDialog(overlay, onDismiss) { panel(it) }
+        XpSimulationDialog(overlay, onDismiss, initialFocus = initialFocus) { panel(it.takeIf { initialFocus == null }) }
     } else {
         Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             panel(null)
+            if (initialFocus != null) LaunchedEffect(initialFocus) {
+                withFrameNanos { }
+                runCatching { initialFocus.requestFocus() }
+            }
         }
     }
 }

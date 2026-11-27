@@ -9,6 +9,17 @@ import androidx.compose.runtime.LaunchedEffect
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.home.XpContinueStore
 import tv.own.owntv.features.home.catalogueProfileKey
+import tv.own.owntv.features.home.XpCinemaMetadata
+import tv.own.owntv.features.home.XpCinemaFont
+import tv.own.owntv.features.home.XpMeta
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.tv.material3.ProvideTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.test.assertIsFocused
 import tv.own.owntv.features.profiles.ProfilesViewModel
 import java.io.File
@@ -19,7 +30,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -56,6 +72,7 @@ class XpCinemaVisualTest {
         val action = activity.getString(R.string.movioxp_home_action)
         val exploreAction = activity.getString(R.string.movioxp_explore_collection, action)
         var mountHome by mutableStateOf(true)
+        var showBadgeFixtures by mutableStateOf(false)
         var profileScope = ""
         val coldStarted = SystemClock.elapsedRealtime()
         compose.setContent {
@@ -72,6 +89,17 @@ class XpCinemaVisualTest {
             OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
                 XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
                     if (seeded && mountHome) StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                    if (showBadgeFixtures) ProvideTextStyle(TextStyle(fontFamily = XpCinemaFont.MONTSERRAT.family)) {
+                        Column(Modifier.fillMaxWidth().padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            listOf("U", "PG", "12", "12A", "15", "18").forEach { certificate ->
+                                val reference = XpMeta("visual-fixture", "movie", "", null,
+                                    "Sample synopsis used to check the native Cinema component at emulator scale.",
+                                    "2019", "6.7", ratingSource = "IMDb", genre = "Thriller",
+                                    ukCertificate = certificate, runtime = "109")
+                                XpCinemaMetadata(reference, details = null, showYear = true, synopsisLines = 2)
+                            }
+                        }
+                    }
                     if (exit) XpExitConfirmation(onCancel = { exit = false }, onConfirm = {})
                 }
             }
@@ -92,9 +120,15 @@ class XpCinemaVisualTest {
         saveScreenshot("01-cinema-home")
         saveScreenshot("05-simulator-remote")
 
+        fun pressRemote(label: Int) =
+            compose.onNodeWithContentDescription(activity.getString(label)).performClick()
+        pressRemote(R.string.movioxp_sim_down)
         val home = compose.onNodeWithTag("cinema-home-list")
         home.performScrollToIndex(1)
-        compose.onNodeWithContentDescription("The Matrix").performSemanticsAction(SemanticsActions.RequestFocus)
+        val matrix = compose.onNodeWithContentDescription("The Matrix")
+        matrix.performSemanticsAction(SemanticsActions.RequestFocus)
+        matrix.assertIsFocused()
+        compose.mainClock.advanceTimeBy(800)
         val expandedCard = "cinema-expanded-card-metadata"
         compose.waitUntil(10_000) {
             compose.onAllNodes(androidx.compose.ui.test.hasTestTag(expandedCard), useUnmergedTree = true)
@@ -106,7 +140,7 @@ class XpCinemaVisualTest {
         fun shell(command: String) {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
         }
-        shell("input keyevent 23")
+        pressRemote(R.string.movioxp_sim_ok)
         val play = activity.getString(R.string.movioxp_play_content)
         val sources = activity.getString(R.string.movioxp_find_sources)
         compose.waitUntil(10_000) {
@@ -114,13 +148,26 @@ class XpCinemaVisualTest {
         }
         compose.onAllNodes(hasText(play) or hasText(sources))[0].assertIsFocused()
         saveScreenshot("12-single-ok-detail")
-        shell("input keyevent 4")
+        pressRemote(R.string.common_back)
         home.performScrollToNode(hasText(action))
         val actionShelf = compose.onNodeWithTag("home-collection:xp_action")
         compose.waitUntil(90_000) {
             compose.onAllNodes(androidx.compose.ui.test.hasTestTag("home-collection:xp_action"))
                 .fetchSemanticsNodes().isNotEmpty()
         }
+        val shelfCards = compose.onAllNodes(hasAnyAncestor(hasTestTag("home-collection:xp_action")) and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription) and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Focused))
+        val rightmost = shelfCards.fetchSemanticsNodes().mapIndexed { index, node -> index to node.boundsInRoot.right }
+            .maxBy { it.second }.first
+        shelfCards[rightmost].performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.mainClock.advanceTimeBy(800)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag(expandedCard), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag(expandedCard, useUnmergedTree = true).assertIsDisplayed()
+        saveScreenshot("16-right-edge-focus")
         actionShelf.performScrollToNode(hasText(exploreAction))
         compose.onNodeWithText(exploreAction).assertIsDisplayed()
         saveScreenshot("02-explore-more")
@@ -167,6 +214,14 @@ class XpCinemaVisualTest {
         compose.onNodeWithTag("cinema-category-grid").assertIsDisplayed()
         compose.onNodeWithText(action).assertIsDisplayed()
         saveScreenshot("09-discover-grid")
+        rail(R.string.moviotv_xp_nav_search)
+        awaitText(activity.getString(R.string.movioxp_cinema_all_titles))
+        compose.onNodeWithText("a").assertIsDisplayed()
+        compose.onNodeWithText(activity.getString(R.string.movioxp_cinema_delete)).assertIsDisplayed()
+        saveScreenshot("13-context-search")
+        compose.onNodeWithText(activity.getString(R.string.movioxp_cinema_all_titles)).performClick()
+        back.performTouchInput { click() }
+        compose.onNodeWithText(action).assertIsDisplayed()
         back.performTouchInput { click() }
         selector.assertIsDisplayed()
         rail(R.string.moviotv_nav_series)
@@ -175,7 +230,22 @@ class XpCinemaVisualTest {
         awaitText(allSeries)
         compose.onNodeWithText(allSeries).performClick()
         compose.onNodeWithTag("cinema-category-grid").assertIsDisplayed()
+        compose.waitUntil(25_000) {
+            compose.onAllNodes(hasAnyAncestor(hasTestTag("cinema-category-grid")) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         saveScreenshot("10-series-grid")
+        compose.onNodeWithTag("cinema-profile", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(activity.getString(R.string.moviotv_xp_nav_settings)).performClick()
+        compose.onNodeWithText(activity.getString(R.string.moviotv_xp_settings_display_heading)).performScrollTo().performClick()
+        val font = compose.onNodeWithText(activity.getString(R.string.movioxp_font_inter))
+        font.performScrollTo().performClick()
+        check(activity.getSharedPreferences("movioxp_feature_settings", 0).getString("$profileScope|cinema-font", null) == "INTER")
+        compose.onNodeWithTag("cinema-font-preview").performScrollTo().assertIsDisplayed()
+        saveScreenshot("14-font-preview")
+        compose.onNodeWithText(activity.getString(R.string.movioxp_cinema_restore_font)).performScrollTo().performClick()
+        check(activity.getSharedPreferences("movioxp_feature_settings", 0).getString("$profileScope|cinema-font", null) == "MONTSERRAT")
 
         shell("svc wifi disable")
         shell("svc data disable")
@@ -203,7 +273,9 @@ class XpCinemaVisualTest {
             compose.waitUntil(seconds * 1_000L + 15_000L) { currentTitle()?.let { it != prior } == true }
             measurements.appendText("rotation_${seconds}_ms=${SystemClock.elapsedRealtime() - started}\n")
         }
+        pressRemote(R.string.movioxp_sim_right)
         compose.onNodeWithText(moreInfo).performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithText(moreInfo).assertIsFocused()
         awaitRotation(20)
         awaitRotation(20)
         val retained = currentTitle()
@@ -215,6 +287,12 @@ class XpCinemaVisualTest {
         check(currentTitle() == retained)
         awaitRotation(60)
         awaitRotation(60)
+        compose.runOnIdle {
+            mountHome = false
+            showBadgeFixtures = true
+        }
+        compose.onNodeWithText("12A").assertIsDisplayed()
+        saveScreenshot("15-native-age-badge-fixtures")
     }
 
     private fun saveScreenshot(name: String) {

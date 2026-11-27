@@ -168,7 +168,7 @@ internal fun rememberXpFeaturedMovie(
         }
     }
     var rotationCycle by remember(profile) { mutableStateOf(0) }
-    LaunchedEffect(enabled, rotationAllowed, hero?.id, settings, rotationCycle) {
+    LaunchedEffect(profile, authorizedSources, enabled, rotationAllowed, hero?.id, settings, rotationCycle) {
         val current = hero ?: return@LaunchedEffect
         if (!enabled || !rotationAllowed || !settings.enabled) return@LaunchedEffect
         val interval = settings.seconds * 1_000L
