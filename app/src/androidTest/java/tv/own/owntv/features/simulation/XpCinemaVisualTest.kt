@@ -79,7 +79,8 @@ class XpCinemaVisualTest {
         }
         awaitText(moreInfo)
         awaitArtwork(90_000)
-        println("HOME_TIMING cold_ms=${SystemClock.elapsedRealtime() - coldStarted}")
+        val measurements = File(activity.filesDir, "cinema-visual").apply { mkdirs() }.resolve("timings.txt")
+        measurements.writeText("cold_ms=${SystemClock.elapsedRealtime() - coldStarted}\n")
         compose.onNodeWithText(moreInfo).assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.moviotv_xp_continue_watching)).assertIsDisplayed()
         saveScreenshot("01-cinema-home")
@@ -138,7 +139,7 @@ class XpCinemaVisualTest {
             val warmStarted = SystemClock.elapsedRealtime()
             compose.runOnIdle { mountHome = true }
             awaitArtwork(12_000)
-            println("HOME_TIMING warm_offline_ms=${SystemClock.elapsedRealtime() - warmStarted}")
+            measurements.appendText("warm_offline_ms=${SystemClock.elapsedRealtime() - warmStarted}\n")
             saveScreenshot("06-warm-offline-home")
         } finally {
             shell("svc wifi enable")
