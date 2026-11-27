@@ -211,7 +211,10 @@ private fun XpChoice(title: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun XpAppearanceOptions(onMore: () -> Unit) {
+internal fun XpAppearanceOptions(
+    onMore: () -> Unit,
+    preview: (zoom: Int, font: Int) -> Unit = { _, _ -> },
+) {
     val shell: ShellViewModel = koinViewModel()
     val settings: SettingsViewModel = koinViewModel()
     val theme by shell.themeMode.collectAsStateWithLifecycle()
@@ -254,22 +257,22 @@ internal fun XpAppearanceOptions(onMore: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         XpChoice(stringResource(R.string.moviotv_xp_settings_decrease), false) {
-            shell.setFontCustomization(font.copy(sizePercent = UiFontScale.clamp(font.sizePercent - UiFontScale.STEP)))
+            preview(zoom, UiFontScale.clamp(font.sizePercent - UiFontScale.STEP))
         }
         Text(stringResource(R.string.common_percent, font.sizePercent), color = OwnTVTheme.colors.onSurface, fontSize = 16.sp)
         XpChoice(stringResource(R.string.moviotv_xp_settings_increase), false) {
-            shell.setFontCustomization(font.copy(sizePercent = UiFontScale.clamp(font.sizePercent + UiFontScale.STEP)))
+            preview(zoom, UiFontScale.clamp(font.sizePercent + UiFontScale.STEP))
         }
     }
     XpSettingsFieldLabel(stringResource(R.string.moviotv_xp_display_zoom))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         XpChoice(stringResource(R.string.moviotv_xp_settings_decrease), false) {
-            shell.setUiZoom(UiZoom.clamp(zoom - 5))
+            preview(UiZoom.clamp(zoom - 5), font.sizePercent)
         }
         Text(stringResource(R.string.common_percent, zoom), color = OwnTVTheme.colors.onSurface, fontSize = 16.sp)
         XpChoice(stringResource(R.string.moviotv_xp_settings_increase), false) {
-            shell.setUiZoom(UiZoom.clamp(zoom + 5))
+            preview(UiZoom.clamp(zoom + 5), font.sizePercent)
         }
     }
     Text(stringResource(R.string.moviotv_xp_display_help), color = muted, fontSize = 12.sp)

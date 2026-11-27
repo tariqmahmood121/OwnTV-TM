@@ -184,4 +184,22 @@
     <string name="movioxp_activation_contact">Please contact Oak Studios.</string>
     <string name="movioxp_activation_check">Check activation</string>
     <string name="movioxp_sports_no_addons">No compatible sports add-ons are enabled.</string>
+    <string name="movioxp_nav_position">Navigation Menu Position</string>
+    <string name="movioxp_nav_top">Top</string>
+    <string name="movioxp_nav_below">Below Header</string>
+    <string name="movioxp_nav_bottom">Bottom</string>
+    <string name="movioxp_recent_searches">Recent searches</string>
+    <string name="movioxp_search_suggestions">Suggestions</string>
+    <string name="movioxp_search_remove">Remove %1$s</string>
+    <string name="movioxp_search_clear">Clear search</string>
+    <string name="movioxp_search_clear_all">Clear all</string>
+    <string name="movioxp_more_collection">More…</string>
+    <string name="movioxp_full_collection">View full collection</string>
+    <string name="movioxp_display_reset">Restore Factory Defaults</string>
+    <string name="movioxp_display_previous">Restore Previous Settings</string>
+    <string name="movioxp_display_reset_message">Reset the navigation position, card size, zoom, font size and poster labels?</string>
+    <string name="movioxp_display_keep_prompt">Keep these display settings?</string>
+    <string name="movioxp_display_countdown">Reverting in %1$d seconds.</string>
+    <string name="movioxp_display_keep">Keep Changes</string>
+    <string name="movioxp_display_revert">Revert</string>
 </resources>
