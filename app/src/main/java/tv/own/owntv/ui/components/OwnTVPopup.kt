@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import tv.own.owntv.features.simulation.LocalXpSimulationOverlay
+import tv.own.owntv.features.simulation.XpSimulationDialog
 import tv.own.owntv.ui.theme.PopupFontTheme
 
 /**
@@ -56,6 +58,28 @@ fun OwnTVPopup(
     // The app's own density (2.0 × UI Zoom). A dialog window starts again from the display's density,
     // so Stage menus, drawn in design pixels, would come out at 100% zoom whatever the user chose.
     val appDensity = LocalDensity.current
+    val stageDensity = if (!stageScaled) appDensity else Density(
+        density = appDensity.density * tv.own.owntv.ui.theme.LocalPopupSizeScaleFactor.current,
+        fontScale = appDensity.fontScale / tv.own.owntv.ui.theme.LocalUiFontScaleFactor.current *
+            tv.own.owntv.ui.theme.LocalPopupFontScaleFactor.current,
+    )
+    val simulation = LocalXpSimulationOverlay.current
+    if (simulation != null) {
+        val popupDensity = if (stageLayout) stageDensity else Density(
+            density = appDensity.density * 0.70f,
+            fontScale = appDensity.fontScale / 0.70f,
+        )
+        XpSimulationDialog(simulation, onDismissRequest, dismissOnBackPress, dismissOnClickOutside,
+            focusGroupByDefault = true) {
+            CompositionLocalProvider(LocalDensity provides popupDensity,
+                tv.own.owntv.features.settings.LocalSettingsPanel provides null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (stageLayout) content() else PopupFontTheme(fontScale = fontScale) { content() }
+                }
+            }
+        }
+        return
+    }
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(
@@ -120,11 +144,6 @@ fun OwnTVPopup(
 
         if (stageLayout) {
             // Popup size scales the whole popup; popup font size its text, in place of the main font size.
-            val stageDensity = if (!stageScaled) appDensity else Density(
-                density = appDensity.density * tv.own.owntv.ui.theme.LocalPopupSizeScaleFactor.current,
-                fontScale = appDensity.fontScale / tv.own.owntv.ui.theme.LocalUiFontScaleFactor.current *
-                    tv.own.owntv.ui.theme.LocalPopupFontScaleFactor.current,
-            )
             CompositionLocalProvider(LocalDensity provides stageDensity, LocalTvImeWatcher provides watcher, LocalTvImeMetrics provides metrics, tv.own.owntv.features.settings.LocalSettingsPanel provides null) {
                 Box(Modifier.fillMaxSize()) { content() }
             }

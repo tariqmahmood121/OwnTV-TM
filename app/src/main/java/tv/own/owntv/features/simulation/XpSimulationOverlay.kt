@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -30,28 +31,37 @@ internal class XpSimulationOverlay {
 
 @Composable
 internal fun XpSimulationOverlayContent(overlay: XpSimulationOverlay) {
-    overlay.panels.lastOrNull()?.invoke()
+    val panel = overlay.panels.lastOrNull() ?: return
+    key(panel) { panel() }
 }
 
 @Composable
 internal fun XpSimulationDialog(
     overlay: XpSimulationOverlay,
     onDismiss: () -> Unit,
+    dismissOnBack: Boolean = true,
+    dismissOnOutside: Boolean = true,
+    focusGroupByDefault: Boolean = false,
     content: @Composable (FocusRequester) -> Unit,
 ) {
     val dismiss = rememberUpdatedState(onDismiss)
     val currentContent = rememberUpdatedState(content)
+    val back = rememberUpdatedState(dismissOnBack)
+    val outside = rememberUpdatedState(dismissOnOutside)
+    val groupFocus = rememberUpdatedState(focusGroupByDefault)
     val panel: @Composable () -> Unit = remember {
         {
             val focus = remember { FocusRequester() }
-            BackHandler { dismiss.value() }
+            BackHandler { if (back.value) dismiss.value() }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .68f))
                     .focusProperties { canFocus = false }
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        dismiss.value()
+                        if (outside.value) dismiss.value()
                     })
-                Box(Modifier.focusProperties { onExit = { cancelFocusChange() } }.focusGroup()) {
+                Box(Modifier.focusProperties { onExit = { cancelFocusChange() } }
+                    .then(if (groupFocus.value) Modifier.focusRequester(focus) else Modifier)
+                    .focusGroup()) {
                     currentContent.value(focus)
                 }
             }

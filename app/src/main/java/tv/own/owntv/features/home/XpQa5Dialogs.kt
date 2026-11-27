@@ -68,29 +68,29 @@ internal fun XpQa5Dialog(
     val textStyle = androidx.tv.material3.LocalTextStyle.current
     val panel: @Composable (FocusRequester?) -> Unit = { closeFocus ->
         CompositionLocalProvider(LocalMainFontFamily provides font, androidx.tv.material3.LocalTextStyle provides textStyle) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            contentAlignment = Alignment.Center) {
-            val wide = minOf(maxWidth, width) >= 610.dp
-            Column(
-                Modifier.widthIn(max = width).fillMaxWidth().heightIn(max = maxHeight)
-                    .clip(RoundedCornerShape(22.dp)).background(OwnTVTheme.colors.background).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (titleIcon != null) OwnTVIcon(titleIcon, OwnTVTheme.colors.primary, Modifier.size(22.dp))
-                    Box(Modifier.weight(1f)) {
-                        if (titleContent != null) titleContent()
-                        else Text(title, color = OwnTVTheme.colors.onSurface,
-                            fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center) {
+                val wide = minOf(maxWidth, width) >= 610.dp
+                Column(
+                    Modifier.widthIn(max = width).fillMaxWidth().heightIn(max = maxHeight)
+                        .clip(RoundedCornerShape(22.dp)).background(OwnTVTheme.colors.background).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (titleIcon != null) OwnTVIcon(titleIcon, OwnTVTheme.colors.primary, Modifier.size(22.dp))
+                        Box(Modifier.weight(1f)) {
+                            if (titleContent != null) titleContent()
+                            else Text(title, color = OwnTVTheme.colors.onSurface,
+                                fontSize = if (wide) 26.sp else 21.sp, fontWeight = FontWeight.Bold,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, requester = closeFocus, onClick = onDismiss)
                     }
-                    XpDialogButton(closeLabel, OwnTVIcon.CLOSE, iconOnly = true, requester = closeFocus, onClick = onDismiss)
+                    content(wide)
+                    primaryAction?.invoke()
                 }
-                content(wide)
-                primaryAction?.invoke()
             }
-        }
         }
     }
     if (overlay != null) {
