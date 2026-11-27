@@ -16,8 +16,8 @@ jobs:
       - name: Verify reviewed code and emulator evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          REVIEWED_SHA: "2297857529e1bc2ba8ea0627aab01178b3153e19"
-          EMULATOR_RUN: "46055899872"
+          REVIEWED_SHA: "6df01253318596ab68b394dd68231b8cd461aee5"
+          EMULATOR_RUN: "46058259684"
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$REVIEWED_SHA"
@@ -28,7 +28,7 @@ jobs:
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN")
           jq -e --arg sha "$REVIEWED_SHA" '.head_sha == $sha and .conclusion == "success"' <<< "$run"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN/artifacts" \
-            --jq '.artifacts[] | select(.name == "cinema-visual" and .expired == false) | .id' | grep -Fx "15226453783"
+            --jq '.artifacts[] | select(.name == "cinema-visual" and .expired == false) | .id' | grep -Fx "15228066626"
   signed-qa:
     needs: reviewed-source
     permissions:

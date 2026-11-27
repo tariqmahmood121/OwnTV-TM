@@ -10,3 +10,5 @@ Source commit 2297857529e1bc2ba8ea0627aab01178b3153e19 passed Gradle unit tests 
 The offline measurement uses a same-process remount with Android network access disabled and Coil's memory cache cleared. It does not represent a cold process start.
 
 Visual artifact 15226453783 shows the Home feature, Search, Discover selector and Action poster grid. It does not demonstrate a populated Series grid or the expanded focused shelf card. The tests verified navigation to the Series grid shell. Real-time rotation, lifecycle restoration on a foldable, rapid physical D-pad use, and signed-in Central and playback regression testing remain outstanding. The existing Central payload has no verified fields for featured-movie settings, which are stored locally per profile.
+
+The follow-up resource-only commit 6df01253 uses Android plurals for the rotation interval label. It passed the source and emulator checks in Actions run 46058259684. The timings above refer to the two earlier runs.
