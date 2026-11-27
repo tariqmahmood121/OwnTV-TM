@@ -3,6 +3,10 @@ name: MovioXP simulator navigation device test
 on:
   push:
     branches: [movioxp-v4-home-grid]
+    paths-ignore:
+      - docs/movioxp-v4-g-visual-review.md
+      - .github/workflows/movioxp-v4-g-reviewed-release.yml
+      - .github/workflows/movioxp-simulation-device-test.yml
   workflow_dispatch:
     inputs:
       visual_verified:
