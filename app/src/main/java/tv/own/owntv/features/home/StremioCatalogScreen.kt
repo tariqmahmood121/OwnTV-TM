@@ -1387,9 +1387,11 @@ fun StremioCatalogScreen(
                 }
             }
     }
-    val trendingMovies = trendingCandidates.mapNotNull { item ->
-        (xpCinemaLandscape(item.backdrop, item.poster) ?: featuredBackdrops[item.id])
-            ?.let { item.copy(backdrop = it) }
+    val (providedBackdrops, missingBackdrops) = trendingCandidates.partition { item ->
+        xpCinemaLandscape(item.backdrop, item.poster) != null
+    }
+    val trendingMovies = providedBackdrops + missingBackdrops.mapNotNull { item ->
+        featuredBackdrops[item.id]?.let { item.copy(backdrop = it) }
     }
     var featuredIndex by remember(catalogueProfile) { mutableIntStateOf(0) }
     var featuredFocused by remember { mutableStateOf(false) }

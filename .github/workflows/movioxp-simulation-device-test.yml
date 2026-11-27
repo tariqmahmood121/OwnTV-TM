@@ -48,3 +48,13 @@ jobs:
         with:
           name: simulation-test-results
           path: app/build/outputs/androidTest-results/
+
+  signed-qa:
+    if: github.ref_name == 'movioxp-v4-simulation-corrections'
+    needs: emulator
+    permissions:
+      contents: write
+    uses: ./.github/workflows/movioxp-central-isolation-release.yml
+    with:
+      device_test_passed: true
+    secrets: inherit
