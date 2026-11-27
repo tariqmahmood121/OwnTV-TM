@@ -1436,8 +1436,9 @@ fun StremioCatalogScreen(
                     val enriched = item.copy(backdrop = details.backdrop, genre = details.genres.firstOrNull(),
                         description = item.description ?: details.synopsis, ukCertificate = item.ukCertificate ?: details.ukCertificate)
                     enrichedBackdrops = enrichedBackdrops + enriched
-                    val source = trendingSource?.row?.addon?.url ?: centralConnection?.apiBase
-                    if (source != null) withContext(Dispatchers.IO) { featuredPool.write(source, enrichedBackdrops) }
+                    val source = if (standaloneTrending.any { it.id == item.id }) trendingSource?.row?.addon?.url
+                        else centralConnection?.apiBase ?: trendingSource?.row?.addon?.url
+                    if (source != null) withContext(Dispatchers.IO) { featuredPool.write(source, listOf(enriched)) }
                 }
             }
         }
@@ -1456,7 +1457,7 @@ fun StremioCatalogScreen(
     val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val feature = rememberXpFeaturedMovie(featureAllowed, catalogueProfile, featuredSources,
         trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
-        showCinemaFeature, featureRetry) {
+        showCinemaFeature, featureRetry, homeSources.values.any { it != null }) {
         val cachedCentral = centralConnection?.let { connection ->
             repository.cachedBody(XpCatalogueRepository.Key(catalogueProfile, connection.apiBase, "trending"))
                 ?.let { runCatching { XpCentralMetadata.parseCatalog(JSONObject(it)) }.getOrNull() }

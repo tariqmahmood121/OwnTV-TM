@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import coil3.SingletonImageLoader
-import coil3.SuccessResult
+import coil3.request.SuccessResult
 import coil3.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -48,9 +48,10 @@ internal class XpFeaturedPool(context: Context, profile: String) {
         })
     }.getOrDefault(emptyList())
 
-    fun write(source: String, items: List<XpMeta>) {
-        val candidates = xpFeatureCandidates(items + read(source))
-        if (items.isEmpty() || candidates.isEmpty()) return
+    fun write(source: String, items: List<XpMeta>) = synchronized(prefs) {
+        val fresh = xpFeatureCandidates(items)
+        if (fresh.isEmpty()) return@synchronized
+        val candidates = xpFeatureCandidates(fresh + read(source))
         val encoded = JSONArray(candidates.map {
             JSONObject().put("id", it.id).put("name", it.name).put("poster", it.poster)
                 .put("description", it.description).put("year", xpReleaseYear(it))
@@ -73,6 +74,7 @@ internal fun rememberXpFeaturedMovie(
     rotationAllowed: Boolean,
     active: Boolean,
     retry: Long,
+    catalogueReady: Boolean,
     readCatalogueCache: suspend () -> List<XpMeta>,
 ): XpFeaturedState {
     val context = LocalContext.current
@@ -81,7 +83,8 @@ internal fun rememberXpFeaturedMovie(
     var cached by remember(profile, authorizedSources) { mutableStateOf(emptyList<XpMeta>()) }
     var hero by remember(profile, authorizedSources) { mutableStateOf<XpMeta?>(null) }
     var waiting by remember(profile, enabled, active, retry) { mutableStateOf(true) }
-    val all = xpFeatureCandidates(cached + candidates)
+    val initialCandidates = xpFeatureCandidates(cached + candidates)
+    val rotationCandidates = xpFeatureCandidates(candidates + cached)
     suspend fun ready(item: XpMeta): Boolean {
         val backdrop = item.backdrop ?: return false
         val since = SystemClock.elapsedRealtime()
@@ -98,7 +101,7 @@ internal fun rememberXpFeaturedMovie(
         xpDebug("Featured artwork ready=$landscape in ${SystemClock.elapsedRealtime() - since} ms")
         return landscape
     }
-    LaunchedEffect(enabled, active, authorizedSources, retry) {
+    LaunchedEffect(enabled, active, authorizedSources, catalogueReady, retry) {
         if (!enabled || !active) return@LaunchedEffect
         val stored = withContext(Dispatchers.IO) { authorizedSources.flatMap(pool::read) }
         cached = xpFeatureCandidates(stored)
@@ -111,9 +114,9 @@ internal fun rememberXpFeaturedMovie(
             waiting = false
         }
     }
-    LaunchedEffect(enabled, active, all, retry) {
+    LaunchedEffect(enabled, active, initialCandidates, retry) {
         if (!enabled || !active || hero != null) return@LaunchedEffect
-        for (item in all) {
+        for (item in initialCandidates) {
             if (ready(item)) {
                 hero = item
                 xpDebug("Featured first ready at ${SystemClock.elapsedRealtime() - started} ms")
@@ -121,14 +124,15 @@ internal fun rememberXpFeaturedMovie(
             }
         }
     }
-    LaunchedEffect(enabled, rotationAllowed, hero?.id, all) {
+    LaunchedEffect(enabled, rotationAllowed, hero?.id, rotationCandidates) {
         val current = hero ?: return@LaunchedEffect
         if (!enabled || !rotationAllowed) return@LaunchedEffect
-        val options = all.filterNot { it.id == current.id }.shuffled()
+        val options = rotationCandidates.filterNot { it.id == current.id }.shuffled()
         if (options.isEmpty()) return@LaunchedEffect
         while (true) {
             val cycle = SystemClock.elapsedRealtime()
-            val next = options.firstOrNull { ready(it) }
+            delay(52_000)
+            val next = options.take(2).firstOrNull { ready(it) }
             delay((60_000 - (SystemClock.elapsedRealtime() - cycle)).coerceAtLeast(0))
             if (next != null) {
                 hero = next

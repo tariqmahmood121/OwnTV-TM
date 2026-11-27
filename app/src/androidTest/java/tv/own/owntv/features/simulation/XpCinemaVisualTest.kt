@@ -132,6 +132,9 @@ class XpCinemaVisualTest {
         try {
             compose.runOnIdle { mountHome = false }
             compose.onNodeWithTag("cinema-home-list").assertDoesNotExist()
+            val connectivity = requireNotNull(activity.getSystemService(android.net.ConnectivityManager::class.java))
+            compose.waitUntil(10_000) { connectivity.activeNetwork == null }
+            coil3.SingletonImageLoader.get(activity).memoryCache?.clear()
             val warmStarted = SystemClock.elapsedRealtime()
             compose.runOnIdle { mountHome = true }
             awaitArtwork(12_000)
