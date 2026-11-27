@@ -18,6 +18,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -224,8 +225,12 @@ internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifie
         androidx.compose.animation.Crossfade(backdrop,
             modifier = Modifier.matchParentSize().dissolveEdges(start = .22f, bottom = .38f),
             animationSpec = androidx.compose.animation.core.tween(220)) { wide ->
-            AsyncImage(wide, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-                alignment = Alignment.CenterEnd)
+            var loaded by remember(wide) { mutableStateOf(false) }
+            val artwork = Modifier.fillMaxSize().then(
+                if (loaded) Modifier.testTag("cinema-backdrop-loaded") else Modifier,
+            )
+            AsyncImage(wide, null, artwork, contentScale = ContentScale.Crop,
+                alignment = Alignment.CenterEnd, onSuccess = { loaded = true })
         }
         Box(Modifier.matchParentSize().backdropLeftWash(
             0f to .86f, .29f to .57f, .64f to .12f, .9f to 0f))

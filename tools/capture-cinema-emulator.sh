@@ -7,6 +7,7 @@ test_apk=$(find app/build/outputs/apk/androidTest/x86_64/debug -name '*.apk' -pr
 test -n "$app_apk" && test -n "$test_apk"
 adb install -r -t "$app_apk"
 adb install -r -t "$test_apk"
+adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell am instrument -w -e package tv.own.owntv.features.simulation \
     com.oakstudios.movioxp.test/androidx.test.runner.AndroidJUnitRunner | tee cinema-instrumentation.txt
 

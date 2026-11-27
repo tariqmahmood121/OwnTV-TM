@@ -630,6 +630,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	STUVWX
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	U
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	YZ1234
+1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	cinema-backdrop-loaded
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCinema.kt	series
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	$alias:$season:$number
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpEpisode.kt	$seriesId:$season:$number

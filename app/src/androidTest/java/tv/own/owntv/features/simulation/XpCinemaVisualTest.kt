@@ -72,6 +72,10 @@ class XpCinemaVisualTest {
             compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty()
         }
         awaitText(moreInfo)
+        compose.waitUntil(90_000) {
+            compose.onAllNodes(androidx.compose.ui.test.hasTestTag("cinema-backdrop-loaded"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText(moreInfo).assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.moviotv_xp_continue_watching)).assertIsDisplayed()
         saveScreenshot("01-cinema-home")
