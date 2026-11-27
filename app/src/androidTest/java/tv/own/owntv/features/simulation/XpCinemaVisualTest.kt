@@ -51,6 +51,8 @@ class XpCinemaVisualTest {
         val moreInfo = activity.getString(R.string.movioxp_cinema_more_info)
         val action = activity.getString(R.string.movioxp_home_action)
         val exploreAction = activity.getString(R.string.movioxp_explore_collection, action)
+        var mountHome by mutableStateOf(true)
+        val coldStarted = SystemClock.elapsedRealtime()
         compose.setContent {
             val profiles: ProfilesViewModel = koinViewModel()
             var seeded by remember { mutableStateOf(false) }
@@ -63,7 +65,7 @@ class XpCinemaVisualTest {
             val simulation = remember { XpTvSimulation(activity).apply { onLongBack = { exit = true } } }
             OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
                 XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
-                    if (seeded) StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                    if (seeded && mountHome) StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
                     if (exit) XpExitConfirmation(onCancel = { exit = false }, onConfirm = {})
                 }
             }
@@ -71,11 +73,13 @@ class XpCinemaVisualTest {
         fun awaitText(text: String) = compose.waitUntil(90_000) {
             compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty()
         }
-        awaitText(moreInfo)
-        compose.waitUntil(90_000) {
+        fun awaitArtwork(timeout: Long) = compose.waitUntil(timeout) {
             compose.onAllNodes(androidx.compose.ui.test.hasTestTag("cinema-backdrop-loaded"), useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
+        awaitText(moreInfo)
+        awaitArtwork(90_000)
+        println("HOME_TIMING cold_ms=${SystemClock.elapsedRealtime() - coldStarted}")
         compose.onNodeWithText(moreInfo).assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.moviotv_xp_continue_watching)).assertIsDisplayed()
         saveScreenshot("01-cinema-home")
@@ -119,6 +123,25 @@ class XpCinemaVisualTest {
         back.performTouchInput { click() }
         compose.onNodeWithTag("cinema-home-list").assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.movioxp_exit_confirm)).assertDoesNotExist()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String) {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
+        }
+        shell("svc wifi disable")
+        shell("svc data disable")
+        try {
+            compose.runOnIdle { mountHome = false }
+            compose.onNodeWithTag("cinema-home-list").assertDoesNotExist()
+            val warmStarted = SystemClock.elapsedRealtime()
+            compose.runOnIdle { mountHome = true }
+            awaitArtwork(12_000)
+            println("HOME_TIMING warm_offline_ms=${SystemClock.elapsedRealtime() - warmStarted}")
+            saveScreenshot("06-warm-offline-home")
+        } finally {
+            shell("svc wifi enable")
+            shell("svc data enable")
+        }
+
     }
 
     private fun saveScreenshot(name: String) {

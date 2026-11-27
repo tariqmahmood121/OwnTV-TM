@@ -206,6 +206,7 @@ internal data class XpMeta(
     val backdrop: String? = null,
     val ukCertificate: String? = null,
     val titleLogo: String? = null,
+    val genre: String? = null,
 )
 data class XpPlaybackSource(
     val url: String,
@@ -457,9 +458,18 @@ private object XpAddonProtocol {
         overrides: Map<String, String>,
         refreshAfter: Long,
     ) = catalogUrl(row, overrides).let { url ->
-        repository.observe(XpCatalogueRepository.Key(profile, row.addon.url, row.addon.version + row.catalog.toString() + url), refreshAfter) {
+        repository.observe(catalogueCacheKey(profile, row, url), refreshAfter) {
             get(url).also { require(it.optJSONArray("metas") != null) }.toString()
         }.map { body -> body?.let { parseCatalog(row, JSONObject(it)) } }.flowOn(Dispatchers.IO)
+    }
+
+    private fun catalogueCacheKey(profile: String, row: XpCatalogRow, url: String) =
+        XpCatalogueRepository.Key(profile, row.addon.url, row.addon.version + row.catalog.toString() + url)
+
+    suspend fun cachedCatalog(repository: XpCatalogueRepository, profile: String, source: XpDiscoverSource): List<XpMeta> {
+        val row = source.row
+        val key = catalogueCacheKey(profile, row, catalogUrl(row, source.parameters))
+        return repository.cachedBody(key)?.let { runCatching { parseCatalog(row, JSONObject(it)) }.getOrNull() }.orEmpty()
     }
 
     private fun catalogUrl(row: XpCatalogRow, overrides: Map<String, String>): String {
@@ -500,6 +510,7 @@ private object XpAddonProtocol {
                             ?: item.optString("releaseInfo").takeIf { it.isNotBlank() },
                         rating = item.optString("imdbRating").takeIf { it.isNotBlank() },
                         backdrop = (item.opt("background") as? String)?.takeIf(String::isNotBlank),
+                        genre = XpDetailMetadata.parse(item).genres.firstOrNull(),
                         ukCertificate = xpUkCertificate(item),
                         titleLogo = (item.opt("logo") as? String)?.takeIf(String::isNotBlank),
                     )
@@ -1288,10 +1299,11 @@ fun StremioCatalogScreen(
         managedAddons.filterNot { it.url in disabledAddonUrls || it.url in centralDisabledAddonUrls }
     val moveableAddons = managedAddons.map { it.url }
     val cinemaCollectionId = cinemaCategoryPage.takeIf { cinema && (page == "discover" || page == "series") }
-    val homeSources = (visibleHomeIds + listOfNotNull(cinemaCollectionId) +
-        if (cinema && page == "home" && activeProfile?.isKids != true) listOf("xp_trending") else emptyList())
+    val homeSources = ((if (cinema && page == "home" && activeProfile?.isKids != true) listOf("xp_trending") else emptyList()) +
+        visibleHomeIds + listOfNotNull(cinemaCollectionId))
         .distinct().associateWith { id -> xpDiscoverSource(id, installedAddons) }
 
+    val featuredPool = remember(context, catalogueProfile) { XpFeaturedPool(context, catalogueProfile) }
     fun discoveryDataKey(id: String, source: XpDiscoverSource?) = id to source
     LaunchedEffect(catalogueProfile, centralConnection, homeSources, refreshCatalogues) {
         val connection = centralConnection
@@ -1310,7 +1322,10 @@ fun StremioCatalogScreen(
                         }
                         XpAddonProtocol.observeCatalog(repository, catalogueProfile, source.row, source.parameters, refreshCatalogues)
                             .collect { titles ->
-                                if (titles != null) discoverMetas[dataKey] = titles.distinctBy { it.type to it.id }
+                                if (titles != null) {
+                                    discoverMetas[dataKey] = titles.distinctBy { it.type to it.id }
+                                    withContext(Dispatchers.IO) { featuredPool.write(if (id == "xp_trending") source.row.addon.url else source.row.addon.url + "#shelf", titles) }
+                                }
                             }
                     }
                     if (connection == null || category == null) fallback()
@@ -1319,7 +1334,10 @@ fun StremioCatalogScreen(
                             if (titles == null) {
                                 xpDebug("Using catalogue provider fallback")
                                 fallback()
-                            } else discoverMetas[dataKey] = titles
+                            } else {
+                                discoverMetas[dataKey] = titles
+                                withContext(Dispatchers.IO) { featuredPool.write(if (id == "xp_trending") connection.apiBase else connection.apiBase + "#shelf", titles) }
+                            }
                         }
                 } finally {
                     discoverLoading.remove(id)
@@ -1381,39 +1399,50 @@ fun StremioCatalogScreen(
     }
 
     val visibleRows = if (page == "home") rows.filter { metas[rowKey(it) to it].orEmpty().isNotEmpty() } else rows
-    val showCinemaFeature = cinema && page == "home" && activeProfile?.isKids != true
-    val trendingCandidates = if (showCinemaFeature) {
-        discoverMetas[discoveryDataKey("xp_trending", homeSources["xp_trending"])].orEmpty()
-            .filter { it.type == "movie" }
-            .distinctBy { it.id }.take(24)
-    } else emptyList()
-    val featuredBackdrops = remember(catalogueProfile) { mutableStateMapOf<String, String>() }
-    LaunchedEffect(catalogueProfile, trendingCandidates) {
-        trendingCandidates.filter { xpCinemaLandscape(it.backdrop, it.poster) == null }
-            .take(12).forEach { item ->
-                val imdb = listOfNotNull(item.imdbId, item.id).firstOrNull(XpPlaybackIdentity::isImdbId)
-                if (imdb != null && item.id !in featuredBackdrops) {
-                    val meta = XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, imdb)
-                        ?.optJSONObject("meta")
-                    val backdrop = meta?.let { XpDetailMetadata.parse(it).backdrop }
-                    xpCinemaLandscape(backdrop, item.poster)?.let { featuredBackdrops[item.id] = it }
+    val featureAllowed = cinema && activeProfile?.isKids != true &&
+        (favoritesProfileId <= 0 || activeProfile != null)
+    val showCinemaFeature = featureAllowed && page == "home"
+    val authorizedFeatureSources = listOfNotNull(centralConnection?.apiBase) +
+        manifestAddresses.filterNot { it in disabledAddonUrls || it in centralDisabledAddonUrls }
+    val featuredSources = authorizedFeatureSources + authorizedFeatureSources.map { it + "#shelf" }
+    val trendingSource = homeSources["xp_trending"]
+    var featureRetry by remember(catalogueProfile) { mutableLongStateOf(0L) }
+    var standaloneTrending by remember(catalogueProfile, trendingSource) { mutableStateOf(emptyList<XpMeta>()) }
+    LaunchedEffect(showCinemaFeature, trendingSource, catalogueProfile, featureRetry) {
+        if (!showCinemaFeature || trendingSource == null) return@LaunchedEffect
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        // The repository coalesces this priority request with the Home shelf request.
+        XpAddonProtocol.observeCatalog(repository, catalogueProfile, trendingSource.row,
+            trendingSource.parameters, featureRetry).collect { titles ->
+            if (titles != null) {
+                standaloneTrending = titles
+                xpDebug("Featured Trending delivered ${titles.size} entries in ${android.os.SystemClock.elapsedRealtime() - startedAt} ms")
+                withContext(Dispatchers.IO) { featuredPool.write(trendingSource.row.addon.url, titles) }
+            }
+        }
+    }
+    val trendingCandidates = discoverMetas[discoveryDataKey("xp_trending", trendingSource)].orEmpty() + standaloneTrending
+    var enrichedBackdrops by remember(catalogueProfile, featuredSources, trendingSource) { mutableStateOf(emptyList<XpMeta>()) }
+    LaunchedEffect(showCinemaFeature, trendingCandidates, featureRetry) {
+        if (!showCinemaFeature || xpFeatureCandidates(trendingCandidates).isNotEmpty()) return@LaunchedEffect
+        trendingCandidates.distinctBy { it.id }.take(3).map { item ->
+            launch {
+                val imdb = listOfNotNull(item.imdbId, item.id).firstOrNull(XpPlaybackIdentity::isImdbId) ?: return@launch
+                val details = kotlinx.coroutines.withTimeoutOrNull(4_000) {
+                    XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, imdb)
+                        ?.optJSONObject("meta")?.let(XpDetailMetadata::parse)
+                } ?: return@launch
+                if (xpCinemaLandscape(details.backdrop, item.poster) != null) {
+                    val enriched = item.copy(backdrop = details.backdrop, genre = details.genres.firstOrNull(),
+                        description = item.description ?: details.synopsis, ukCertificate = item.ukCertificate ?: details.ukCertificate)
+                    enrichedBackdrops = enrichedBackdrops + enriched
+                    val source = trendingSource?.row?.addon?.url ?: centralConnection?.apiBase
+                    if (source != null) withContext(Dispatchers.IO) { featuredPool.write(source, enrichedBackdrops) }
                 }
             }
-    }
-    val (providedBackdrops, missingBackdrops) = trendingCandidates.partition { item ->
-        xpCinemaLandscape(item.backdrop, item.poster) != null
-    }
-    val trendingMovies = providedBackdrops + missingBackdrops.mapNotNull { item ->
-        featuredBackdrops[item.id]?.let { item.copy(backdrop = it) }
-    }
-    var featuredId by remember(catalogueProfile) { mutableStateOf<String?>(null) }
-    LaunchedEffect(trendingMovies) {
-        if (trendingMovies.isNotEmpty() && trendingMovies.none { it.id == featuredId }) {
-            featuredId = trendingMovies.random().id
         }
     }
     var featuredFocused by remember { mutableStateOf(false) }
-    val hero = trendingMovies.firstOrNull { it.id == featuredId }
     val featureVisible by remember(homeListState) {
         androidx.compose.runtime.derivedStateOf {
             homeListState.layoutInfo.visibleItemsInfo.any {
@@ -1421,15 +1450,23 @@ fun StremioCatalogScreen(
             }
         }
     }
-    val rotateFeature = cinema && page == "home" && featureVisible && !featuredFocused && selected == null &&
+    val rotateFeature = showCinemaFeature && featureVisible && !featuredFocused && selected == null &&
         !playbackActive && !showAccountMenu && !showLogoMenu && !confirmExit && !manageCentralProfiles &&
-        !addProfileOpen && !showAddHomeCategory && trendingMovies.size > 1
-    LaunchedEffect(rotateFeature, trendingMovies, featuredId) {
-        if (rotateFeature) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            delay(60_000)
-            featuredId = trendingMovies.filterNot { it.id == featuredId }.randomOrNull()?.id
+        !addProfileOpen && !showAddHomeCategory
+    val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
+    val feature = rememberXpFeaturedMovie(featureAllowed, catalogueProfile, featuredSources,
+        trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
+        showCinemaFeature, featureRetry) {
+        val cachedCentral = centralConnection?.let { connection ->
+            repository.cachedBody(XpCatalogueRepository.Key(catalogueProfile, connection.apiBase, "trending"))
+                ?.let { runCatching { XpCentralMetadata.parseCatalog(JSONObject(it)) }.getOrNull() }
+        }.orEmpty()
+        if (xpFeatureCandidates(cachedCentral).isNotEmpty()) cachedCentral else {
+            (listOfNotNull(trendingSource) + homeSources.values.filterNotNull()).distinct().take(8)
+                .flatMap { XpAddonProtocol.cachedCatalog(repository, catalogueProfile, it) }
         }
     }
+    val hero = feature.hero
     LaunchedEffect(page, visibleHomeIds, visibleRows, returnHomeAnchor, showCinemaFeature) {
         val anchor = returnHomeAnchor ?: return@LaunchedEffect
         if (page != "home") return@LaunchedEffect
@@ -3408,10 +3445,16 @@ fun StremioCatalogScreen(
                             XpCinemaFeature(item, showYear, onFocus = { featuredFocused = it },
                                 onPlay = { openItem(item) }, onInfo = { openDetails(item, false) },
                                 height = featureHeight)
-                        } else Box(Modifier.fillMaxWidth().height(featureHeight).padding(24.dp),
-                            contentAlignment = Alignment.BottomStart) {
-                            Text(stringResource(if (discoverLoading["xp_trending"] == true || trendingCandidates.isNotEmpty())
-                                R.string.moviotv_xp_loading_catalogue else R.string.moviotv_xp_no_titles), color = XpMuted)
+                        } else Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            DrawOwnTVIcon(OwnTVIcon.MOVIES, XpRemotePink, Modifier.size(23.dp))
+                            Text(stringResource(if (feature.waiting) R.string.movioxp_feature_loading
+                                else R.string.movioxp_feature_unavailable), color = XpText, modifier = Modifier.weight(1f))
+                            if (!feature.waiting) XpAction(stringResource(R.string.moviotv_xp_refresh), false, compact = true) {
+                                featureRetry = System.currentTimeMillis()
+                                refreshCatalogues = featureRetry
+                            }
                         }
                     }
                     if (page == "home") {

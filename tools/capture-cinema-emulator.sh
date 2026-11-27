@@ -16,6 +16,7 @@ for shot in $(adb shell run-as com.oakstudios.movioxp ls files/cinema-visual 2>/
     adb exec-out run-as com.oakstudios.movioxp cat "files/cinema-visual/$shot" > "cinema-visual/$shot"
 done
 grep -F 'OK (2 tests)' cinema-instrumentation.txt
+adb logcat -d -v raw | rg "HOME_TIMING" || true
 for expected in 01-cinema-home 02-explore-more 03-action-category 04-exit-confirmation 05-simulator-remote; do
     test -s "cinema-visual/$expected.jpg"
 done

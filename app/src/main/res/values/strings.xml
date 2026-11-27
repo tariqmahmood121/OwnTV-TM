@@ -212,6 +212,8 @@
     <string name="movioxp_tv_classic">Classic</string>
     <string name="movioxp_cinema_space">Space</string>
     <string name="movioxp_cinema_backspace">Delete</string>
+    <string name="movioxp_feature_loading">Finding a featured movie…</string>
+    <string name="movioxp_feature_unavailable">Featured movies are temporarily unavailable</string>
     <string name="movioxp_cinema_more_info">More info</string>
     <string name="movioxp_cinema_film">Film</string>
     <string name="movioxp_cinema_rating">★ %1$s</string>

@@ -191,7 +191,7 @@ private fun XpCinemaKey(label: String, modifier: Modifier, onClick: () -> Unit) 
 internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear: Boolean, synopsisLines: Int) {
     val muted = OwnTVTheme.colors.onSurfaceVariant
     val kind = stringResource(if (item.type == "series") R.string.moviotv_nav_series else R.string.movioxp_cinema_film)
-    val metadata = listOfNotNull(kind, details?.genres?.firstOrNull(),
+    val metadata = listOfNotNull(kind, (details?.genres?.firstOrNull() ?: item.genre),
         xpReleaseYear(item)?.takeIf { showYear }, details?.runtime).joinToString(stringResource(R.string.moviotv_xp_meta_separator))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -221,6 +221,7 @@ internal fun XpCinemaMetadata(item: XpMeta, details: XpDetailMetadata?, showYear
 
 @Composable
 internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(modifier) {
         androidx.compose.animation.Crossfade(backdrop,
             modifier = Modifier.matchParentSize().dissolveEdges(start = .22f, bottom = .38f),
@@ -229,7 +230,8 @@ internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifie
             val artwork = Modifier.fillMaxSize().then(
                 if (loaded) Modifier.testTag("cinema-backdrop-loaded") else Modifier,
             )
-            AsyncImage(wide, null, artwork, contentScale = ContentScale.Crop,
+            val request = remember(context, wide) { xpHeroRequest(context, wide) }
+            AsyncImage(request, null, artwork, contentScale = ContentScale.Crop,
                 alignment = Alignment.CenterEnd, onSuccess = { loaded = true })
         }
         Box(Modifier.matchParentSize().backdropLeftWash(

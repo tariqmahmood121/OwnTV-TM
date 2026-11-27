@@ -104,6 +104,7 @@ internal object XpCentralMetadata {
                     imdbId = imdb,
                     ratingSource = field("rating_source") ?: if (tmdb != null) "TMDB" else null,
                     backdrop = field("background"),
+                    genre = XpDetailMetadata.parse(item).genres.firstOrNull(),
                     ukCertificate = xpUkCertificate(item),
                     titleLogo = field("logo"),
                 ))
