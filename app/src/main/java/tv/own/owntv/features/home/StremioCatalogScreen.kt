@@ -2824,7 +2824,7 @@ fun StremioCatalogScreen(
                                         saveFeatureSettings(featureSettings.copy(enabled = !featureSettings.enabled))
                                     }
                                     xpFeatureIntervals.forEach { seconds ->
-                                        XpSettingsOption(stringResource(R.string.movioxp_feature_seconds, seconds), featureSettings.seconds == seconds) {
+                                        XpSettingsOption(pluralStringResource(R.plurals.movioxp_feature_seconds, seconds, seconds), featureSettings.seconds == seconds) {
                                             saveFeatureSettings(featureSettings.copy(seconds = seconds))
                                         }
                                     }

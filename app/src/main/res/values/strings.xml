@@ -215,7 +215,10 @@
     <string name="movioxp_cinema_backspace">Delete</string>
     <string name="movioxp_feature_settings">Featured Movie Settings</string>
     <string name="movioxp_feature_auto">Automatic Rotation</string>
-    <string name="movioxp_feature_seconds">%1$d Seconds</string>
+    <plurals name="movioxp_feature_seconds">
+        <item quantity="one">%1$d Second</item>
+        <item quantity="other">%1$d Seconds</item>
+    </plurals>
     <string name="movioxp_feature_all">All Categories</string>
     <string name="movioxp_feature_trending">Trending Only</string>
     <string name="movioxp_feature_loading">Finding a featured movie…</string>
