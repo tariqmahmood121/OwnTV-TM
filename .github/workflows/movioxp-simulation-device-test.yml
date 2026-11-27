@@ -47,7 +47,10 @@ jobs:
           target: google_apis
           profile: pixel_6
           disable-animations: true
-          script: bash gradlew :app:connectedX86_64DebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=tv.own.owntv.features.simulation.XpSimulationRemoteTest --stacktrace
+          script: |
+            bash gradlew :app:connectedX86_64DebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=tv.own.owntv.features.simulation.XpSimulationRemoteTest,tv.own.owntv.features.simulation.XpCinemaVisualTest --stacktrace
+            mkdir -p cinema-visual
+            for shot in $(adb shell run-as com.oakstudios.movioxp ls files/cinema-visual); do adb exec-out run-as com.oakstudios.movioxp cat "files/cinema-visual/$shot" > "cinema-visual/$shot"; done
       - name: Show emulator test failures
         if: failure()
         run: |
@@ -65,6 +68,12 @@ jobs:
         with:
           name: simulation-test-results
           path: app/build/outputs/androidTest-results/
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cinema-visual
+          path: cinema-visual/
 
   signed-qa:
     if: github.ref_name == 'movioxp-v4-home-grid' && inputs.visual_verified == true

@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -202,4 +203,12 @@ internal fun xpUkCertificate(meta: JSONObject): String? {
         certs?.opt("GB") as? String,
         certs?.opt("UK") as? String,
     ).firstOrNull { xpCinemaCertificate(it) != null })
+}
+
+@Composable
+internal fun XpExitConfirmation(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    XpQa5Dialog(stringResource(R.string.movioxp_exit), stringResource(R.string.common_cancel), onCancel) {
+        Text(stringResource(R.string.movioxp_exit_confirm))
+        XpDialogButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, onClick = onConfirm)
+    }
 }

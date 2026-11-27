@@ -96,6 +96,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import androidx.tv.material3.Text
 import tv.own.owntv.BuildConfig
 import tv.own.owntv.R
@@ -3381,7 +3382,7 @@ fun StremioCatalogScreen(
                         .height(featureHeight + 112.dp))
                 }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().testTag("cinema-home-list")
                         .pointerInput(homeZoomKey, showBottomNavigation) {
                             if (showBottomNavigation && !television) awaitEachGesture {
                                 do {
@@ -3467,7 +3468,7 @@ fun StremioCatalogScreen(
                                         } else {
                                             val shelf = rememberHomeCatalogueRowState(id, titles, returnHomePoster.takeIf { page == "home" })
                                             LazyRow(
-                                                state = shelf,
+                                                state = shelf, modifier = Modifier.testTag("home-collection:$id"),
                                                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             ) {
@@ -5019,7 +5020,7 @@ private fun XpCinemaCategoryGrid(
                 }
             }
             CompositionLocalProvider(LocalBringIntoViewSpec provides XpMinimalScrollSpec) {
-                LazyVerticalGrid(GridCells.Fixed(columns), state = state,
+                LazyVerticalGrid(GridCells.Fixed(columns), state = state, modifier = Modifier.testTag("cinema-category-grid"),
                     horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
                     items(titles.size, key = { homePosterKey(scopeKey, titles[it]) }) { index ->
                         val item = titles[index]

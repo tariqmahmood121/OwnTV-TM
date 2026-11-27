@@ -1,7 +1,6 @@
 package tv.own.owntv.features.shell
 
 import androidx.activity.compose.BackHandler
-import androidx.tv.material3.Text
 import tv.own.owntv.features.home.moviotvSettingsPinch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -2341,15 +2340,10 @@ fun OwnTVShell(
     tv.own.owntv.features.settings.lock.MenuChangeGateHost()
     if (showExit) {
         if (xpTv) {
-            tv.own.owntv.features.home.XpQa5Dialog(stringResource(R.string.movioxp_exit),
-                stringResource(R.string.common_cancel), { showExit = false }) {
-                Text(stringResource(R.string.movioxp_exit_confirm))
-                tv.own.owntv.features.home.XpDialogButton(stringResource(R.string.movioxp_exit),
-                    tv.own.owntv.ui.components.OwnTVIcon.POWER) {
-                    showExit = false
-                    if (playerMode != PlayerMode.NONE) exitPlayer()
-                    onExitApp()
-                }
+            tv.own.owntv.features.home.XpExitConfirmation(onCancel = { showExit = false }) {
+                showExit = false
+                if (playerMode != PlayerMode.NONE) exitPlayer()
+                onExitApp()
             }
         } else ExitDialog(onConfirm = onExitApp, onDismiss = { showExit = false })
     }
