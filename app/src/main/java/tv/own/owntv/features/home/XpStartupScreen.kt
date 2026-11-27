@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import tv.own.owntv.BuildConfig
 import tv.own.owntv.R
 
 @Composable
@@ -38,7 +39,7 @@ internal fun XpStartupScreen(visible: Boolean) {
                     withStyle(SpanStyle(color = Color.White)) { append(movio) }
                     withStyle(SpanStyle(color = XpRemotePink)) { append(tv) }
                 }, fontSize = 44.sp, fontWeight = FontWeight.Black)
-                Text(tv.own.owntv.BuildConfig.VERSION_NAME, color = Color.White, fontSize = 14.sp)
+                Text(BuildConfig.VERSION_NAME, color = Color.White, fontSize = 14.sp)
                 val creator = stringResource(R.string.movioxp_splash_created_by)
                 val ziggs = stringResource(R.string.movioxp_splash_ziggs)
                 Text(buildAnnotatedString {
