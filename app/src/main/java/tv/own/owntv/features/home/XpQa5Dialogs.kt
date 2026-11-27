@@ -48,6 +48,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import org.json.JSONObject
+import tv.own.owntv.R
 import tv.own.owntv.features.simulation.LocalXpSimulationOverlay
 import tv.own.owntv.features.simulation.XpSimulationDialog
 import tv.own.owntv.ui.theme.OwnTVTheme
