@@ -341,6 +341,49 @@ class XpCinemaVisualTest {
         )
     }
 
+    @Test
+    fun forceStoppedProcessRestoresCataloguesAndLibraryOffline() {
+        val activity = compose.activity
+        val started = SystemClock.elapsedRealtime()
+        compose.setContent {
+            val simulation = remember { XpTvSimulation(activity) }
+            OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
+                XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
+                    StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                }
+            }
+        }
+        val connectivity = activity.getSystemService(android.net.ConnectivityManager::class.java)
+        check(connectivity?.activeNetwork == null)
+        val action = activity.getString(R.string.movioxp_home_action)
+        val home = compose.onNodeWithTag("cinema-home-list")
+        home.performScrollToNode(hasText(action))
+        compose.waitUntil(25_000) {
+            compose.onAllNodes(hasTestTag("home-collection:xp_action")).fetchSemanticsNodes().isNotEmpty()
+        }
+        val elapsed = SystemClock.elapsedRealtime() - started
+        File(activity.filesDir, "cinema-visual").resolve("force-stop.txt").writeText("offline_force_stop_home_ms=$elapsed\n")
+
+        fun rail(destination: Int) {
+            compose.onNodeWithContentDescription(activity.getString(destination), useUnmergedTree = true).performClick()
+        }
+        rail(R.string.moviotv_xp_nav_discover)
+        val selector = compose.onNodeWithTag("cinema-category-selector")
+        selector.performScrollToNode(hasText(action))
+        compose.onNodeWithText(action).performClick()
+        compose.waitUntil(25_000) {
+            compose.onAllNodes(hasAnyAncestor(hasTestTag("cinema-category-grid")) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        saveScreenshot("20-offline-after-force-stop")
+        rail(R.string.movioxp_my_library)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(activity.getString(R.string.moviotv_xp_continue_watching)))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
     private fun saveScreenshot(name: String) {
         compose.waitForIdle()
         SystemClock.sleep(1_300)

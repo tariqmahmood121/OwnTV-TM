@@ -370,6 +370,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	xp_tv_card_size_$favoritesProfileId
 4	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	xp_upcoming
 5	json	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	year
+1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	|
 1	protocol	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	·
 1	technical	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	★
 4	empty	app/src/main/java/tv/own/owntv/features/home/XpAddonRemoteServer.kt	\0
@@ -422,6 +423,7 @@
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue cache miss
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue refresh completed in ${now() - started} ms
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Catalogue refresh failed after ${now() - started} ms
+1	log	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	Could not persist catalogue cache entry
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	SHA-256
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpCatalogueRepository.kt	xp_catalogues
 1	empty	app/src/main/java/tv/own/owntv/features/home/XpCatalogueVisibility.kt	\0
@@ -677,7 +679,7 @@
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	id
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	imdb
 2	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	logo
-4	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	movie
+5	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	movie
 1	technical	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	movioxp_feature_exposure
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	movioxp_feature_sessions
 1	protocol	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	movioxp_featured

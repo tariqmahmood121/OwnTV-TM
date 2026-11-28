@@ -108,6 +108,42 @@ class XpCatalogueRepositoryTest {
         }
     }
 
+    @Test fun reopeningMigratesLegacyCacheWithoutChangingItsExpiry() = runBlocking {
+        val scope = repositoryScope()
+        try {
+            val oldKey = key.copy(resource = "legacy catalogue descriptor")
+            repository(scope).observe(oldKey) { "saved" }.toList()
+            now += SIX_HOURS - 1_000
+            assertEquals(listOf("saved"), repository(scope).observe(key, legacyKey = oldKey) {
+                throw AssertionError("fresh legacy entry must not fetch")
+            }.toList())
+            val restarted = repository(scope)
+            restarted.maintain()
+            assertEquals("saved", restarted.cachedBody(key))
+            now += 1_000
+            assertEquals(listOf("saved", "refreshed"), restarted.observe(key) { "refreshed" }.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun housekeepingEvictsExpiredEntriesFirstUnderDiskPressure() = runBlocking {
+        val scope = repositoryScope()
+        try {
+            val repo = XpCatalogueRepository(folder.root, scope, now = { now }, diskBudget = { 10 })
+            val early = key.copy(resource = "earlier")
+            repo.observe(early) { "abcdefgh" }.toList()
+            now += SIX_HOURS
+            repo.observe(key) { "12345678" }.toList()
+            repo.maintain()
+            val restarted = repository(scope)
+            assertEquals(null, restarted.cachedBody(early))
+            assertEquals("12345678", restarted.cachedBody(key))
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun repositoryScope() = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun repository(scope: CoroutineScope) = XpCatalogueRepository(folder.root, scope, now = { now })

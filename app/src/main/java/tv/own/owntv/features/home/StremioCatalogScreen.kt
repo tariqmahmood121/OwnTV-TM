@@ -361,6 +361,10 @@ private object XpAddonProtocol {
             get(url).also { parseManifest(url, it) }.toString()
         }.map { body -> body?.let { parseManifest(url, JSONObject(it)) } }.flowOn(Dispatchers.IO)
 
+    suspend fun cachedManifest(repository: XpCatalogueRepository, profile: String, url: String): XpAddon? =
+        repository.cachedBody(XpCatalogueRepository.Key(profile, url, url))
+            ?.let { runCatching { parseManifest(url, JSONObject(it)) }.getOrNull() }
+
     private fun parseManifest(url: String, json: JSONObject): XpAddon {
         val resourceSource = json.optJSONArray("resources") ?: JSONArray()
         val resources = buildList {
@@ -462,18 +466,23 @@ private object XpAddonProtocol {
         overrides: Map<String, String>,
         refreshAfter: Long,
     ) = catalogUrl(row, overrides).let { url ->
-        repository.observe(catalogueCacheKey(profile, row, url), refreshAfter) {
+        repository.observe(catalogueCacheKey(profile, row, url), refreshAfter,
+            legacyKey = oldCatalogueCacheKey(profile, row, url)) {
             get(url).also { require(it.optJSONArray("metas") != null) }.toString()
         }.map { body -> body?.let { parseCatalog(row, JSONObject(it)) } }.flowOn(Dispatchers.IO)
     }
 
     private fun catalogueCacheKey(profile: String, row: XpCatalogRow, url: String) =
+        XpCatalogueRepository.Key(profile, row.addon.url, row.addon.version + "|" + url)
+
+    private fun oldCatalogueCacheKey(profile: String, row: XpCatalogRow, url: String) =
         XpCatalogueRepository.Key(profile, row.addon.url, row.addon.version + row.catalog.toString() + url)
 
     suspend fun cachedCatalog(repository: XpCatalogueRepository, profile: String, source: XpDiscoverSource): List<XpMeta> {
         val row = source.row
-        val key = catalogueCacheKey(profile, row, catalogUrl(row, source.parameters))
-        return repository.cachedBody(key)?.let { runCatching { parseCatalog(row, JSONObject(it)) }.getOrNull() }.orEmpty()
+        val url = catalogUrl(row, source.parameters)
+        val key = catalogueCacheKey(profile, row, url)
+        return repository.cachedBody(key, oldCatalogueCacheKey(profile, row, url))?.let { runCatching { parseCatalog(row, JSONObject(it)) }.getOrNull() }.orEmpty()
     }
 
     private fun catalogUrl(row: XpCatalogRow, overrides: Map<String, String>): String {
@@ -886,7 +895,8 @@ fun StremioCatalogScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     fun updateAddon(addon: XpAddon) {
         val index = addons.indexOfFirst { it.url == addon.url }
-        if (index >= 0) addons[index] = addon else addons.add(addon)
+        if (index < 0) addons.add(addon)
+        else if (addons[index] != addon) addons[index] = addon
     }
     val homeListState = key(catalogueProfile) { rememberLazyListState() }
     var lastHomePoster by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
@@ -2042,6 +2052,13 @@ fun StremioCatalogScreen(
     }
 
     LaunchedEffect(catalogueProfile, manifestAddresses, builtInUrl) {
+        // Publish the cached provider set in one state update before starting any refresh jobs.
+        val retained = withContext(Dispatchers.IO) {
+            manifestAddresses.mapNotNull { url ->
+                XpAddonProtocol.cachedManifest(repository, catalogueProfile, url)?.copy(builtIn = url == builtInUrl)
+            }
+        }
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot { retained.forEach(::updateAddon) }
         for (url in manifestAddresses) {
             val builtIn = url == builtInUrl
             launch {

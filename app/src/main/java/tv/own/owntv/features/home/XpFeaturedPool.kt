@@ -138,7 +138,10 @@ internal fun xpRankFeatureQueue(
     val options = categories.asSequence().filter { (id, _) ->
         id !in setOf("xp_cinema", "xp_upcoming") && (!trendingOnly || id == "xp_trending")
     }.flatMap { (id, titles) ->
-        xpFeatureCandidates(titles.filter { xpFeatureReleased(it, today) }).asSequence().map { movie ->
+        titles.asSequence().filter { movie ->
+            movie.type == "movie" && movie.name.isNotBlank() && xpCinemaLandscape(movie.backdrop, movie.poster) != null &&
+                xpFeatureReleased(movie, today) && xpFeatureAliases(movie).none { it in exposed || it in finished }
+        }.distinctBy { it.id }.take(24).map { movie ->
             val relevance = affinities[movie.genre?.lowercase(java.util.Locale.ROOT)] ?: 0
             val recent = xpFullReleaseDate(movie)?.isAfter(today.minusMonths(4)) == true
             val weight = 15 + (if (id == "xp_trending") 35 else 0) +
@@ -187,6 +190,18 @@ internal fun rememberXpFeaturedMovie(
     val latestSignals by rememberUpdatedState(signals)
     val sourceCheck by rememberUpdatedState(LocalXpFeaturedSourceCheck.current ?: hasSource)
     val exposure = remember(context, profile) { XpFeatureExposure(context, profile) }
+    val failedCandidates = remember(profile, authorizedSources, retry) { LinkedHashMap<String, Long>() }
+    fun unavailableAliases(now: Long): Set<String> {
+        failedCandidates.entries.removeAll { now - it.value >= 300_000L }
+        return failedCandidates.keys.toSet()
+    }
+    fun markUnavailable(item: XpMeta) {
+        val now = SystemClock.elapsedRealtime()
+        xpFeatureAliases(item).forEach { alias ->
+            if (failedCandidates.size >= 60) failedCandidates.keys.firstOrNull()?.let(failedCandidates::remove)
+            failedCandidates[alias] = now
+        }
+    }
     val remainingKey = "$profileKey|remaining|${settings.seconds}"
     val lastTitleKey = "$profileKey|title"
     val lastFeatureSource = authorizedSources.joinToString("|", prefix = "current:")
@@ -248,10 +263,15 @@ internal fun rememberXpFeaturedMovie(
         }
         val queue = xpRankFeatureQueue(
             rotationSources + ("xp_trending" to (rotationSources["xp_trending"].orEmpty() + candidates)),
-            settings.trendingOnly, watches, latestSignals, exposure.recent(now).keys, java.time.LocalDate.now(),
+            settings.trendingOnly, watches, latestSignals,
+            exposure.recent(now).keys + unavailableAliases(SystemClock.elapsedRealtime()), java.time.LocalDate.now(),
         )
         val selected = if (eligiblePrevious != null && ready(eligiblePrevious)) eligiblePrevious else {
-            queue.take(3).firstOrNull { item -> withTimeoutOrNull(1_500) { sourceCheck(item) } == true && ready(item) }
+            queue.take(3).firstOrNull { item ->
+                val available = withTimeoutOrNull(1_500) { sourceCheck(item) } == true && ready(item)
+                if (!available) markUnavailable(item)
+                available
+            }
         }
         if (selected != null) {
             hero = selected
@@ -273,13 +293,16 @@ internal fun rememberXpFeaturedMovie(
         try {
             delay((remaining - 6_000).coerceAtLeast(0))
             val options = xpRankFeatureQueue(rotationSources, settings.trendingOnly, latestWatched, latestSignals,
-                exposure.recent(System.currentTimeMillis()).keys + xpFeatureAliases(current), java.time.LocalDate.now())
+                exposure.recent(System.currentTimeMillis()).keys + xpFeatureAliases(current) +
+                    unavailableAliases(SystemClock.elapsedRealtime()), java.time.LocalDate.now())
             var next: XpMeta? = null
             for (candidate in options.take(3)) {
                 val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_500)
                 if (allowance <= 0) break
-                if (withTimeoutOrNull(allowance) { sourceCheck(candidate) } != true) continue
-                if (!ready(candidate)) continue
+                if (withTimeoutOrNull(allowance) { sourceCheck(candidate) } != true || !ready(candidate)) {
+                    markUnavailable(candidate)
+                    continue
+                }
                 next = withTimeoutOrNull(1_000) { prepareMetadata(candidate) } ?: candidate
                 break
             }

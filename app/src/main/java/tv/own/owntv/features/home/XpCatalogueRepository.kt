@@ -18,8 +18,10 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.AtomicMoveNotSupportedException
 import java.security.MessageDigest
 
 internal class XpCatalogueRepository(
@@ -53,15 +55,16 @@ internal class XpCatalogueRepository(
         key: Key,
         refreshAfter: Long = 0L,
         cacheable: (String) -> Boolean = { true },
+        legacyKey: Key? = null,
         load: suspend () -> String,
     ) = flow {
-        val cached = lock.withLock { read(key) }
+        val cached = lock.withLock { read(key, legacyKey) }
         xpDebug(if (cached == null) "Catalogue cache miss" else "Catalogue cache hit, age ${now() - cached.timestamp} ms")
         if (cached != null) emit(cached.body)
         var retryResponse: String? = null
         val job = lock.withLock {
             inFlight[key]?.let { return@withLock it }
-            val latest = read(key)
+            val latest = read(key, legacyKey)
             val age = latest?.let { now() - it.timestamp }
             if (latest != null && latest.timestamp >= refreshAfter && age != null && age in 0 until ttlMillis) return@withLock null
             val retry = failedAt[key]
@@ -102,7 +105,7 @@ internal class XpCatalogueRepository(
                 }
             }.also { inFlight[key] = it }
         }
-        val result = if (job == null) lock.withLock { read(key)?.body ?: retryResponse } else {
+        val result = if (job == null) lock.withLock { read(key, legacyKey)?.body ?: retryResponse } else {
             try {
                 job.await()
             } catch (error: CancellationException) {
@@ -114,8 +117,8 @@ internal class XpCatalogueRepository(
         if (result == null && cached == null) emit(null)
     }.flowOn(Dispatchers.IO)
 
-    suspend fun cachedBody(key: Key): String? = withContext(Dispatchers.IO) {
-        lock.withLock { read(key)?.body }
+    suspend fun cachedBody(key: Key, legacyKey: Key? = null): String? = withContext(Dispatchers.IO) {
+        lock.withLock { read(key, legacyKey)?.body }
     }
 
     suspend fun invalidate(profile: String, provider: String) = withContext(Dispatchers.IO) {
@@ -129,53 +132,71 @@ internal class XpCatalogueRepository(
         }
     }
 
-    private fun read(key: Key): Cached? = memory[key] ?: runCatching {
+    private fun read(key: Key, legacyKey: Key? = null): Cached? {
+        val current = readEntry(key)
+        if (current != null || legacyKey == null || legacyKey == key) return current
+        val legacy = readEntry(legacyKey) ?: return null
+        write(key, legacy.body, legacy.timestamp)
+        return legacy
+    }
+
+    private fun readEntry(key: Key): Cached? = memory[key] ?: runCatching {
         val file = file(key)
         if (!file.isFile || file.length() > MAX_ENTRY_BYTES) null
         else Cached(file.readText(), file.lastModified()).also { memory[key] = it }
     }.getOrNull()
 
-    private fun write(key: Key, body: String) = runCatching {
-        if (body.length > MAX_ENTRY_BYTES) return@runCatching
-        val time = now()
+    private fun write(key: Key, body: String, time: Long = now()) = runCatching {
+        val encoded = body.toByteArray(Charsets.UTF_8)
+        if (encoded.size > MAX_ENTRY_BYTES) return@runCatching
         memory[key] = Cached(body, time)
         val file = file(key)
         val parent = requireNotNull(file.parentFile)
         parent.mkdirs()
         val temp = Files.createTempFile(parent.toPath(), null, null)
         try {
-            Files.write(temp, body.toByteArray(Charsets.UTF_8))
-            Files.move(temp, file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            file.setLastModified(time)
+            FileOutputStream(temp.toFile()).use { output ->
+                output.write(encoded)
+                output.fd.sync()
+            }
+            temp.toFile().setLastModified(time)
+            try {
+                Files.move(temp, file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                // Both paths are in the same directory. Android's rename still replaces the final entry.
+                check(temp.toFile().renameTo(file))
+            }
         } finally {
             Files.deleteIfExists(temp)
         }
-        val entries = parent.listFiles().orEmpty()
-        if (entries.size > 128) entries.sortedByDescending(File::lastModified).drop(128).forEach(File::delete)
         if (writesUntilSweep-- <= 0) {
             writesUntilSweep = 8
-            sweepDisk(expire = false)
+            sweepDisk()
         }
-    }
+    }.onFailure { xpDebug("Could not persist catalogue cache entry") }
 
     suspend fun maintain() = withContext(Dispatchers.IO) {
         lock.withLock {
-            if (inFlight.isEmpty()) sweepDisk(expire = true)
+            if (inFlight.isEmpty()) sweepDisk()
         }
     }
 
-    private fun sweepDisk(expire: Boolean) {
+    private fun sweepDisk() {
         val diskEntries = directory.walkTopDown().filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
             .sortedByDescending(File::lastModified).toList()
-        val cutoff = now() - 14L * 24 * 60 * 60 * 1000
         val budget = diskBudget()
-        var bytes = 0L
-        for (entry in diskEntries) {
-            val size = entry.length()
-            if (bytes + size > budget || expire && entry.lastModified() < cutoff) entry.delete()
-            else bytes += size
+        val time = now()
+        var bytes = diskEntries.sumOf(File::length)
+        for (entry in diskEntries.asReversed()) {
+            if (bytes <= budget) break
+            val age = time - entry.lastModified()
+            // Stale responses remain useful offline unless the cache exceeds its budget.
+            // Only evict a fresh entry if retaining the fresh set exceeds a second hard limit.
+            if (age >= ttlMillis || bytes > budget * 2) {
+                val size = entry.length()
+                if (entry.delete()) bytes -= size
+            }
         }
-        if (expire) memory.entries.removeAll { it.value.timestamp < cutoff }
     }
 
     private fun providerDirectory(profile: String, provider: String) =
