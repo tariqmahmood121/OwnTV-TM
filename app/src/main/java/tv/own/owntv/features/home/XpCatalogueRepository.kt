@@ -28,6 +28,7 @@ internal class XpCatalogueRepository(
     private val now: () -> Long = System::currentTimeMillis,
     private val ttlMillis: Long = 6 * 60 * 60 * 1000L,
     private val diskBudget: () -> Long = { MAX_DISK_BYTES },
+    maxRequests: Int = 4,
 ) {
     internal data class Key(
         val profile: String,
@@ -38,7 +39,7 @@ internal class XpCatalogueRepository(
     private data class Cached(val body: String, val timestamp: Long)
     private data class Retry(val timestamp: Long, val response: String?)
     private val lock = Mutex()
-    private val requests = Semaphore(4)
+    private val requests = Semaphore(maxRequests)
     private val inFlight = mutableMapOf<Key, Deferred<String?>>()
     private val failedAt = object : LinkedHashMap<Key, Retry>(128, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Retry>?): Boolean = size > 128
@@ -195,6 +196,7 @@ internal class XpCatalogueRepository(
                 context.applicationContext.noBackupFilesDir.resolve("xp_catalogues"),
                 CoroutineScope(SupervisorJob() + Dispatchers.IO),
                 diskBudget = { minOf(MAX_DISK_BYTES, XpMaintenance.diskBudget(context.applicationContext) / 4) },
+                maxRequests = if (context.getSystemService(android.app.ActivityManager::class.java)?.isLowRamDevice == true) 2 else 4,
             ).also { instance = it }
         }
     }

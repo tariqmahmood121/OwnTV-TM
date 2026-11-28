@@ -551,11 +551,14 @@ private object XpAddonProtocol {
         profile: String,
         type: String,
         id: String,
+        cacheOnly: Boolean = false,
     ): JSONObject? {
         if (!XpPlaybackIdentity.isImdbId(id) || type !in setOf("movie", "series")) return null
         val host = "https://v3-cinemeta.strem.io"
         val path = "/meta/$type/$id.json"
-        val body = repository.observe(XpCatalogueRepository.Key(profile, host, path)) {
+        val key = XpCatalogueRepository.Key(profile, host, path)
+        if (cacheOnly) return repository.cachedBody(key)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val body = repository.observe(key) {
             get(host + path).also { require(it.optJSONObject("meta") != null) }.toString()
         }.last() ?: return null
         return JSONObject(body)
@@ -1568,6 +1571,22 @@ fun StremioCatalogScreen(
     val verifiedFeatureSources = remember(catalogueProfile, installedAddons.map { it.url }) {
         LinkedHashMap<String, Pair<Long, Boolean>>()
     }
+    val rawFeatureSignals = remember(continueTitles, historyTitles) {
+        XpCollectionOrder.unique(continueTitles + historyTitles).take(15)
+    }
+    val featureSignals by produceState(rawFeatureSignals, catalogueProfile, rawFeatureSignals, featureOnHome) {
+        if (!featureOnHome) return@produceState
+        value = withContext(Dispatchers.IO) {
+            rawFeatureSignals.map { item ->
+                val imdb = XpPlaybackIdentity.ids(item).firstOrNull(XpPlaybackIdentity::isImdbId)
+                if (imdb == null || item.genre != null) item else {
+                    val cached = XpAddonProtocol.cachedCinemeta(repository, catalogueProfile, item.type, imdb, cacheOnly = true)
+                    val details = cached?.optJSONObject("meta")?.let(XpDetailMetadata::parse)
+                    item.copy(genre = details?.genres?.firstOrNull())
+                }
+            }
+        }
+    }
     val feature = rememberXpFeaturedMovie(featureOnHome, catalogueProfile, featuredSources,
         trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
         featureOnHome, featureVisible && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
@@ -1582,9 +1601,7 @@ fun StremioCatalogScreen(
                 if (date == null) item else item.copy(releaseInfo = date)
             }
         },
-        watched = historyTitles, signals = remember(continueTitles, historyTitles) {
-            XpCollectionOrder.unique(continueTitles + historyTitles).take(15)
-        },
+        watched = historyTitles, signals = featureSignals,
         hasSource = hasSource@ { item ->
             val now = android.os.SystemClock.elapsedRealtime()
             verifiedFeatureSources[item.id]?.takeIf { now - it.first < if (it.second) 3_600_000L else 60_000L }

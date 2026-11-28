@@ -293,11 +293,12 @@ internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean)
 }
 
 @Composable
-private fun XpCinemaFeatureButton(label: String, icon: OwnTVIcon, primary: Boolean = false, onClick: () -> Unit) {
+private fun XpCinemaFeatureButton(label: String, icon: OwnTVIcon, primary: Boolean = false,
+    minimumHeight: androidx.compose.ui.unit.Dp = 36.dp, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(6.dp)
     val foreground = if (primary) XpCinemaBackground else Color.White
-    Row(Modifier.heightIn(min = 36.dp).clip(shape)
+    Row(Modifier.heightIn(min = minimumHeight).clip(shape)
         .background(if (primary) Color.White else Color.Black.copy(alpha = .56f))
         .border(1.dp, if (focused) if (primary) XpRemotePink else Color.White else Color.Transparent, shape)
         .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)
@@ -346,10 +347,14 @@ internal fun XpTouchHomeHero(item: XpMeta, compact: Boolean, onPlay: () -> Unit,
             Text(item.name, color = Color.White, fontSize = if (compact) 25.sp else 34.sp,
                 fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             XpCinemaMetadata(item, null, true, if (compact) 1 else 2)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                XpCinemaFeatureButton(stringResource(R.string.movioxp_play_content), OwnTVIcon.PLAY, true, onPlay)
-                XpCinemaFeatureButton(stringResource(R.string.movioxp_cinema_more_info), OwnTVIcon.INFO, onClick = onInfo)
+            val actions: @Composable () -> Unit = {
+                XpCinemaFeatureButton(stringResource(R.string.movioxp_play_content), OwnTVIcon.PLAY,
+                    primary = true, minimumHeight = 48.dp, onClick = onPlay)
+                XpCinemaFeatureButton(stringResource(R.string.movioxp_cinema_more_info), OwnTVIcon.INFO,
+                    minimumHeight = 48.dp, onClick = onInfo)
             }
+            if (compact) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { actions() }
+            else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { actions() }
         }
     }
 }
