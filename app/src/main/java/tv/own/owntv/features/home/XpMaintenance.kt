@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.StatFs
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import tv.own.owntv.ui.theme.OwnTVTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -86,18 +89,19 @@ internal fun XpMaintenancePanel(context: Context, playbackActive: Boolean) {
         metrics = XpMaintenance.snapshot(context)
     }
     val values = metrics
-    Column {
-        Text(stringResource(R.string.movioxp_maintenance_auto))
+    val textColor = OwnTVTheme.colors.onSurface
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(stringResource(R.string.movioxp_maintenance_auto), color = textColor)
         if (values != null) {
-            fun mb(bytes: Long) = android.text.format.Formatter.formatShortFileSize(context, bytes)
-            Text(stringResource(R.string.movioxp_maintenance_storage, mb(values.free), mb(values.total)))
-            Text(stringResource(R.string.movioxp_maintenance_cache, mb(values.pictures), mb(values.catalogues), mb(values.updates)))
+            fun size(bytes: Long) = android.text.format.Formatter.formatShortFileSize(context, bytes)
+            Text(stringResource(R.string.movioxp_maintenance_storage, size(values.free), size(values.total)), color = textColor)
+            Text(stringResource(R.string.movioxp_maintenance_cache, size(values.pictures), size(values.catalogues), size(values.updates)), color = textColor)
             val last = values.last.takeIf { it > 0 }?.let {
                 java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))
             } ?: stringResource(R.string.movioxp_maintenance_never)
-            Text(stringResource(R.string.movioxp_maintenance_last, last))
+            Text(stringResource(R.string.movioxp_maintenance_last, last), color = textColor)
             if (diagnostics) Text(stringResource(R.string.movioxp_maintenance_device,
-                Build.MODEL, Build.VERSION.RELEASE, mb(values.ram), mb(values.heap)))
+                Build.MODEL, Build.VERSION.RELEASE, size(values.ram), size(values.heap)), color = textColor)
         }
         XpSettingsOption(stringResource(R.string.movioxp_maintenance_optimise), enabled = !playbackActive) { requests++ }
         XpSettingsOption(stringResource(R.string.movioxp_maintenance_diagnostics), selected = diagnostics) { diagnostics = !diagnostics }

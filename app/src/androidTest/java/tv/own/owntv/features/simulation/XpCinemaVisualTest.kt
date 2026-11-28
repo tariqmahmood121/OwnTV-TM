@@ -2,6 +2,7 @@ package tv.own.owntv.features.simulation
 
 import android.graphics.Bitmap
 import android.os.SystemClock
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -345,7 +346,11 @@ class XpCinemaVisualTest {
     fun forceStoppedProcessRestoresCataloguesAndLibraryOffline() {
         val activity = compose.activity
         val started = SystemClock.elapsedRealtime()
+        var profileScope = ""
         compose.setContent {
+            val profiles: ProfilesViewModel = koinViewModel()
+            val id by profiles.activeProfileId.collectAsStateWithLifecycle()
+            LaunchedEffect(id) { profileScope = catalogueProfileKey(null, id) }
             val simulation = remember { XpTvSimulation(activity) }
             OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
                 XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
@@ -357,12 +362,29 @@ class XpCinemaVisualTest {
         check(connectivity?.activeNetwork == null)
         val action = activity.getString(R.string.movioxp_home_action)
         val home = compose.onNodeWithTag("cinema-home-list")
-        home.performScrollToNode(hasText(action))
-        compose.waitUntil(25_000) {
-            compose.onAllNodes(hasTestTag("home-collection:xp_action")).fetchSemanticsNodes().isNotEmpty()
+        val report = File(activity.filesDir, "cinema-visual").resolve("force-stop.txt")
+        val repository = tv.own.owntv.features.home.XpCatalogueRepository.get(activity)
+        val manifest = activity.getString(R.string.moviotv_xp_default_catalogue_manifest)
+        val root = activity.noBackupFilesDir.resolve("xp_catalogues")
+        compose.waitUntil(10_000) { profileScope.isNotEmpty() }
+        val cachedManifest = kotlinx.coroutines.runBlocking {
+            repository.cachedBody(tv.own.owntv.features.home.XpCatalogueRepository.Key(profileScope, manifest, manifest))
+        }
+        report.writeText("cache_files_after_restart=${root.walkTopDown().count { it.isFile }}\n" +
+            "cached_manifest_after_restart=${cachedManifest != null}\n")
+        check(cachedManifest != null) { "Saved manifest missing after process restart" }
+        home.performScrollToIndex(4)
+        try {
+            compose.waitUntil(25_000) {
+                compose.onAllNodes(hasTestTag("home-collection:xp_action"), useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (failure: Throwable) {
+            saveScreenshot("20-offline-after-force-stop")
+            throw failure
         }
         val elapsed = SystemClock.elapsedRealtime() - started
-        File(activity.filesDir, "cinema-visual").resolve("force-stop.txt").writeText("offline_force_stop_home_ms=$elapsed\n")
+        report.appendText("offline_force_stop_home_ms=$elapsed\n")
 
         fun rail(destination: Int) {
             compose.onNodeWithContentDescription(activity.getString(destination), useUnmergedTree = true).performClick()

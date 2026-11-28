@@ -28,6 +28,10 @@ mkdir -p cinema-visual
 for shot in $(adb shell run-as com.oakstudios.movioxp ls files/cinema-visual 2>/dev/null || true); do
     adb exec-out run-as com.oakstudios.movioxp cat "files/cinema-visual/$shot" > "cinema-visual/$shot"
 done
+if ! grep -Fq 'OK (1 test)' cinema-instrumentation.txt; then
+    adb logcat -d -s MovioXP:D | grep -Ei 'catalogue cache|catalogue refresh' | tail -60 || true
+    [ ! -f cinema-visual/force-stop.txt ] || cat cinema-visual/force-stop.txt
+fi
 grep -F 'OK (3 tests)' cinema-instrumentation.txt
 grep -F 'OK (1 test)' cinema-instrumentation.txt
 cat cinema-visual/timings.txt
