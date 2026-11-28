@@ -214,11 +214,23 @@ internal data class XpDetailMetadata(
 // Accept a UK-labelled classification only. Generic and US ratings have different meanings.
 internal fun xpUkCertificate(meta: JSONObject): String? {
     val certs = meta.optJSONObject("certifications")
-    return xpCinemaCertificate(listOfNotNull(
-        meta.opt("ukCertification") as? String,
-        certs?.opt("GB") as? String,
-        certs?.opt("UK") as? String,
-    ).firstOrNull { xpCinemaCertificate(it) != null })
+    val explicit = listOfNotNull(meta.opt("ukCertification") as? String,
+        certs?.opt("GB") as? String, certs?.opt("UK") as? String)
+        .firstNotNullOfOrNull(::xpCinemaCertificate)
+    if (explicit != null) return explicit
+    for (key in listOf("content_ratings", "release_dates")) {
+        val results = meta.optJSONObject(key)?.optJSONArray("results") ?: continue
+        for (index in 0 until results.length()) {
+            val entry = results.optJSONObject(index) ?: continue
+            if (entry.optString("iso_3166_1") !in setOf("GB", "UK")) continue
+            xpCinemaCertificate(entry.optString("rating"))?.let { return it }
+            val releases = entry.optJSONArray("release_dates") ?: continue
+            for (release in 0 until releases.length()) {
+                xpCinemaCertificate(releases.optJSONObject(release)?.optString("certification"))?.let { return it }
+            }
+        }
+    }
+    return null
 }
 
 @Composable

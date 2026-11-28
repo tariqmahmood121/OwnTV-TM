@@ -6,3 +6,4 @@
 - Added Bollywood add-on catalogue discovery to the cache-backed featured pool. Applied the approved wordmark with a transparent background.
 - Retained the 4.0 K cache-first catalogue repository, profile isolation, adaptive touch Home and Storage & Maintenance.
 - Added a profile-safe featured fallback for a depleted personalised queue. The picker tries eligible Trending titles and progressively relaxes only the exposure window. Featured Refresh rebuilds the profile's picker and requests Trending without clearing other catalogues or viewing records.
+- Added verified UK certificates from country-tagged source metadata and cached short-lived featured availability checks without writing playback URLs to disk.

@@ -281,7 +281,7 @@ internal fun XpCinemaHomeBackdrop(backdrop: String, modifier: Modifier = Modifie
 }
 
 @Composable
-internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit, height: androidx.compose.ui.unit.Dp) {
+internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean) -> Unit, onPlay: () -> Unit, onInfo: () -> Unit, height: androidx.compose.ui.unit.Dp, primaryFocus: FocusRequester? = null) {
     val loadDetails = LocalXpCinemaDetails.current
     val details by produceState<XpDetailMetadata?>(null, item.type, item.id, loadDetails) { value = null; value = loadDetails(item) }
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("cinema-feature-content").onFocusChanged { onFocus(it.hasFocus) }.focusGroup()) {
@@ -303,7 +303,7 @@ internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     XpCinemaFeatureButton(stringResource(if (item.positionMs > 0L) R.string.movioxp_cinema_resume else R.string.movioxp_play_content),
-                        OwnTVIcon.PLAY, primary = true, onClick = onPlay)
+                        OwnTVIcon.PLAY, primary = true, requester = primaryFocus, onClick = onPlay)
                     XpCinemaFeatureButton(stringResource(R.string.movioxp_cinema_more_info), OwnTVIcon.INFO, onClick = onInfo)
                 }
             }
@@ -313,11 +313,12 @@ internal fun XpCinemaFeature(item: XpMeta, showYear: Boolean, onFocus: (Boolean)
 
 @Composable
 private fun XpCinemaFeatureButton(label: String, icon: OwnTVIcon, primary: Boolean = false,
-    minimumHeight: androidx.compose.ui.unit.Dp = 36.dp, onClick: () -> Unit) {
+    minimumHeight: androidx.compose.ui.unit.Dp = 36.dp, requester: FocusRequester? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(6.dp)
     val foreground = if (primary) XpCinemaBackground else Color.White
     Row(Modifier.heightIn(min = minimumHeight).clip(shape)
+        .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
         .background(if (primary) Color.White else Color.Black.copy(alpha = .56f))
         .border(1.dp, if (focused) if (primary) XpRemotePink else Color.White else Color.Transparent, shape)
         .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)

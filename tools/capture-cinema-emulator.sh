@@ -17,6 +17,7 @@ adb shell am instrument -w -e class "$visual#captureCinemaHomeCategoryAndExit,$v
     "$runner" | tee cinema-instrumentation.txt
 if grep -Fq 'OK (3 tests)' cinema-instrumentation.txt; then
     adb shell am force-stop com.oakstudios.movioxp
+    adb logcat -c
     adb shell svc wifi disable
     adb shell svc data disable
     trap 'adb shell svc wifi enable; adb shell svc data enable' EXIT
@@ -34,6 +35,10 @@ if ! grep -Fq 'OK (1 test)' cinema-instrumentation.txt; then
 fi
 grep -F 'OK (3 tests)' cinema-instrumentation.txt
 grep -F 'OK (1 test)' cinema-instrumentation.txt
+offline_log=$(adb logcat -d -s MovioXP:D)
+for signal in 'Catalogue cache hit' 'Catalogue cache miss' 'Catalogue refresh completed' 'Catalogue refresh failed'; do
+    printf '%s %s\n' "$signal" "$(grep -Fc "$signal" <<< "$offline_log" || true)"
+done > cinema-visual/force-stop-request-counts.txt
 cat cinema-visual/timings.txt
 for expected in 01-cinema-home 02-explore-more 03-action-category 04-exit-confirmation 05-simulator-remote 06-warm-offline-home 07-cinema-search 08-discover-selector 09-discover-grid 10-series-grid 11-focused-shelf-card 12-single-ok-detail 13-context-search 14-font-preview 15-native-age-badge-fixtures 16-right-edge-focus 17-touch-home-compact 18-touch-home-expanded 19-storage-maintenance 20-offline-after-force-stop 21-compact-navigation 22-expanded-navigation; do
     test -s "cinema-visual/$expected.jpg"

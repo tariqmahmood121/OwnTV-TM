@@ -136,7 +136,7 @@ internal fun xpRankFeatureQueue(
     val affinities = signals.take(15).mapIndexedNotNull { index, item -> item.genre?.lowercase(java.util.Locale.ROOT)?.let { it to (15 - index) } }
         .groupingBy { it.first }.fold(0) { total, match -> total + match.second }
     val options = categories.asSequence().filter { (id, _) ->
-        id !in setOf("xp_cinema", "xp_upcoming") && (!trendingOnly || id == "xp_trending")
+        id !in setOf("xp_cinema", "xp_upcoming") && (!trendingOnly || id == "xp_trending" || id.startsWith("xp_trending:"))
     }.flatMap { (id, titles) ->
         titles.asSequence().filter { movie ->
             movie.type == "movie" && movie.name.isNotBlank() && xpCinemaLandscape(movie.backdrop, movie.poster) != null &&
@@ -144,7 +144,7 @@ internal fun xpRankFeatureQueue(
         }.distinctBy { it.id }.take(24).map { movie ->
             val relevance = affinities[movie.genre?.lowercase(java.util.Locale.ROOT)] ?: 0
             val recent = xpFullReleaseDate(movie)?.isAfter(today.minusMonths(4)) == true
-            val weight = 15 + (if (id == "xp_trending") 35 else 0) +
+            val weight = 15 + (if (id == "xp_trending" || id.startsWith("xp_trending:")) 35 else 0) +
                 (if (affinities.isNotEmpty()) 30 * relevance / (affinities.values.maxOrNull() ?: 1) else 0) +
                 (if (recent) 20 else 0)
             movie to (-kotlin.math.ln(kotlin.random.Random.nextDouble().coerceAtLeast(1e-9)) / weight)

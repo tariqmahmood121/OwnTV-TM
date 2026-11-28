@@ -71,6 +71,13 @@ class XpCinemaVisualTest {
                 hide(WindowInsetsCompat.Type.systemBars())
             }
         }
+        val exposure = tv.own.owntv.features.home.XpFeatureExposure(activity, "qa-established-profile")
+        val baseline = System.currentTimeMillis()
+        val exposed = XpMeta("tmdb:99990000", "movie", "Fixture", null, null, "2024", null, imdbId = "tt99990000")
+        exposure.displayed(exposed, baseline)
+        check(exposure.recent(baseline).keys.containsAll(listOfNotNull(exposed.id, exposed.imdbId)))
+        check(tv.own.owntv.features.home.XpFeatureExposure(activity, "qa-other-profile").recent(baseline).isEmpty())
+        check(exposure.recent(baseline + 31L * 86_400_000).isEmpty())
         val moreInfo = activity.getString(R.string.movioxp_cinema_more_info)
         val action = activity.getString(R.string.movioxp_home_action)
         val exploreAction = activity.getString(R.string.movioxp_explore_collection, action)
