@@ -34,4 +34,44 @@ class XpFeaturedPoolTest {
         assertEquals(listOf(20, 30, 60, 120), xpFeatureIntervals)
         assertEquals(20, XpFeatureSettings().seconds)
     }
+
+    @Test
+    fun homeResumeCapsTheShelfAndPreservesNewestProgress() {
+        val records = (1..300).map { id ->
+            XpMeta("tt$id", "movie", "Title $id", null, null, "2024", null,
+                positionMs = id * 1_000L, activityAt = id.toLong())
+        }
+        for (size in listOf(0, 15, 16, 300)) {
+            val profile = records.take(size)
+            val shelf = XpCollectionOrder.homeResume(profile + profile.takeLast(1))
+            assertEquals(minOf(15, size), shelf.size)
+            assertEquals(profile.lastOrNull()?.positionMs, shelf.firstOrNull()?.positionMs)
+            assertEquals(size, XpCollectionOrder.resumeShelf(profile).size)
+        }
+    }
+
+    @Test
+    fun queueUsesHiddenEligibleGenresAndRejectsExposedAliasesAndWatchedTitles() {
+        val movie = XpMeta("tt1", "movie", "Title", "portrait", null, "2024", null, backdrop = "wide")
+        val watched = movie.copy(id = "tt2")
+        val exposedAlias = movie.copy(id = "tmdb:3", imdbId = "tt3")
+        val eligible = movie.copy(id = "tt4")
+        val future = movie.copy(id = "tt5", releaseInfo = "2030-01-01")
+        val cinemaOnly = movie.copy(id = "tt6")
+        val data = mapOf("xp_trending" to listOf(future, watched, exposedAlias),
+            "genre:Drama" to listOf(eligible, eligible.copy(id = "tmdb:4", imdbId = "tt4")),
+            "xp_cinema" to listOf(cinemaOnly))
+        val queue = xpRankFeatureQueue(data, false, listOf(watched), emptyList(), setOf("tt3"),
+            java.time.LocalDate.parse("2026-11-28"))
+        assertEquals(listOf(eligible.id), queue.map { it.imdbId ?: it.id })
+        assertEquals(emptyList<XpMeta>(), xpRankFeatureQueue(data, true, listOf(watched),
+            emptyList(), setOf("tt3"), java.time.LocalDate.parse("2026-11-28")))
+    }
+
+    @Test
+    fun budgetAdjustsForFreeStorage() {
+        val mb = 1024L * 1024
+        assertEquals(150 * mb, XpMaintenance.budget(8_000 * mb, 5_000 * mb))
+        assertEquals(25 * mb, XpMaintenance.budget(8_000 * mb, 500 * mb))
+    }
 }

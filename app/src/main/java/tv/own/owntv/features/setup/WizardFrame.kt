@@ -88,12 +88,15 @@ internal fun WizardFrame(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
-                painter = painterResource(R.drawable.moviotv_launcher),
+                painter = painterResource(if (tv.own.owntv.BuildConfig.MOVIOXP_RELEASE)
+                    R.drawable.movioxp_cinema_triangle else R.drawable.moviotv_launcher),
                 contentDescription = stringResource(R.string.moviotv_app_name),
                 modifier = Modifier.size(if (compact) 36.mpx else 44.mpx),
             )
             Column {
-                Text(stringResource(R.string.moviotv_app_name), style = stageText(if (compact) 22 else 24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (tv.own.owntv.BuildConfig.MOVIOXP_RELEASE) {
+                    tv.own.owntv.features.home.XpApprovedWordmark(Modifier.size(width = 160.dp, height = 38.dp))
+                } else Text(stringResource(R.string.moviotv_app_name), style = stageText(if (compact) 22 else 24, 800), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(stringResource(R.string.moviotv_credit), style = stageText(11, 600), color = Color(0xFFB465FF))
             }
         }

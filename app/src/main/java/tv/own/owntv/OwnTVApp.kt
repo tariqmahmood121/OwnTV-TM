@@ -229,8 +229,12 @@ class OwnTVApp : Application(), SingletonImageLoader.Factory, androidx.work.Conf
      * launch path stays free of directory walks.
      */
     private fun imageDiskCacheBytes(): Long {
-        val free = runCatching { cacheDir.usableSpace }.getOrDefault(0L).coerceAtLeast(0L)
-        return minOf(MAX_IMAGE_CACHE_BYTES, (free * 0.05).toLong()).coerceAtLeast(MIN_IMAGE_CACHE_BYTES)
+        return if (tv.own.owntv.BuildConfig.MOVIOXP_RELEASE) {
+            tv.own.owntv.features.home.XpMaintenance.diskBudget(this) * 3 / 4
+        } else {
+            val free = runCatching { cacheDir.usableSpace }.getOrDefault(0L).coerceAtLeast(0L)
+            minOf(MAX_IMAGE_CACHE_BYTES, (free * 0.05).toLong()).coerceAtLeast(MIN_IMAGE_CACHE_BYTES)
+        }
     }
 
     /**

@@ -332,3 +332,24 @@ internal fun XpCinemaFocusedPreview(item: XpMeta) {
 }
 
 private suspend fun delayFocus() = kotlinx.coroutines.delay(400)
+
+@Composable
+internal fun XpTouchHomeHero(item: XpMeta, compact: Boolean, onPlay: () -> Unit, onInfo: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(if (compact) 400.dp else 320.dp)
+        .clip(RoundedCornerShape(14.dp)).background(XpCinemaBackground).testTag("touch-home-feature")) {
+        val artwork = if (compact) item.poster ?: item.backdrop else item.backdrop ?: item.poster
+        AsyncImage(artwork, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        Box(Modifier.matchParentSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(
+            0.28f to Color.Transparent, 1f to XpCinemaBackground)))
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(item.name, color = Color.White, fontSize = if (compact) 25.sp else 34.sp,
+                fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            XpCinemaMetadata(item, null, true, if (compact) 1 else 2)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                XpCinemaFeatureButton(stringResource(R.string.movioxp_play_content), OwnTVIcon.PLAY, true, onPlay)
+                XpCinemaFeatureButton(stringResource(R.string.movioxp_cinema_more_info), OwnTVIcon.INFO, onClick = onInfo)
+            }
+        }
+    }
+}

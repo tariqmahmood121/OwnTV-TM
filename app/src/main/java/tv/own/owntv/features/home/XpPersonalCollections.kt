@@ -41,11 +41,17 @@ internal object XpPersonalCollections {
 }
 
 internal object XpCollectionOrder {
-    fun unique(items: List<XpMeta>): List<XpMeta> = buildList {
-        for (item in items.sortedByDescending(XpMeta::activityAt)) {
-            if (none { XpPlaybackIdentity.sameTitle(it, item) }) add(item)
+    fun unique(items: List<XpMeta>): List<XpMeta> {
+        val seen = HashSet<Pair<String, String>>()
+        return items.sortedByDescending(XpMeta::activityAt).filter { item ->
+            val aliases = XpPlaybackIdentity.ids(item).map { item.type to it }
+            val fresh = aliases.none(seen::contains)
+            seen.addAll(aliases)
+            fresh
         }
     }
+
+    fun homeResume(items: List<XpMeta>): List<XpMeta> = resumeShelf(items).take(15)
 
     fun merge(items: List<XpMeta>, incoming: XpMeta, deleted: Boolean): List<XpMeta> {
         val existing = items.firstOrNull { XpPlaybackIdentity.sameTitle(it, incoming) }

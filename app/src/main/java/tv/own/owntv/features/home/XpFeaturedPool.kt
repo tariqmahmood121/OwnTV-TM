@@ -95,6 +95,67 @@ internal fun xpFeatureRotationBuckets(
     return freshBuckets.ifEmpty { buckets }
 }
 
+private val currentFeatureByProfile = object : LinkedHashMap<String, String>(16, .75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 16
+}
+
+private const val EXPOSURE_WINDOW = 30L * 24 * 60 * 60 * 1000
+
+internal fun xpFeatureAliases(item: XpMeta): Set<String> = XpPlaybackIdentity.ids(item).toSet()
+
+internal class XpFeatureExposure(context: Context, scope: String) {
+    private val prefs = context.getSharedPreferences("movioxp_feature_exposure", Context.MODE_PRIVATE)
+    private val key = MessageDigest.getInstance("SHA-256").digest(scope.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+
+    fun recent(now: Long): Map<String, Long> {
+        val json = runCatching { JSONObject(prefs.getString(key, null) ?: "{}") }.getOrDefault(JSONObject())
+        return json.keys().asSequence().map { it to json.optLong(it) }
+            .filter { (_, timestamp) -> timestamp > 0 && now - timestamp < EXPOSURE_WINDOW }.toMap()
+    }
+
+    fun displayed(item: XpMeta, now: Long) {
+        val retained = recent(now).toMutableMap()
+        xpFeatureAliases(item).forEach { retained[it] = now }
+        prefs.edit().putString(key, JSONObject(retained).toString()).apply()
+    }
+}
+
+internal fun xpRankFeatureQueue(
+    categories: Map<String, List<XpMeta>>,
+    trendingOnly: Boolean,
+    watched: List<XpMeta>,
+    signals: List<XpMeta>,
+    exposed: Set<String>,
+    today: java.time.LocalDate,
+): List<XpMeta> {
+    val seen = exposed.toMutableSet()
+    val finished = watched.filter { it.type == "movie" && (it.durationMs <= 0 ||
+        it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .9) }
+        .flatMapTo(mutableSetOf<String>(), ::xpFeatureAliases)
+    val affinities = signals.take(15).mapIndexedNotNull { index, item -> item.genre?.lowercase(java.util.Locale.ROOT)?.let { it to (15 - index) } }
+        .groupingBy { it.first }.fold(0) { total, match -> total + match.second }
+    val options = categories.asSequence().filter { (id, _) ->
+        id !in setOf("xp_cinema", "xp_upcoming") && (!trendingOnly || id == "xp_trending")
+    }.flatMap { (id, titles) ->
+        xpFeatureCandidates(titles.filter { xpFeatureReleased(it, today) }).asSequence().map { movie ->
+            val relevance = affinities[movie.genre?.lowercase(java.util.Locale.ROOT)] ?: 0
+            val recent = xpFullReleaseDate(movie)?.isAfter(today.minusMonths(4)) == true
+            val weight = 15 + (if (id == "xp_trending") 35 else 0) +
+                (if (affinities.isNotEmpty()) 30 * relevance / (affinities.values.maxOrNull() ?: 1) else 0) +
+                (if (recent) 20 else 0)
+            movie to (-kotlin.math.ln(kotlin.random.Random.nextDouble().coerceAtLeast(1e-9)) / weight)
+        }
+    }.sortedBy { it.second }
+    return options.map { it.first }.filter { item ->
+        val aliases = xpFeatureAliases(item)
+        if (aliases.any { it in seen || it in finished }) false
+        else { seen.addAll(aliases); true }
+    }.take(10).toList()
+}
+
+internal val LocalXpFeaturedSourceCheck = androidx.compose.runtime.staticCompositionLocalOf<(suspend (XpMeta) -> Boolean)?> { null }
+
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)
 
 @Composable
@@ -105,10 +166,14 @@ internal fun rememberXpFeaturedMovie(
     candidates: List<XpMeta>,
     rotationAllowed: Boolean,
     active: Boolean,
+    visible: Boolean,
     retry: Long,
     catalogueReady: Boolean,
     settings: XpFeatureSettings,
     categories: Map<String, List<XpMeta>>,
+    watched: List<XpMeta>,
+    signals: List<XpMeta>,
+    hasSource: suspend (XpMeta) -> Boolean,
     prepareMetadata: suspend (XpMeta) -> XpMeta,
     readCatalogueCache: suspend () -> List<XpMeta>,
 ): XpFeaturedState {
@@ -118,9 +183,12 @@ internal fun rememberXpFeaturedMovie(
     val session = remember(context) { context.getSharedPreferences("movioxp_feature_sessions", Context.MODE_PRIVATE) }
     val profileKey = profile
     val rotationSources by rememberUpdatedState(categories)
+    val latestWatched by rememberUpdatedState(watched)
+    val latestSignals by rememberUpdatedState(signals)
+    val sourceCheck by rememberUpdatedState(LocalXpFeaturedSourceCheck.current ?: hasSource)
+    val exposure = remember(context, profile) { XpFeatureExposure(context, profile) }
     val remainingKey = "$profileKey|remaining|${settings.seconds}"
     val lastTitleKey = "$profileKey|title"
-    val cursorKey = "$profileKey|cursor"
     val lastFeatureSource = authorizedSources.joinToString("|", prefix = "current:")
     var cached by remember(profile, authorizedSources) { mutableStateOf(emptyList<XpMeta>()) }
     var hero by remember(profile, authorizedSources) { mutableStateOf<XpMeta?>(null) }
@@ -155,19 +223,43 @@ internal fun rememberXpFeaturedMovie(
             waiting = false
         }
     }
-    LaunchedEffect(enabled, active, initialCandidates, retry) {
+    val initialSourceFingerprint = remember(authorizedSources) {
+        MessageDigest.getInstance("SHA-256").digest(authorizedSources.joinToString("|").toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
+    LaunchedEffect(visible, active, hero?.id, profile) {
+        val shown = hero ?: return@LaunchedEffect
+        if (visible && active && currentFeatureByProfile[profile] != shown.id) {
+            exposure.displayed(shown, System.currentTimeMillis())
+            currentFeatureByProfile[profile] = shown.id
+        }
+    }
+    LaunchedEffect(enabled, active, initialCandidates, categories, retry) {
         if (!enabled || !active || hero != null) return@LaunchedEffect
         val last = session.getString(lastTitleKey, null)
-        val priority = if (last == null) initialCandidates.shuffled()
-            else initialCandidates.sortedByDescending { it.id == last }
-        for (item in priority) {
-            if (ready(item)) {
-                hero = item
-                session.edit().putString(lastTitleKey, item.id).apply()
-                withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(item)) }
-                xpDebug("Featured first ready at ${SystemClock.elapsedRealtime() - started} ms")
-                break
-            }
+        val now = System.currentTimeMillis()
+        val confirmed = session.getString("$profileKey|verified-source-set", null) == initialSourceFingerprint &&
+            now - session.getLong("$profileKey|source-check-time", 0) in 0..86_400_000L
+        val previous = initialCandidates.firstOrNull { it.id == last && confirmed && currentFeatureByProfile[profile] == it.id }
+        val watches = latestWatched
+        val eligiblePrevious = previous?.takeUnless { item ->
+            watches.any { it.type == "movie" && xpFeatureAliases(it).any(xpFeatureAliases(item)::contains) &&
+                (it.durationMs <= 0 || it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .9) }
+        }
+        val queue = xpRankFeatureQueue(
+            rotationSources + ("xp_trending" to (rotationSources["xp_trending"].orEmpty() + candidates)),
+            settings.trendingOnly, watches, latestSignals, exposure.recent(now).keys, java.time.LocalDate.now(),
+        )
+        val selected = if (eligiblePrevious != null && ready(eligiblePrevious)) eligiblePrevious else {
+            queue.take(3).firstOrNull { item -> withTimeoutOrNull(1_500) { sourceCheck(item) } == true && ready(item) }
+        }
+        if (selected != null) {
+            hero = selected
+            if (selected != eligiblePrevious) session.edit().putString(lastTitleKey, selected.id)
+                .putString("$profileKey|verified-source-set", initialSourceFingerprint)
+                .putLong("$profileKey|source-check-time", System.currentTimeMillis()).apply()
+            withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(selected)) }
+            xpDebug("Featured first ready at ${SystemClock.elapsedRealtime() - started} ms")
         }
     }
     var rotationCycle by remember(profile) { mutableStateOf(0) }
@@ -179,44 +271,31 @@ internal fun rememberXpFeaturedMovie(
         val deadline = SystemClock.elapsedRealtime() + remaining
         var completed = false
         try {
-            kotlinx.coroutines.delay((remaining - 4_000).coerceAtLeast(0))
-            val cursor = session.getInt(cursorKey, -1)
-            val prior = session.getString("$profileKey|recent", "").orEmpty().split('|').filter(String::isNotBlank)
-            val recent = (listOf(current.id) + prior).distinct().take(5)
-            val options = xpFeatureRotationBuckets(rotationSources, settings.trendingOnly, cursor, current.id,
-                recent, java.time.LocalDate.now())
-            xpDebug("Featured rotation: ${options.size} eligible categories after cursor $cursor")
+            delay((remaining - 6_000).coerceAtLeast(0))
+            val options = xpRankFeatureQueue(rotationSources, settings.trendingOnly, latestWatched, latestSignals,
+                exposure.recent(System.currentTimeMillis()).keys + xpFeatureAliases(current), java.time.LocalDate.now())
             var next: XpMeta? = null
-            var nextCursor = cursor
-            var attemptedCursor = cursor
-            for ((index, candidates) in options) {
-                val remainingPreparation = deadline - SystemClock.elapsedRealtime()
-                if (remainingPreparation <= 0) break
-                attemptedCursor = index
-                val candidate = candidates.shuffled().take(2).firstOrNull {
-                    val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_400)
-                    allowance > 0 && withTimeoutOrNull(allowance) { ready(it) } == true
-                }
-                if (candidate != null) {
-                    val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_000)
-                    next = (if (allowance > 0) withTimeoutOrNull(allowance) { prepareMetadata(candidate) } else null)
-                        ?: candidate
-                    nextCursor = index
-                    break
-                }
+            for (candidate in options.take(3)) {
+                val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_500)
+                if (allowance <= 0) break
+                if (withTimeoutOrNull(allowance) { sourceCheck(candidate) } != true) continue
+                if (!ready(candidate)) continue
+                next = withTimeoutOrNull(1_000) { prepareMetadata(candidate) } ?: candidate
+                break
             }
             delay((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0))
             completed = true
             session.edit().putLong(remainingKey, interval).apply()
             if (next != null) {
-                session.edit().putInt(cursorKey, nextCursor).putString(lastTitleKey, next.id)
-                    .putString("$profileKey|recent", recent.joinToString("|")).apply()
+                session.edit().putString(lastTitleKey, next.id).putString("$profileKey|verified-source-set", initialSourceFingerprint)
+                .putLong("$profileKey|source-check-time", System.currentTimeMillis()).apply()
                 hero = next
                 withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(next)) }
-            } else {
-                session.edit().putInt(cursorKey, attemptedCursor).apply()
-                rotationCycle++
-            }
+            } else if (options.isEmpty()) {
+                hero = null
+                session.edit().remove(lastTitleKey).apply()
+                waiting = false
+            } else rotationCycle++
         } finally {
             if (!completed) session.edit().putLong(remainingKey,
                 (deadline - SystemClock.elapsedRealtime()).coerceIn(0, interval)).apply()

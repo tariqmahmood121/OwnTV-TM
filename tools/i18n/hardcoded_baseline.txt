@@ -31,6 +31,7 @@
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	transportUrl
 1	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	·
 2	app/src/main/java/tv/own/owntv/features/home/StremioCatalogScreen.kt	—
+1	app/src/main/java/tv/own/owntv/features/home/XpFeaturedPool.kt	\0
 8	app/src/main/java/tv/own/owntv/features/settings/DnsSettingsScreen.kt	\0
 1	app/src/main/java/tv/own/owntv/features/settings/DnsSettingsScreen.kt	${cfg.host}$p
 1	app/src/main/java/tv/own/owntv/features/settings/DnsSettingsScreen.kt	:${cfg.port}

@@ -67,14 +67,7 @@ fun MovioAboutScreen(
         Text(stringResource(R.string.moviotv_about_studio_subtitle), style = stageText(16, 600), color = StageColors.Muted)
         Spacer(Modifier.height(8.dp))
         if (forMovioXp) {
-            val movio = stringResource(R.string.movioxp_logo_menu_movio)
-            val xp = stringResource(R.string.movioxp_logo_menu_xp)
-            Text(androidx.compose.ui.text.buildAnnotatedString {
-                append(movio)
-                pushStyle(androidx.compose.ui.text.SpanStyle(color = tv.own.owntv.features.home.XpRemotePink))
-                append(xp)
-                pop()
-            }, style = stageText(28, 700), color = androidx.compose.ui.graphics.Color.White)
+            tv.own.owntv.features.home.XpApprovedWordmark(Modifier.size(width = 230.dp, height = 65.dp))
         } else Text(stringResource(R.string.moviotv_app_name), style = stageText(28, 700), color = StageColors.Text)
         Text(stringResource(R.string.moviotv_about_version, BuildConfig.VERSION_NAME), style = stageText(17, 500), color = StageColors.Muted)
         Text(stringResource(R.string.moviotv_about_developed), style = stageText(18, 600), color = StageColors.Text)

@@ -6,6 +6,8 @@ package tv.own.owntv.features.home
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.Image
 import android.security.keystore.KeyGenParameterSpec
@@ -847,6 +849,7 @@ fun StremioCatalogScreen(
     val restorePosterFocus = LocalXpRestorePoster.current || restoreHomePosterFocus
     // Keep all five XP tab labels legible on narrow touch devices.
     val compactPhone = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
+    val responsiveHome = BuildConfig.MOVIOXP_RELEASE && !television && showBottomNavigation
     val scope = rememberCoroutineScope()
     val xpUpdater = remember(context) { XpSoftwareUpdater(context.applicationContext) }
     var xpDownloadJob by remember { mutableStateOf<Job?>(null) }
@@ -882,7 +885,7 @@ fun StremioCatalogScreen(
         val index = addons.indexOfFirst { it.url == addon.url }
         if (index >= 0) addons[index] = addon else addons.add(addon)
     }
-    val homeListState = remember(catalogueProfile) { androidx.compose.foundation.lazy.LazyListState() }
+    val homeListState = key(catalogueProfile) { rememberLazyListState() }
     var lastHomePoster by key(catalogueProfile) { rememberSaveable { mutableStateOf<String?>(null) } }
     var returnHomePoster by remember(catalogueProfile) { mutableStateOf<String?>(null) }
     LaunchedEffect(restorePosterFocus, playbackActive) {
@@ -1343,12 +1346,31 @@ fun StremioCatalogScreen(
             .putInt("$catalogueProfile|seconds", value.seconds)
             .putBoolean("$catalogueProfile|trending", value.trendingOnly).apply()
     }
-    val homeSources = ((if (cinema && page == "home" && activeProfile?.isKids != true) {
+    val homeSources = ((if ((cinema || responsiveHome) && page == "home" && activeProfile?.isKids != true) {
             if (featureSettings.enabled && !featureSettings.trendingOnly) xpFeaturedCategories else listOf("xp_trending")
         } else emptyList()) +
         visibleHomeIds + listOfNotNull(cinemaCollectionId))
         .distinct().associateWith { id -> xpDiscoverSource(id, installedAddons) }
 
+    val cachedFeatureSources = remember(installedAddons) {
+        val genres = installedAddons.flatMap { addon ->
+            addon.catalogs.filter { it.type == "movie" }.flatMap { catalogue ->
+                catalogue.extraFields.entries.filter { it.key.equals("genre", true) }.flatMap { it.value }
+            }
+        }.distinct().mapNotNull(XpHomeConfig::idForGenre)
+        (xpFeaturedCategories + genres).distinct().take(40).mapNotNull { id -> xpDiscoverSource(id, installedAddons) }
+    }
+    var cachedFeatureCategories by remember(catalogueProfile, cachedFeatureSources) {
+        mutableStateOf<Map<String, List<XpMeta>>>(emptyMap())
+    }
+    LaunchedEffect(catalogueProfile, cachedFeatureSources, cinema, responsiveHome, featureSettings.trendingOnly) {
+        if (!cinema && !responsiveHome || featureSettings.trendingOnly) return@LaunchedEffect
+        cachedFeatureCategories = withContext(Dispatchers.IO) {
+            cachedFeatureSources.associate { source ->
+                source.categoryId to XpAddonProtocol.cachedCatalog(repository, catalogueProfile, source)
+            }.filterValues { it.isNotEmpty() }
+        }
+    }
     val featuredPool = remember(context, catalogueProfile) { XpFeaturedPool(context, catalogueProfile) }
     fun discoveryDataKey(id: String, source: XpDiscoverSource?) = id to source
     LaunchedEffect(catalogueProfile, centralConnection, homeSources, refreshCatalogues) {
@@ -1370,7 +1392,9 @@ fun StremioCatalogScreen(
                             .collect { titles ->
                                 if (titles != null) {
                                     discoverMetas[dataKey] = titles.distinctBy { it.type to it.id }
-                                    withContext(Dispatchers.IO) { featuredPool.write(if (id == "xp_trending") source.row.addon.url else source.row.addon.url + "#shelf", titles) }
+                                    if (id != "xp_cinema" && id != "xp_upcoming") withContext(Dispatchers.IO) {
+                                        featuredPool.write(if (id == "xp_trending") source.row.addon.url else source.row.addon.url + "#shelf", titles)
+                                    }
                                 }
                             }
                     }
@@ -1382,7 +1406,9 @@ fun StremioCatalogScreen(
                                 fallback()
                             } else {
                                 discoverMetas[dataKey] = titles
-                                withContext(Dispatchers.IO) { featuredPool.write(if (id == "xp_trending") connection.apiBase else connection.apiBase + "#shelf", titles) }
+                                if (id != "xp_cinema" && id != "xp_upcoming") withContext(Dispatchers.IO) {
+                                    featuredPool.write(if (id == "xp_trending") connection.apiBase else connection.apiBase + "#shelf", titles)
+                                }
                             }
                         }
                 } finally {
@@ -1473,15 +1499,17 @@ fun StremioCatalogScreen(
     val visibleRows = if (page == "home") rows.filter { metas[rowKey(it) to it].orEmpty().isNotEmpty() } else rows
     val featureAllowed = cinema && activeProfile?.isKids != true &&
         (favoritesProfileId <= 0 || activeProfile != null)
-    val showCinemaFeature = featureAllowed && page == "home"
+    val featureOnHome = (featureAllowed || responsiveHome && activeProfile?.isKids != true &&
+        (favoritesProfileId <= 0 || activeProfile != null)) && page == "home"
+    val showCinemaFeature = cinema && featureOnHome
     val authorizedFeatureSources = listOfNotNull(centralConnection?.apiBase) +
         manifestAddresses.filterNot { it in disabledAddonUrls || it in centralDisabledAddonUrls }
     val featuredSources = authorizedFeatureSources + authorizedFeatureSources.map { it + "#shelf" }
     val trendingSource = homeSources["xp_trending"]
     var featureRetry by remember(catalogueProfile) { mutableLongStateOf(0L) }
     var standaloneTrending by remember(catalogueProfile, trendingSource) { mutableStateOf(emptyList<XpMeta>()) }
-    LaunchedEffect(showCinemaFeature, trendingSource, catalogueProfile, featureRetry) {
-        if (!showCinemaFeature || trendingSource == null) return@LaunchedEffect
+    LaunchedEffect(featureOnHome, trendingSource, catalogueProfile, featureRetry) {
+        if (!featureOnHome || trendingSource == null) return@LaunchedEffect
         val startedAt = android.os.SystemClock.elapsedRealtime()
         // The repository coalesces this priority request with the Home shelf request.
         XpAddonProtocol.observeCatalog(repository, catalogueProfile, trendingSource.row,
@@ -1495,8 +1523,8 @@ fun StremioCatalogScreen(
     }
     val trendingCandidates = discoverMetas[discoveryDataKey("xp_trending", trendingSource)].orEmpty() + standaloneTrending
     var enrichedBackdrops by remember(catalogueProfile, featuredSources, trendingSource) { mutableStateOf(emptyList<XpMeta>()) }
-    LaunchedEffect(showCinemaFeature, trendingCandidates, featureRetry) {
-        if (!showCinemaFeature || xpFeatureCandidates(trendingCandidates).isNotEmpty()) return@LaunchedEffect
+    LaunchedEffect(featureOnHome, trendingCandidates, featureRetry) {
+        if (!featureOnHome || xpFeatureCandidates(trendingCandidates).isNotEmpty()) return@LaunchedEffect
         trendingCandidates.distinctBy { it.id }.take(3).map { item ->
             launch {
                 val imdb = listOfNotNull(item.imdbId, item.id).firstOrNull(XpPlaybackIdentity::isImdbId) ?: return@launch
@@ -1527,20 +1555,55 @@ fun StremioCatalogScreen(
             }
         }
     }
-    val rotateFeature = showCinemaFeature && featureVisible && !featureKeyHeld && selected == null &&
+    val rotateFeature = featureOnHome && featureVisible && !featureKeyHeld && selected == null &&
         !playbackActive && !showAccountMenu && !showLogoMenu && !confirmExit && !manageCentralProfiles &&
         !addProfileOpen && !showAddHomeCategory
     val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
-    val feature = rememberXpFeaturedMovie(featureAllowed, catalogueProfile, featuredSources,
+    LaunchedEffect(playbackActive, lifecycleState, page) {
+        if (BuildConfig.MOVIOXP_RELEASE && !playbackActive && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+            delay(12_000)
+            XpMaintenance.run(context)
+        }
+    }
+    val verifiedFeatureSources = remember(catalogueProfile, installedAddons.map { it.url }) {
+        LinkedHashMap<String, Pair<Long, Boolean>>()
+    }
+    val feature = rememberXpFeaturedMovie(featureOnHome, catalogueProfile, featuredSources,
         trendingCandidates + enrichedBackdrops, rotateFeature && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
-        showCinemaFeature, featureRetry, homeSources.values.any { it != null }, featureSettings,
-        xpFeaturedCategories.associateWith { id ->
+        featureOnHome, featureVisible && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
+        featureRetry, homeSources.values.any { it != null }, featureSettings,
+        (cachedFeatureCategories.keys + xpFeaturedCategories).associateWith { id ->
             val items = if (id == "xp_trending") trendingCandidates + enrichedBackdrops
-                else discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty()
+                else discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty().ifEmpty {
+                    cachedFeatureCategories[id].orEmpty()
+                }
             items.map { item ->
                 val date = enrichedCatalogueMetadata[item.type to item.id]?.first
                 if (date == null) item else item.copy(releaseInfo = date)
             }
+        },
+        watched = historyTitles, signals = remember(continueTitles, historyTitles) {
+            XpCollectionOrder.unique(continueTitles + historyTitles).take(15)
+        },
+        hasSource = hasSource@ { item ->
+            val now = android.os.SystemClock.elapsedRealtime()
+            verifiedFeatureSources[item.id]?.takeIf { now - it.first < if (it.second) 3_600_000L else 60_000L }
+                ?.let { return@hasSource it.second }
+            val ids = XpPlaybackIdentity.ids(item)
+            val available = installedAddons.asSequence().mapNotNull { addon ->
+                ids.firstOrNull { id -> addon.resources.any { it.supports(item.type, id) } }?.let { addon to it }
+            }.take(2).any { (addon, id) ->
+                try {
+                    XpAddonProtocol.loadStreams(addon, item, id).any { it.url != null }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            if (verifiedFeatureSources.size >= 24) verifiedFeatureSources.keys.firstOrNull()?.let(verifiedFeatureSources::remove)
+            verifiedFeatureSources[item.id] = now to available
+            available
         },
         prepareMetadata = { item ->
             val imdb = (item.imdbId ?: item.id).takeIf(XpPlaybackIdentity::isImdbId)
@@ -1563,10 +1626,11 @@ fun StremioCatalogScreen(
         }
     }
     val hero = feature.hero
+    val homeResume = remember(continueTitles) { XpCollectionOrder.homeResume(continueTitles) }
     LaunchedEffect(page, visibleHomeIds, visibleRows, returnHomeAnchor, showCinemaFeature) {
         val anchor = returnHomeAnchor ?: return@LaunchedEffect
         if (page != "home") return@LaunchedEffect
-        val featureKeys = if (showCinemaFeature) listOf("xp-cinema-feature") else emptyList()
+        val featureKeys = if (featureOnHome) listOf("xp-cinema-feature") else emptyList()
         val keys = featureKeys + listOf("xp-continue-watching") + visibleHomeIds.map { "discover:$it" } + visibleRows.map(::rowKey)
         val index = keys.indexOf(anchor)
         if (index >= 0) {
@@ -2302,7 +2366,7 @@ fun StremioCatalogScreen(
         Box(Modifier.fillMaxSize().then(if (cinema) Modifier.background(XpCinemaBackground) else Modifier)) {
         Row(Modifier.fillMaxSize()) {
             if (cinema) Spacer(Modifier.width(56.dp))
-        Column(Modifier.weight(1f).fillMaxHeight()) {
+        Column(Modifier.weight(1f).fillMaxHeight().then(if (responsiveHome) Modifier.statusBarsPadding() else Modifier)) {
             if (!cinema && showBottomNavigation && television && navPosition == XpNavigationPosition.TOP) navigation()
             if (!cinema) Row(
                 Modifier.fillMaxWidth().padding(horizontal = if (compactPhone) 12.dp else 22.dp, vertical = if (television) 5.dp else 12.dp),
@@ -2375,6 +2439,17 @@ fun StremioCatalogScreen(
                 }
             }
             if (!cinema && showBottomNavigation && television && navPosition == XpNavigationPosition.BELOW_HEADER) navigation()
+            if (responsiveHome && page == "home" && visibleHomeIds.isNotEmpty()) {
+                LazyRow(state = key(catalogueProfile) { rememberLazyListState() },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(visibleHomeIds, key = { it }) { id ->
+                        val label = XpHomeConfig.categories.firstOrNull { it.id == id }?.let { stringResource(it.labelRes) }
+                            ?: XpHomeConfig.genreName(id)
+                        if (label != null) XpAction(label, false, compact = true) { openHomeCollection("discover", id) }
+                    }
+                }
+            }
             if (!showBottomNavigation) Row(
                 Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2691,7 +2766,7 @@ fun StremioCatalogScreen(
                         .padding(horizontal = 34.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    if (cinema) XpApprovedWordmark(Modifier.width(235.dp).height(62.dp))
+                    if (BuildConfig.MOVIOXP_RELEASE) XpApprovedWordmark(Modifier.width(235.dp).height(62.dp))
                     Text(stringResource(R.string.movioxp_account_login_title), color = XpText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     Text(
                         stringResource(R.string.moviotv_xp_central_account_help),
@@ -2855,6 +2930,12 @@ fun StremioCatalogScreen(
                             saveCinemaFont(XpCinemaFont.MONTSERRAT)
                         }
                     }
+                    if (BuildConfig.MOVIOXP_RELEASE) XpSettingsAccordion(
+                        title = stringResource(R.string.movioxp_maintenance_heading),
+                        summary = stringResource(R.string.movioxp_maintenance_auto),
+                        expanded = expandedSettingsGroup == 9,
+                        onToggle = { expandedSettingsGroup = if (expandedSettingsGroup == 9) null else 9 },
+                    ) { XpMaintenancePanel(context, playbackActive) }
                     XpSettingsAccordion(
                         title = stringResource(R.string.moviotv_xp_settings_display_heading),
                         summary = stringResource(R.string.moviotv_xp_settings_display_summary),
@@ -3619,7 +3700,7 @@ fun StremioCatalogScreen(
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                 val featureHeight = maxHeight * .625f
                 val backdrop = hero?.backdrop
-                if (backdrop != null && homeListState.firstVisibleItemIndex == 0) {
+                if (showCinemaFeature && backdrop != null && homeListState.firstVisibleItemIndex == 0) {
                     XpCinemaHomeBackdrop(backdrop, Modifier.fillMaxWidth()
                         .offset { androidx.compose.ui.unit.IntOffset(0, -homeListState.firstVisibleItemScrollOffset) }
                         .height(featureHeight + 112.dp))
@@ -3645,8 +3726,11 @@ fun StremioCatalogScreen(
                     contentPadding = PaddingValues(bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (showCinemaFeature) item(key = "xp-cinema-feature") {
-                        if (hero != null) {
+                    if (featureOnHome) item(key = "xp-cinema-feature") {
+                        if (responsiveHome && hero != null) {
+                            XpTouchHomeHero(hero, compactPhone, onPlay = { openItem(hero, directly = true) },
+                                onInfo = { openDetails(hero, false) })
+                        } else if (hero != null) {
                             val item = withSavedResume(hero)
                             XpCinemaFeature(item, showYear, onFocus = { focused ->
                                 featuredFocused = focused
@@ -3672,7 +3756,7 @@ fun StremioCatalogScreen(
                     }
                     if (page == "home") {
                         item(key = "xp-continue-watching") {
-                            val titles = XpCollectionOrder.resumeShelf(continueTitles)
+                            val titles = homeResume
                             if (titles.isNotEmpty()) Column {
                                 Text(stringResource(R.string.moviotv_xp_continue_watching), color = XpText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(start = 24.dp, top = 2.dp))
@@ -3816,7 +3900,12 @@ fun StremioCatalogScreen(
                 }
                 }
             }
-            if (!cinema && showBottomNavigation && (!television || navPosition == XpNavigationPosition.BOTTOM)) navigation()
+            if (!cinema && showBottomNavigation && (!television || navPosition == XpNavigationPosition.BOTTOM)) {
+                if (television) navigation()
+                else Box(Modifier.fillMaxWidth().navigationBarsPadding(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.widthIn(max = 640.dp)) { navigation() }
+                }
+            }
 
         }
         }

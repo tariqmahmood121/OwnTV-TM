@@ -27,6 +27,7 @@ internal class XpCatalogueRepository(
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val ttlMillis: Long = 6 * 60 * 60 * 1000L,
+    private val diskBudget: () -> Long = { MAX_DISK_BYTES },
 ) {
     internal data class Key(
         val profile: String,
@@ -152,14 +153,28 @@ internal class XpCatalogueRepository(
         if (entries.size > 128) entries.sortedByDescending(File::lastModified).drop(128).forEach(File::delete)
         if (writesUntilSweep-- <= 0) {
             writesUntilSweep = 8
-            val diskEntries = directory.walkTopDown().filter(File::isFile)
-                .sortedByDescending(File::lastModified).toList()
-            var bytes = 0L
-            diskEntries.forEach { entry ->
-                bytes += entry.length()
-                if (bytes > MAX_DISK_BYTES) entry.delete()
-            }
+            sweepDisk(expire = false)
         }
+    }
+
+    suspend fun maintain() = withContext(Dispatchers.IO) {
+        lock.withLock {
+            if (inFlight.isEmpty()) sweepDisk(expire = true)
+        }
+    }
+
+    private fun sweepDisk(expire: Boolean) {
+        val diskEntries = directory.walkTopDown().filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
+            .sortedByDescending(File::lastModified).toList()
+        val cutoff = now() - 14L * 24 * 60 * 60 * 1000
+        val budget = diskBudget()
+        var bytes = 0L
+        for (entry in diskEntries) {
+            val size = entry.length()
+            if (bytes + size > budget || expire && entry.lastModified() < cutoff) entry.delete()
+            else bytes += size
+        }
+        if (expire) memory.entries.removeAll { it.value.timestamp < cutoff }
     }
 
     private fun providerDirectory(profile: String, provider: String) =
@@ -179,6 +194,7 @@ internal class XpCatalogueRepository(
             instance ?: XpCatalogueRepository(
                 context.applicationContext.noBackupFilesDir.resolve("xp_catalogues"),
                 CoroutineScope(SupervisorJob() + Dispatchers.IO),
+                diskBudget = { minOf(MAX_DISK_BYTES, XpMaintenance.diskBudget(context.applicationContext) / 4) },
             ).also { instance = it }
         }
     }

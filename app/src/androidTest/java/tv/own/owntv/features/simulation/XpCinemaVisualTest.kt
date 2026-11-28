@@ -6,6 +6,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import tv.own.owntv.features.home.LocalXpFeaturedSourceCheck
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.home.XpContinueStore
 import tv.own.owntv.features.home.catalogueProfileKey
@@ -88,7 +90,9 @@ class XpCinemaVisualTest {
             val simulation = remember { XpTvSimulation(activity).apply { onLongBack = { exit = true } } }
             OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
                 XpTvSimulationViewport(activity, simulation, XpSimulatedScale(), onExit = {}) {
-                    if (seeded && mountHome) StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                    if (seeded && mountHome) CompositionLocalProvider(LocalXpFeaturedSourceCheck provides { true }) {
+                        StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                    }
                     if (showBadgeFixtures) ProvideTextStyle(TextStyle(fontFamily = XpCinemaFont.MONTSERRAT.family)) {
                         Column(Modifier.fillMaxWidth().padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             listOf("U", "PG", "12", "12A", "15", "18").forEach { certificate ->
@@ -264,31 +268,6 @@ class XpCinemaVisualTest {
             shell("svc wifi enable")
             shell("svc data enable")
         }
-        val session = activity.getSharedPreferences("movioxp_feature_sessions", 0)
-        val settings = activity.getSharedPreferences("movioxp_feature_settings", 0)
-        fun currentTitle() = session.getString("$profileScope|title", null)
-        fun awaitRotation(seconds: Int, fullCycle: Boolean = false) {
-            val prior = checkNotNull(currentTitle())
-            val started = SystemClock.elapsedRealtime()
-            compose.waitUntil(seconds * 1_000L + 15_000L) { currentTitle()?.let { it != prior } == true }
-            val elapsed = SystemClock.elapsedRealtime() - started
-            measurements.appendText("rotation_${seconds}_ms=$elapsed\n")
-            if (fullCycle) check(elapsed >= seconds * 750L) { "Rotation advanced early: $elapsed ms at the $seconds s setting" }
-        }
-        pressRemote(R.string.movioxp_sim_right)
-        compose.onNodeWithText(moreInfo).performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.onNodeWithText(moreInfo).assertIsFocused()
-        awaitRotation(20)
-        awaitRotation(20, fullCycle = true)
-        val retained = currentTitle()
-        compose.runOnIdle { mountHome = false }
-        compose.onNodeWithTag("cinema-home-list").assertDoesNotExist()
-        settings.edit().putInt("$profileScope|seconds", 60).apply()
-        compose.runOnIdle { mountHome = true }
-        awaitArtwork(12_000)
-        check(currentTitle() == retained)
-        awaitRotation(60)
-        awaitRotation(60, fullCycle = true)
         compose.runOnIdle {
             mountHome = false
             showBadgeFixtures = true

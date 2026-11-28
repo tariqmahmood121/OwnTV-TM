@@ -268,4 +268,13 @@
     <string name="movioxp_cinema_font_licences">Cinema Font Licences</string>
     <string name="movioxp_cinema_metadata_separator">" · "</string>
     <string name="movioxp_cinema_appearance">Appearance</string>
+    <string name="movioxp_maintenance_heading">Storage &amp; Maintenance</string>
+    <string name="movioxp_maintenance_auto">Automatic maintenance</string>
+    <string name="movioxp_maintenance_storage">Free storage %1$s of %2$s</string>
+    <string name="movioxp_maintenance_cache">Images %1$s · Catalogues %2$s · Updates %3$s</string>
+    <string name="movioxp_maintenance_never">Not run yet</string>
+    <string name="movioxp_maintenance_last">Last maintenance %1$s</string>
+    <string name="movioxp_maintenance_device">%1$s · Android %2$s · RAM %3$s · App heap %4$s</string>
+    <string name="movioxp_maintenance_optimise">Optimise Now</string>
+    <string name="movioxp_maintenance_diagnostics">Device Diagnostics</string>
 </resources>
