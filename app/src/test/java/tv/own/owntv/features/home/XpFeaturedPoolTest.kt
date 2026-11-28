@@ -82,4 +82,24 @@ class XpFeaturedPoolTest {
         org.junit.Assert.assertFalse("tv".isXpSeriesCatalogue())
         org.junit.Assert.assertFalse("movie".isXpSeriesCatalogue())
     }
+    @Test
+    fun establishedProfileRelaxesOnlyExposureAndUsesReleasedTrending() {
+        val date = java.time.LocalDate.parse("2026-11-28")
+        val now = 1_800_000_000_000L
+        val day = 86_400_000L
+        val movie = XpMeta("tt2001", "movie", "Older result", "poster", null, "2024", null, backdrop = "landscape")
+        val history = (1..600).map { movie.copy(id = "tt$it", activityAt = now - it) }
+        val fresh = movie.copy(id = "tt2002", name = "Recently shown")
+        val unreleased = movie.copy(id = "tt2003", releaseInfo = "2027-01-01")
+        val invalid = movie.copy(id = "tt2004", backdrop = null)
+        val finished = movie.copy(id = "tmdb:3", imdbId = "tt3")
+        val categories = mapOf("xp_trending" to listOf(movie, fresh, unreleased, invalid, finished),
+            "xp_cinema" to listOf(movie.copy(id = "tt9000")))
+        val seen = mapOf(movie.id to now - 17 * day, fresh.id to now - day / 2)
+        val queue = xpFeatureFallbackQueue(categories, false, history, history.take(15), seen, emptySet(), now, date)
+        assertEquals(listOf(movie.id, fresh.id), queue.map(XpMeta::id))
+        assertEquals(listOf(fresh.id), xpFeatureFallbackQueue(categories, false, history, history.take(15),
+            seen, setOf(movie.id), now, date).map(XpMeta::id))
+        assertEquals(600, history.size)
+    }
 }

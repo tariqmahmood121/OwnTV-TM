@@ -157,6 +157,43 @@ internal fun xpRankFeatureQueue(
     }.take(10).toList()
 }
 
+internal fun xpFeatureFallbackQueue(
+    categories: Map<String, List<XpMeta>>,
+    trendingOnly: Boolean,
+    watched: List<XpMeta>,
+    signals: List<XpMeta>,
+    exposures: Map<String, Long>,
+    unavailable: Set<String>,
+    now: Long,
+    today: java.time.LocalDate,
+): List<XpMeta> {
+    val queue = mutableListOf<XpMeta>()
+    val used = unavailable.toMutableSet()
+    fun append(items: List<XpMeta>, limit: Int) {
+        items.filter { xpFeatureAliases(it).none(used::contains) }.take(limit).forEach {
+            val aliases = xpFeatureAliases(it)
+            if (aliases.none(used::contains)) {
+                used.addAll(aliases)
+                queue.add(it)
+            }
+        }
+    }
+    fun excluded(days: Int): Set<String> {
+        val threshold = days * 24L * 60 * 60 * 1_000
+        return exposures.filterValues { now - it < threshold }.keys + used
+    }
+    append(xpRankFeatureQueue(categories, trendingOnly, watched, signals, excluded(30), today), 2)
+    // Trending is the fallback across enabled Discover catalogues. User data and eligibility
+    // remain untouched. Only lower the exposure window, and prefer the least recently shown.
+    for (days in listOf(30, 14, 7, 1, 0)) {
+        val options = xpRankFeatureQueue(categories, true, watched, emptyList(), excluded(days), today)
+            .sortedBy { item -> xpFeatureAliases(item).maxOfOrNull { exposures[it] ?: 0L } ?: 0L }
+        append(options, 6 - queue.size)
+        if (queue.size >= 6) break
+    }
+    return queue
+}
+
 internal val LocalXpFeaturedSourceCheck = androidx.compose.runtime.staticCompositionLocalOf<(suspend (XpMeta) -> Boolean)?> { null }
 
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)
@@ -208,6 +245,7 @@ internal fun rememberXpFeaturedMovie(
     var cached by remember(profile, authorizedSources) { mutableStateOf(emptyList<XpMeta>()) }
     var hero by remember(profile, authorizedSources) { mutableStateOf<XpMeta?>(null) }
     var waiting by remember(profile, enabled, active, retry) { mutableStateOf(true) }
+    var selecting by remember(profile, authorizedSources, retry) { mutableStateOf(false) }
     val initialCandidates = xpFeatureCandidates(cached + candidates)
     suspend fun ready(item: XpMeta): Boolean {
         val backdrop = item.backdrop ?: return false
@@ -261,17 +299,24 @@ internal fun rememberXpFeaturedMovie(
             watches.any { it.type == "movie" && xpFeatureAliases(it).any(xpFeatureAliases(item)::contains) &&
                 (it.durationMs <= 0 || it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .95) }
         }
-        val queue = xpRankFeatureQueue(
+        val queue = xpFeatureFallbackQueue(
             rotationSources + ("xp_trending" to (rotationSources["xp_trending"].orEmpty() + candidates)),
-            settings.trendingOnly, watches, latestSignals,
-            exposure.recent(now).keys + unavailableAliases(SystemClock.elapsedRealtime()), java.time.LocalDate.now(),
+            settings.trendingOnly, watches, latestSignals, exposure.recent(now),
+            unavailableAliases(SystemClock.elapsedRealtime()), now, java.time.LocalDate.now(),
         )
-        val selected = if (eligiblePrevious != null && ready(eligiblePrevious)) eligiblePrevious else {
-            queue.take(3).firstOrNull { item ->
-                val available = withTimeoutOrNull(1_500) { sourceCheck(item) } == true && ready(item)
-                if (!available) markUnavailable(item)
-                available
+        selecting = eligiblePrevious != null || queue.isNotEmpty()
+        val selected = try {
+            withTimeoutOrNull(12_000) {
+                if (eligiblePrevious != null && ready(eligiblePrevious)) eligiblePrevious else {
+                    queue.firstOrNull { item ->
+                        val available = withTimeoutOrNull(1_500) { sourceCheck(item) } == true && ready(item)
+                        if (!available) markUnavailable(item)
+                        available
+                    }
+                }
             }
+        } finally {
+            selecting = false
         }
         if (selected != null) {
             hero = selected
@@ -292,9 +337,10 @@ internal fun rememberXpFeaturedMovie(
         var completed = false
         try {
             delay((remaining - 6_000).coerceAtLeast(0))
-            val options = xpRankFeatureQueue(rotationSources, settings.trendingOnly, latestWatched, latestSignals,
-                exposure.recent(System.currentTimeMillis()).keys + xpFeatureAliases(current) +
-                    unavailableAliases(SystemClock.elapsedRealtime()), java.time.LocalDate.now())
+            val now = System.currentTimeMillis()
+            val options = xpFeatureFallbackQueue(rotationSources, settings.trendingOnly, latestWatched, latestSignals,
+                exposure.recent(now), xpFeatureAliases(current) + unavailableAliases(SystemClock.elapsedRealtime()),
+                now, java.time.LocalDate.now())
             var next: XpMeta? = null
             for (candidate in options.take(3)) {
                 val allowance = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(1_500)
@@ -324,5 +370,5 @@ internal fun rememberXpFeaturedMovie(
                 (deadline - SystemClock.elapsedRealtime()).coerceIn(0, interval)).apply()
         }
     }
-    return XpFeaturedState(hero.takeIf { enabled && active }, waiting)
+    return XpFeaturedState(hero.takeIf { enabled && active }, waiting || selecting)
 }

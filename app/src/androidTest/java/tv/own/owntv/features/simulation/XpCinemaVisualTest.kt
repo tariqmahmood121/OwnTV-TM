@@ -82,7 +82,16 @@ class XpCinemaVisualTest {
             val profiles: ProfilesViewModel = koinViewModel()
             var seeded by remember { mutableStateOf(false) }
             LaunchedEffect(profiles) {
-                profileScope = catalogueProfileKey(null, profiles.activeProfileId.value)
+                val profileId = profiles.activeProfileId.value
+                profileScope = catalogueProfileKey(null, profileId)
+                val history = org.json.JSONArray()
+                repeat(600) { index ->
+                    history.put(org.json.JSONObject().put("id", "tt8${index + 1000000}").put("type", "movie")
+                        .put("name", "Viewing history fixture ${index + 1}").put("activityAt", index.toLong() + 1))
+                }
+                activity.getSharedPreferences(tv.own.owntv.features.home.XpPersonalCollections.PREFS, 0).edit()
+                    .putString(tv.own.owntv.features.home.XpPersonalCollections.key(profileId,
+                        tv.own.owntv.features.home.XpCollection.HISTORY), history.toString()).apply()
                 XpContinueStore.updateProgress(activity, profiles.activeProfileId.value, "tt0133093", "movie",
                     "The Matrix", "https://images.metahub.space/poster/medium/tt0133093/img", "1999", 900_000L, 8_160_000L)
                 seeded = true
@@ -124,10 +133,17 @@ class XpCinemaVisualTest {
         compose.onNodeWithText(activity.getString(R.string.moviotv_xp_continue_watching)).assertIsDisplayed()
         saveScreenshot("01-cinema-home")
         saveScreenshot("05-simulator-remote")
+        saveScreenshot("21-compact-navigation")
 
         fun pressRemote(label: Int) =
             compose.onNodeWithContentDescription(activity.getString(label)).performClick()
         pressRemote(R.string.movioxp_sim_down)
+        val discoverMenu = compose.onNodeWithContentDescription(activity.getString(R.string.moviotv_xp_nav_discover),
+            useUnmergedTree = true)
+        discoverMenu.performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithContentDescription(activity.getString(R.string.moviotv_nav_series), useUnmergedTree = true).assertIsDisplayed()
+        saveScreenshot("22-expanded-navigation")
+        pressRemote(R.string.common_back)
         val home = compose.onNodeWithTag("cinema-home-list")
         home.performScrollToIndex(1)
         val matrix = compose.onNodeWithContentDescription("The Matrix")

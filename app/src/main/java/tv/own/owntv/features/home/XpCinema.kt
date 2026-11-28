@@ -122,6 +122,7 @@ internal fun XpCinemaRail(
                     OwnTVIcon.SWAP, false, true, onClick = onSwitchProfile)
             }
             labels.forEachIndexed { index, label ->
+                key(index) {
                 if (expanded || index == 0 || index == 2 || index == 4) {
                     val active = selected == index || !expanded && index == 2 && selected in 1..3
                     XpCinemaRailButton(stringResource(label), icons[index], active, expanded,
@@ -131,6 +132,7 @@ internal fun XpCinemaRail(
                             focusManager.moveFocus(FocusDirection.Right)
                             expanded = false
                         })
+                }
                 }
             }
             if (expanded) XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, true, onClick = onExit)

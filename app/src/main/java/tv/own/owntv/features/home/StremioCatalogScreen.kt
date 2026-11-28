@@ -1601,7 +1601,7 @@ fun StremioCatalogScreen(
             XpMaintenance.run(context)
         }
     }
-    val verifiedFeatureSources = remember(catalogueProfile, installedAddons.map { it.url }) {
+    val verifiedFeatureSources = remember(catalogueProfile, installedAddons.map { it.url }, featureRetry) {
         LinkedHashMap<String, Pair<Long, Boolean>>()
     }
     val rawFeatureSignals = remember(continueTitles, historyTitles) {
@@ -1625,7 +1625,7 @@ fun StremioCatalogScreen(
         featureOnHome, featureVisible && lifecycleState.isAtLeast(Lifecycle.State.RESUMED),
         featureRetry, homeSources.values.any { it != null }, featureSettings,
         (cachedFeatureCategories.keys + xpFeaturedCategories).associateWith { id ->
-            val items = if (id == "xp_trending") trendingCandidates + enrichedBackdrops
+            val items = if (id == "xp_trending") trendingCandidates + enrichedBackdrops + cachedFeatureCategories[id].orEmpty()
                 else discoverMetas[discoveryDataKey(id, homeSources[id])].orEmpty().ifEmpty {
                     cachedFeatureCategories[id].orEmpty()
                 }
@@ -2125,13 +2125,13 @@ fun StremioCatalogScreen(
         try {
             kotlinx.coroutines.coroutineScope {
                 for (url in manifestAddresses) {
-            val builtIn = url == builtInUrl
-            launch {
-                XpAddonProtocol.observeManifest(repository, catalogueProfile, url, manifestRetry).collect { addon ->
-                    if (addon != null) updateAddon(addon.copy(builtIn = builtIn))
+                    val builtIn = url == builtInUrl
+                    launch {
+                        XpAddonProtocol.observeManifest(repository, catalogueProfile, url, manifestRetry).collect { addon ->
+                            if (addon != null) updateAddon(addon.copy(builtIn = builtIn))
+                        }
+                    }
                 }
-            }
-        }
             }
         } finally {
             manifestsLoading = false
@@ -3872,7 +3872,6 @@ fun StremioCatalogScreen(
                                 else R.string.movioxp_feature_unavailable), color = XpText, modifier = Modifier.weight(1f))
                             if (!feature.waiting) XpAction(stringResource(R.string.moviotv_xp_refresh), false, compact = true) {
                                 featureRetry = System.currentTimeMillis()
-                                refreshCatalogues = featureRetry
                             }
                         }
                     }
@@ -4489,12 +4488,15 @@ fun StremioCatalogScreen(
                         seasonMenu = false
                     }
                     val episodeList: @Composable () -> Unit = {
-                        Text(stringResource(R.string.movioxp_season, selectedSeason), color = XpText,
-                            fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         val nextUnwatched = seasonEpisodes.firstOrNull { episode ->
                             historyTitles.none { it.id == episode.id } && continueTitles.none { it.id == episode.id }
                         }
-                        seasonEpisodes.forEach { episode ->
+                        LazyColumn(Modifier.heightIn(max = 390.dp)) {
+                            item {
+                                Text(stringResource(R.string.movioxp_season, selectedSeason), color = XpText,
+                                    fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            }
+                            items(seasonEpisodes, key = XpEpisode::id) { episode ->
                             val progress = continueTitles.firstOrNull { it.id == episode.id && it.positionMs > 0 }
                             val watched = progress == null && historyTitles.any { it.id == episode.id }
                             val episodeLabel = stringResource(R.string.movioxp_episode_number, episode.season, episode.number)
@@ -4534,7 +4536,10 @@ fun StremioCatalogScreen(
                                 }
                             }
                         }
-                        if (seasonEpisodes.isEmpty()) Text(stringResource(R.string.moviotv_xp_no_titles), color = XpMuted)
+                            if (seasonEpisodes.isEmpty()) item {
+                                Text(stringResource(R.string.moviotv_xp_no_titles), color = XpMuted)
+                            }
+                        }
                     }
                     if (seasons.isNotEmpty() && wide) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(Modifier.weight(.30f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -4551,19 +4556,9 @@ fun StremioCatalogScreen(
                         val title = stringResource(R.string.movioxp_season, selectedSeason)
                         if (seasons.isNotEmpty()) XpFilterDropdown(title, title,
                             seasons.keys.map { it.toString() to context.getString(R.string.movioxp_season, it) },
-                            seasonMenu, { seasonMenu = !seasonMenu }, { chooseSeason(it.toInt()) })
+                            expanded = seasonMenu, onToggle = { seasonMenu = !seasonMenu },
+                            onSelect = { chooseSeason(it.toInt()) })
                         episodeList()
-                    }
-                }
-
-                        }
-                    }
-                    selectedEpisode?.let { episode ->
-                        episode.artwork?.let { AsyncImage(it, null, Modifier.width(132.dp).aspectRatio(16f / 9f), contentScale = ContentScale.Fit) }
-                        episode.synopsis?.let { Text(it, color = XpMuted, maxLines = 3, overflow = TextOverflow.Ellipsis) }
-                        episode.runtime?.let { runtime ->
-                            Text(runtime.toIntOrNull()?.let { stringResource(R.string.movioxp_runtime_minutes, it) } ?: runtime, color = XpMuted)
-                        }
                     }
                 }
 
