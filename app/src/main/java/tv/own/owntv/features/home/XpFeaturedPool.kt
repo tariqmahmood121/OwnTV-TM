@@ -194,6 +194,9 @@ internal fun xpFeatureFallbackQueue(
     return queue
 }
 
+internal fun xpFeatureCanKeepCurrent(current: XpMeta, watched: List<XpMeta>, today: java.time.LocalDate): Boolean =
+    xpRankFeatureQueue(mapOf("xp_trending" to listOf(current)), true, watched, emptyList(), emptySet(), today).isNotEmpty()
+
 internal val LocalXpFeaturedSourceCheck = androidx.compose.runtime.staticCompositionLocalOf<(suspend (XpMeta) -> Boolean)?> { null }
 
 internal data class XpFeaturedState(val hero: XpMeta?, val waiting: Boolean)
@@ -360,7 +363,9 @@ internal fun rememberXpFeaturedMovie(
                 .putLong("$profileKey|source-check-time", System.currentTimeMillis()).apply()
                 hero = next
                 withContext(Dispatchers.IO) { pool.write(lastFeatureSource, listOf(next)) }
-            } else if (options.isEmpty()) {
+            } else if (options.isEmpty() &&
+                (!xpFeatureCanKeepCurrent(current, latestWatched, java.time.LocalDate.now()) ||
+                    withTimeoutOrNull(1_500) { sourceCheck(current) } == false)) {
                 hero = null
                 session.edit().remove(lastTitleKey).apply()
                 waiting = false

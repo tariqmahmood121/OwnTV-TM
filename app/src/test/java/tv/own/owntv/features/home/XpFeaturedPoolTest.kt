@@ -102,4 +102,12 @@ class XpFeaturedPoolTest {
             seen, setOf(movie.id), now, date).map(XpMeta::id))
         assertEquals(600, history.size)
     }
+    @Test
+    fun onlyEligibleHeroCanRemainVisibleWithoutRepeatingItsExposure() {
+        val today = java.time.LocalDate.parse("2026-11-28")
+        val soleTitle = XpMeta("tt4001", "movie", "Only title", "portrait", null, "2024", null, backdrop = "wide")
+        org.junit.Assert.assertTrue(xpFeatureCanKeepCurrent(soleTitle, emptyList(), today))
+        org.junit.Assert.assertFalse(xpFeatureCanKeepCurrent(soleTitle, listOf(soleTitle), today))
+        org.junit.Assert.assertFalse(xpFeatureCanKeepCurrent(soleTitle.copy(backdrop = null), emptyList(), today))
+    }
 }
