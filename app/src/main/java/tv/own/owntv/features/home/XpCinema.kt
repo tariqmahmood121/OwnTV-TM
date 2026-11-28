@@ -115,16 +115,7 @@ internal fun XpCinemaRail(
                 onClick = { onSelect(index) })
         }
         Spacer(Modifier.weight(1f))
-        if (expanded) {
-            val movio = stringResource(R.string.movioxp_logo_menu_movio)
-            val xp = stringResource(R.string.movioxp_logo_menu_xp)
-            Text(androidx.compose.ui.text.buildAnnotatedString {
-                append(movio)
-                pushStyle(androidx.compose.ui.text.SpanStyle(color = XpRemotePink))
-                append(xp)
-                pop()
-            }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(9.dp, 4.dp))
-        }
+        if (expanded) XpApprovedWordmark(Modifier.width(118.dp).height(30.dp).padding(horizontal = 6.dp))
         XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, expanded, onClick = onExit)
     }
 }

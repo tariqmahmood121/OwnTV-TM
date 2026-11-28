@@ -276,6 +276,71 @@ class XpCinemaVisualTest {
         saveScreenshot("15-native-age-badge-fixtures")
     }
 
+    @Test
+    fun touchHomeRespondsToAvailableWidthWithOneNavigationBar() {
+        val activity = compose.activity
+        var expanded by mutableStateOf(false)
+        compose.setContent {
+            val original = androidx.compose.ui.platform.LocalConfiguration.current
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val configuration = android.content.res.Configuration(original).apply {
+                uiMode = (uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK.inv()) or
+                    android.content.res.Configuration.UI_MODE_TYPE_NORMAL
+                screenWidthDp = if (expanded) 720 else 390
+            }
+            OwnTVTheme(ThemeMode.DARK, AccentColor.VIOLET, systemInDarkTheme = true) {
+                CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalConfiguration provides configuration,
+                    androidx.compose.ui.platform.LocalDensity provides
+                        androidx.compose.ui.unit.Density(density.density * if (expanded) .58f else 1f, density.fontScale),
+                    LocalXpFeaturedSourceCheck provides { true },
+                ) {
+                    StremioCatalogScreen(onBack = {}, onPlayStream = { _, _, _, _, _, _, _ -> })
+                }
+            }
+        }
+        fun awaitHero() = compose.waitUntil(90_000) {
+            compose.onAllNodes(hasTestTag("touch-home-feature"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        val navSettings = activity.getString(R.string.moviotv_xp_nav_settings)
+        awaitHero()
+        check(compose.onAllNodes(hasText(navSettings)).fetchSemanticsNodes().size == 1)
+        saveScreenshot("17-touch-home-compact")
+        compose.runOnIdle { expanded = true }
+        awaitHero()
+        check(compose.onAllNodes(hasText(navSettings)).fetchSemanticsNodes().size == 1)
+        saveScreenshot("18-touch-home-expanded")
+        compose.onNodeWithText(navSettings).performClick()
+        val maintenance = activity.getString(R.string.movioxp_maintenance_heading)
+        compose.onNodeWithText(maintenance).performScrollTo().performClick()
+        val diagnostics = activity.getString(R.string.movioxp_maintenance_diagnostics)
+        compose.onNodeWithText(diagnostics).performScrollTo().performClick()
+        compose.onNodeWithText(diagnostics).performScrollTo().assertIsDisplayed()
+        saveScreenshot("19-storage-maintenance")
+        val updates = File(activity.filesDir, "updates").apply { mkdirs() }
+        val installedCode = tv.own.owntv.BuildConfig.VERSION_CODE
+        val obsolete = File(updates, "movioxp-${installedCode - 1}.apk").apply {
+            writeText("obsolete fixture")
+            check(setLastModified(System.currentTimeMillis() - 172_800_000L))
+        }
+        val pending = File(updates, "movioxp-${installedCode + 1}.pending.apk").apply { writeText("pending fixture") }
+        val before = kotlinx.coroutines.runBlocking { tv.own.owntv.features.home.XpMaintenance.snapshot(activity) }
+        compose.onNodeWithText(activity.getString(R.string.movioxp_maintenance_optimise)).performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            !obsolete.exists() && activity.getSharedPreferences("movioxp_maintenance", 0).getLong("last", 0) > 0
+        }
+        check(pending.isFile)
+        pending.delete()
+        val after = kotlinx.coroutines.runBlocking { tv.own.owntv.features.home.XpMaintenance.snapshot(activity) }
+        check(after.last > 0)
+        File(activity.filesDir, "cinema-visual").resolve("maintenance.txt").writeText(
+            "emulator_ram_bytes=${after.ram}\nfree_storage_bytes=${after.free}\n" +
+                "java_heap_used_bytes=${after.heap}\nimage_disk_bytes=${after.pictures}\n" +
+                "catalogue_disk_bytes=${after.catalogues}\nupdate_disk_before_bytes=${before.updates}\n" +
+                "update_disk_after_bytes=${after.updates}\n",
+        )
+    }
+
     private fun saveScreenshot(name: String) {
         compose.waitForIdle()
         SystemClock.sleep(1_300)

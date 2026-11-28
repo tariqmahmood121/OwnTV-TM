@@ -77,8 +77,12 @@ internal fun XpMaintenancePanel(context: Context, playbackActive: Boolean) {
     var requests by remember { mutableStateOf(0) }
     var metrics by remember { mutableStateOf<XpMaintenance.Snapshot?>(null) }
     var diagnostics by remember { mutableStateOf(false) }
+    var lastRequest by remember { mutableStateOf(0) }
     LaunchedEffect(requests, playbackActive) {
-        if (requests > 0 && !playbackActive) XpMaintenance.run(context, force = true)
+        if (requests != lastRequest && !playbackActive) {
+            XpMaintenance.run(context, force = true)
+            lastRequest = requests
+        }
         metrics = XpMaintenance.snapshot(context)
     }
     val values = metrics

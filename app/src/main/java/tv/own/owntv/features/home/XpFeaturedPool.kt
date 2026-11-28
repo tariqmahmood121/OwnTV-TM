@@ -131,7 +131,7 @@ internal fun xpRankFeatureQueue(
 ): List<XpMeta> {
     val seen = exposed.toMutableSet()
     val finished = watched.filter { it.type == "movie" && (it.durationMs <= 0 ||
-        it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .9) }
+        it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .95) }
         .flatMapTo(mutableSetOf<String>(), ::xpFeatureAliases)
     val affinities = signals.take(15).mapIndexedNotNull { index, item -> item.genre?.lowercase(java.util.Locale.ROOT)?.let { it to (15 - index) } }
         .groupingBy { it.first }.fold(0) { total, match -> total + match.second }
@@ -244,7 +244,7 @@ internal fun rememberXpFeaturedMovie(
         val watches = latestWatched
         val eligiblePrevious = previous?.takeUnless { item ->
             watches.any { it.type == "movie" && xpFeatureAliases(it).any(xpFeatureAliases(item)::contains) &&
-                (it.durationMs <= 0 || it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .9) }
+                (it.durationMs <= 0 || it.positionMs == 0L || it.positionMs.toDouble() / it.durationMs >= .95) }
         }
         val queue = xpRankFeatureQueue(
             rotationSources + ("xp_trending" to (rotationSources["xp_trending"].orEmpty() + candidates)),

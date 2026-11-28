@@ -1601,7 +1601,10 @@ fun StremioCatalogScreen(
                 if (date == null) item else item.copy(releaseInfo = date)
             }
         },
-        watched = historyTitles, signals = featureSignals,
+        watched = remember(historyTitles, continueTitles) {
+            val resumableIds = continueTitles.flatMapTo(hashSetOf(), ::xpFeatureAliases)
+            historyTitles.filterNot { item -> xpFeatureAliases(item).any(resumableIds::contains) }
+        }, signals = featureSignals,
         hasSource = hasSource@ { item ->
             val now = android.os.SystemClock.elapsedRealtime()
             verifiedFeatureSources[item.id]?.takeIf { now - it.first < if (it.second) 3_600_000L else 60_000L }
@@ -2833,6 +2836,7 @@ fun StremioCatalogScreen(
                         .padding(horizontal = if (compactPhone) 14.dp else 28.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    if (BuildConfig.MOVIOXP_RELEASE) XpApprovedWordmark(Modifier.width(140.dp).height(36.dp))
                     Text(stringResource(R.string.moviotv_xp_nav_settings), color = XpText,
                         fontSize = if (compactPhone) 24.sp else 27.sp, fontWeight = FontWeight.Bold)
                     XpSettingsAccordion(
@@ -3762,7 +3766,8 @@ fun StremioCatalogScreen(
                         } else Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            DrawOwnTVIcon(OwnTVIcon.MOVIES, XpRemotePink, Modifier.size(23.dp))
+                            Image(androidx.compose.ui.res.painterResource(R.drawable.movioxp_cinema_triangle),
+                                null, Modifier.size(25.dp))
                             Text(stringResource(if (feature.waiting) R.string.movioxp_feature_loading
                                 else R.string.movioxp_feature_unavailable), color = XpText, modifier = Modifier.weight(1f))
                             if (!feature.waiting) XpAction(stringResource(R.string.moviotv_xp_refresh), false, compact = true) {
