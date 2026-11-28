@@ -4,6 +4,7 @@ on:
   push:
     branches: [movioxp-v4-navigation-qa]
     paths-ignore:
+      - .github/workflows/movioxp-central-isolation-release.yml
       - docs/movioxp-v4-l-review.md
       - .github/workflows/movioxp-v4-l-reviewed-release.yml
       - .github/workflows/movioxp-simulation-device-test.yml

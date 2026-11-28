@@ -341,4 +341,4 @@ jobs:
         run: |
           set -euo pipefail
           gh release create v4.0-l dist/MovioXP-4.0-L.apk dist/movioxp-version.json --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "MovioXP 4.0 L — TV Navigation QA" --notes-file docs/movioxp-v4-k.md
+            --title "MovioXP 4.0 L — TV Navigation QA" --notes-file docs/movioxp-v4-l.md

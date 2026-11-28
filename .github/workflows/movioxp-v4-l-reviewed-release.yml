@@ -1,0 +1,40 @@
+name: MovioXP 4.0 L reviewed signed QA
+on:
+  push:
+    branches: [movioxp-v4-navigation-qa]
+    paths: [.github/workflows/movioxp-v4-l-reviewed-release.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  reviewed-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Verify reviewed code and emulator evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEWED_SHA: "053f3b1bfe5de1e281ca8d96603fd875afc9a815"
+          EMULATOR_RUN: "46142638940"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$REVIEWED_SHA"
+          git diff --exit-code "$REVIEWED_SHA" HEAD -- . \
+            ':(exclude).github/workflows/movioxp-simulation-device-test.yml' \
+            ':(exclude).github/workflows/movioxp-v4-l-reviewed-release.yml' \
+            ':(exclude)docs/movioxp-v4-l-review.md'             ':(exclude).github/workflows/movioxp-central-isolation-release.yml'
+          git show "$REVIEWED_SHA:.github/workflows/movioxp-central-isolation-release.yml" |             sed '/--title "MovioXP 4.0 L/s/movioxp-v4-k.md/movioxp-v4-l.md/' |             diff - .github/workflows/movioxp-central-isolation-release.yml
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN")
+          jq -e --arg sha "$REVIEWED_SHA" '.head_sha == $sha and .conclusion == "success"' <<< "$run"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN/artifacts" \
+            --jq '.artifacts[] | select(.name == "cinema-visual" and .expired == false) | .id' | grep -Fx "15262553245"
+  signed-qa:
+    needs: reviewed-source
+    permissions:
+      contents: write
+    uses: ./.github/workflows/movioxp-central-isolation-release.yml
+    with:
+      device_test_passed: true
+    secrets: inherit
