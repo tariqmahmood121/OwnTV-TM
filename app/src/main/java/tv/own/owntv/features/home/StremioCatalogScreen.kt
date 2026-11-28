@@ -1643,7 +1643,7 @@ fun StremioCatalogScreen(
             verifiedFeatureSources[item.id]?.takeIf { now - it.first < if (it.second) 3_600_000L else 60_000L }
                 ?.let { return@hasSource it.second }
             val key = XpCatalogueRepository.Key(catalogueProfile,
-                installedAddons.joinToString("\n") { addon -> addon.url + "\n" + addon.version },
+                installedAddons.joinToString { addon -> (addon.url to addon.version).toString() },
                 "featured-source-availability:" + item.id)
             repository.freshBody(key, 20 * 60 * 1_000L)?.toBooleanStrictOrNull()?.let { return@hasSource it }
             val ids = XpPlaybackIdentity.ids(item)
