@@ -48,5 +48,5 @@ internal fun XpStartupScreen(visible: Boolean) {
 @Composable
 internal fun XpApprovedWordmark(modifier: Modifier = Modifier) {
     Image(painterResource(R.drawable.movioxp_approved_wordmark),
-        stringResource(R.string.movioxp_wordmark_description), modifier.background(Color.Black))
+        stringResource(R.string.movioxp_wordmark_description), modifier)
 }

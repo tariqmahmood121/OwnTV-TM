@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   signed-release:
-    if: (github.ref_name != 'movioxp-v4-simulation-corrections' && github.ref_name != 'movioxp-v4-cinema-navigation' && github.ref_name != 'movioxp-v4-home-grid' && github.ref_name != 'movioxp-v4-feature-cache' && github.ref_name != 'movioxp-v4-cinema-i' && github.ref_name != 'movioxp-v4-cinema-j' && github.ref_name != 'movioxp-v4-mobile-qa') || inputs.device_test_passed == true
+    if: (github.ref_name != 'movioxp-v4-simulation-corrections' && github.ref_name != 'movioxp-v4-cinema-navigation' && github.ref_name != 'movioxp-v4-home-grid' && github.ref_name != 'movioxp-v4-feature-cache' && github.ref_name != 'movioxp-v4-cinema-i' && github.ref_name != 'movioxp-v4-cinema-j' && github.ref_name != 'movioxp-v4-mobile-qa' && github.ref_name != 'movioxp-v4-navigation-qa') || inputs.device_test_passed == true
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -88,8 +88,8 @@ jobs:
       - name: Unit tests and signed release APK
         env:
           MOVIOXP_RELEASE: 'true'
-          VERSION_CODE: ${{ github.ref_name == 'movioxp-v4-mobile-qa' && '100108' || github.ref_name == 'movioxp-v4-cinema-j' && '100107' || github.ref_name == 'movioxp-v4-cinema-i' && '100106' || github.ref_name == 'movioxp-v4-feature-cache' && '100105' || github.ref_name == 'movioxp-v4-home-grid' && '100104' || github.ref_name == 'movioxp-v4-cinema-navigation' && '100103' || github.ref_name == 'movioxp-v4-simulation-corrections' && '100102' || github.ref_name == 'movioxp-v4-tv-simulation' && '100101' || github.ref_name == 'movioxp-v4-cinema-polish' && '100100' || github.ref_name == 'movioxp-v4-cinema' && '100099' || github.ref_name == 'movioxp-v4' && '100098' || github.ref_name == 'qa/movioxp-android-refresh' && '100097' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '100093' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '100090' || github.ref_name == 'release/movioxp-3.0.0' && '100089' || github.ref_name == 'feature/movioxp-qa6' && '100088' || '100087' }}
-          VERSION_NAME: ${{ github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}
+          VERSION_CODE: ${{ github.ref_name == 'movioxp-v4-navigation-qa' && '100109' || github.ref_name == 'movioxp-v4-mobile-qa' && '100108' || github.ref_name == 'movioxp-v4-cinema-j' && '100107' || github.ref_name == 'movioxp-v4-cinema-i' && '100106' || github.ref_name == 'movioxp-v4-feature-cache' && '100105' || github.ref_name == 'movioxp-v4-home-grid' && '100104' || github.ref_name == 'movioxp-v4-cinema-navigation' && '100103' || github.ref_name == 'movioxp-v4-simulation-corrections' && '100102' || github.ref_name == 'movioxp-v4-tv-simulation' && '100101' || github.ref_name == 'movioxp-v4-cinema-polish' && '100100' || github.ref_name == 'movioxp-v4-cinema' && '100099' || github.ref_name == 'movioxp-v4' && '100098' || github.ref_name == 'qa/movioxp-android-refresh' && '100097' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '100093' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '100090' || github.ref_name == 'release/movioxp-3.0.0' && '100089' || github.ref_name == 'feature/movioxp-qa6' && '100088' || '100087' }}
+          VERSION_NAME: ${{ github.ref_name == 'movioxp-v4-navigation-qa' && '4.0 L' || github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}
           KEYSTORE_PASSWORD: ${{ secrets.MOVIOXP_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MOVIOXP_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.MOVIOXP_KEY_PASSWORD }}
@@ -101,8 +101,8 @@ jobs:
 
       - name: Verify release APK signing
         env:
-          VERSION_CODE: ${{ github.ref_name == 'movioxp-v4-mobile-qa' && '100108' || github.ref_name == 'movioxp-v4-cinema-j' && '100107' || github.ref_name == 'movioxp-v4-cinema-i' && '100106' || github.ref_name == 'movioxp-v4-feature-cache' && '100105' || github.ref_name == 'movioxp-v4-home-grid' && '100104' || github.ref_name == 'movioxp-v4-cinema-navigation' && '100103' || github.ref_name == 'movioxp-v4-simulation-corrections' && '100102' || github.ref_name == 'movioxp-v4-tv-simulation' && '100101' || github.ref_name == 'movioxp-v4-cinema-polish' && '100100' || github.ref_name == 'movioxp-v4-cinema' && '100099' || github.ref_name == 'movioxp-v4' && '100098' || github.ref_name == 'qa/movioxp-android-refresh' && '100097' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '100093' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '100090' || github.ref_name == 'release/movioxp-3.0.0' && '100089' || github.ref_name == 'feature/movioxp-qa6' && '100088' || '100087' }}
-          VERSION_NAME: ${{ github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}
+          VERSION_CODE: ${{ github.ref_name == 'movioxp-v4-navigation-qa' && '100109' || github.ref_name == 'movioxp-v4-mobile-qa' && '100108' || github.ref_name == 'movioxp-v4-cinema-j' && '100107' || github.ref_name == 'movioxp-v4-cinema-i' && '100106' || github.ref_name == 'movioxp-v4-feature-cache' && '100105' || github.ref_name == 'movioxp-v4-home-grid' && '100104' || github.ref_name == 'movioxp-v4-cinema-navigation' && '100103' || github.ref_name == 'movioxp-v4-simulation-corrections' && '100102' || github.ref_name == 'movioxp-v4-tv-simulation' && '100101' || github.ref_name == 'movioxp-v4-cinema-polish' && '100100' || github.ref_name == 'movioxp-v4-cinema' && '100099' || github.ref_name == 'movioxp-v4' && '100098' || github.ref_name == 'qa/movioxp-android-refresh' && '100097' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '100093' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '100090' || github.ref_name == 'release/movioxp-3.0.0' && '100089' || github.ref_name == 'feature/movioxp-qa6' && '100088' || '100087' }}
+          VERSION_NAME: ${{ github.ref_name == 'movioxp-v4-navigation-qa' && '4.0 L' || github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/standard/release -maxdepth 1 -type f -name '*.apk' -print -quit)
@@ -116,7 +116,9 @@ jobs:
           [[ "$BADGING" == *"versionCode='$VERSION_CODE'"* ]] || { echo "::error::Version code mismatch"; exit 1; }
           [[ "$BADGING" == *"versionName='$VERSION_NAME'"* ]] || { echo "::error::Version name mismatch"; exit 1; }
           mkdir -p dist
-          if [ "$VERSION_NAME" = '4.0 K' ]; then
+          if [ "$VERSION_NAME" = '4.0 L' ]; then
+            cp "$APK" dist/MovioXP-4.0-L.apk
+          elif [ "$VERSION_NAME" = '4.0 K' ]; then
             cp "$APK" dist/MovioXP-4.0-K.apk
           elif [ "$VERSION_NAME" = '4.0 J' ]; then
             cp "$APK" dist/MovioXP-4.0-J.apk
@@ -146,7 +148,7 @@ jobs:
           python3 - <<'PYMANIFEST'
           import hashlib, json, os, pathlib
           version = os.environ["VERSION_NAME"]
-          experimental = version in {"4.0 A", "4.0 B", "4.0 C", "4.0 D", "4.0 E", "4.0 F", "4.0 G", "4.0 H", "4.0 I", "4.0 J", "4.0 K"}
+          experimental = version in {"4.0 A", "4.0 B", "4.0 C", "4.0 D", "4.0 E", "4.0 F", "4.0 G", "4.0 H", "4.0 I", "4.0 J", "4.0 K", "4.0 L"}
           filename = pathlib.Path("dist/MovioXP-" + version.replace(" ", "-") + ".apk" if experimental else "dist/MovioXP-" + version + "-discover-home-release.apk")
           qa = experimental or "-qa" in version
           result = {
@@ -159,7 +161,9 @@ jobs:
               "apkSizeBytes": filename.stat().st_size,
               "sha256": hashlib.sha256(filename.read_bytes()).hexdigest(),
               "releaseNotes": (
-                  "Adaptive Home and storage maintenance"
+                  "TV navigation and series browsing"
+                  if version == "4.0 L"
+                  else "Adaptive Home and storage maintenance"
                   if version == "4.0 K"
                   else "Final Cinema refinements"
                   if version == "4.0 J"
@@ -202,7 +206,7 @@ jobs:
       - name: Upload signed release APK
         uses: actions/upload-artifact@v7
         with:
-          name: MovioXP-${{ github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}-Discover-Home-SIGNED
+          name: MovioXP-${{ github.ref_name == 'movioxp-v4-navigation-qa' && '4.0 L' || github.ref_name == 'movioxp-v4-mobile-qa' && '4.0 K' || github.ref_name == 'movioxp-v4-cinema-j' && '4.0 J' || github.ref_name == 'movioxp-v4-cinema-i' && '4.0 I' || github.ref_name == 'movioxp-v4-feature-cache' && '4.0 H' || github.ref_name == 'movioxp-v4-home-grid' && '4.0 G' || github.ref_name == 'movioxp-v4-cinema-navigation' && '4.0 F' || github.ref_name == 'movioxp-v4-simulation-corrections' && '4.0 E' || github.ref_name == 'movioxp-v4-tv-simulation' && '4.0 D' || github.ref_name == 'movioxp-v4-cinema-polish' && '4.0 C' || github.ref_name == 'movioxp-v4-cinema' && '4.0 B' || github.ref_name == 'movioxp-v4' && '4.0 A' || github.ref_name == 'qa/movioxp-android-refresh' && '3.1.0-qa6' || github.ref_name == 'feature/movioxp-v3.1-qa2' && '3.1.0-qa2.1' || github.ref_name == 'feature/movioxp-v3.1-profile-updater' && '3.1.0-qa1' || github.ref_name == 'release/movioxp-3.0.0' && '3.0.0' || github.ref_name == 'feature/movioxp-qa6' && '1.0.86-qa6' || '1.0.85-qa5' }}-Discover-Home-SIGNED
           path: dist/*
           if-no-files-found: error
           retention-days: 21
@@ -329,3 +333,12 @@ jobs:
           set -euo pipefail
           gh release create v4.0-k dist/MovioXP-4.0-K.apk dist/movioxp-version.json --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "MovioXP 4.0 K — Adaptive Home QA" --notes-file docs/movioxp-v4-k.md
+
+      - name: Publish MovioXP 4.0 L QA prerelease
+        if: github.ref_name == 'movioxp-v4-navigation-qa'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create v4.0-l dist/MovioXP-4.0-L.apk dist/movioxp-version.json --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "MovioXP 4.0 L — TV Navigation QA" --notes-file docs/movioxp-v4-k.md

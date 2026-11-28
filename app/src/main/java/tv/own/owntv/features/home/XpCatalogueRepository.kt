@@ -121,6 +121,14 @@ internal class XpCatalogueRepository(
         lock.withLock { read(key, legacyKey)?.body }
     }
 
+    suspend fun freshBody(key: Key, maximumAgeMs: Long): String? = withContext(Dispatchers.IO) {
+        lock.withLock { read(key)?.takeIf { now() - it.timestamp in 0 until maximumAgeMs }?.body }
+    }
+
+    suspend fun saveBody(key: Key, body: String) = withContext(Dispatchers.IO) {
+        lock.withLock { write(key, body) }
+    }
+
     suspend fun invalidate(profile: String, provider: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             inFlight.keys.filter { it.profile == profile && it.provider == provider }.forEach { key ->

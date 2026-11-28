@@ -74,4 +74,12 @@ class XpFeaturedPoolTest {
         assertEquals(150 * mb, XpMaintenance.budget(8_000 * mb, 5_000 * mb))
         assertEquals(25 * mb, XpMaintenance.budget(8_000 * mb, 500 * mb))
     }
+    @Test
+    fun catalogueTypesKeepSeriesAliasesDistinctFromLiveTv() {
+        org.junit.Assert.assertTrue("series".isXpSeriesCatalogue())
+        org.junit.Assert.assertTrue("TVShows".isXpSeriesCatalogue())
+        org.junit.Assert.assertTrue("show".isXpSeriesCatalogue())
+        org.junit.Assert.assertFalse("tv".isXpSeriesCatalogue())
+        org.junit.Assert.assertFalse("movie".isXpSeriesCatalogue())
+    }
 }

@@ -133,7 +133,7 @@ class XpCinemaVisualTest {
         val matrix = compose.onNodeWithContentDescription("The Matrix")
         matrix.performSemanticsAction(SemanticsActions.RequestFocus)
         matrix.assertIsFocused()
-        compose.mainClock.advanceTimeBy(800)
+        compose.mainClock.advanceTimeBy(1_850)
         val expandedCard = "cinema-expanded-card-metadata"
         compose.waitUntil(10_000) {
             compose.onAllNodes(androidx.compose.ui.test.hasTestTag(expandedCard), useUnmergedTree = true)
@@ -166,7 +166,7 @@ class XpCinemaVisualTest {
         val rightmost = shelfCards.fetchSemanticsNodes().mapIndexed { index, node -> index to node.boundsInRoot.right }
             .maxBy { it.second }.first
         shelfCards[rightmost].performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.mainClock.advanceTimeBy(800)
+        compose.mainClock.advanceTimeBy(1_850)
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag(expandedCard), useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
@@ -205,7 +205,13 @@ class XpCinemaVisualTest {
         compose.onNodeWithTag("cinema-home-list").assertIsDisplayed()
         compose.onNodeWithText(activity.getString(R.string.movioxp_exit_confirm)).assertDoesNotExist()
         fun rail(destination: Int) {
-            compose.onNodeWithContentDescription(activity.getString(destination), useUnmergedTree = true).performClick()
+            val label = activity.getString(destination)
+            if (compose.onAllNodes(androidx.compose.ui.test.hasContentDescription(label), useUnmergedTree = true)
+                    .fetchSemanticsNodes().isEmpty()) {
+                val discover = compose.onNodeWithContentDescription(activity.getString(R.string.moviotv_xp_nav_discover), useUnmergedTree = true)
+                discover.performSemanticsAction(SemanticsActions.RequestFocus)
+            }
+            compose.onNodeWithContentDescription(label, useUnmergedTree = true).performClick()
         }
         rail(R.string.moviotv_xp_nav_search)
         awaitText(activity.getString(R.string.movioxp_cinema_browse))
@@ -387,7 +393,13 @@ class XpCinemaVisualTest {
         report.appendText("offline_force_stop_home_ms=$elapsed\n")
 
         fun rail(destination: Int) {
-            compose.onNodeWithContentDescription(activity.getString(destination), useUnmergedTree = true).performClick()
+            val label = activity.getString(destination)
+            if (compose.onAllNodes(androidx.compose.ui.test.hasContentDescription(label), useUnmergedTree = true)
+                    .fetchSemanticsNodes().isEmpty()) {
+                val discover = compose.onNodeWithContentDescription(activity.getString(R.string.moviotv_xp_nav_discover), useUnmergedTree = true)
+                discover.performSemanticsAction(SemanticsActions.RequestFocus)
+            }
+            compose.onNodeWithContentDescription(label, useUnmergedTree = true).performClick()
         }
         rail(R.string.moviotv_xp_nav_discover)
         val selector = compose.onNodeWithTag("cinema-category-selector")

@@ -15,6 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -91,32 +95,51 @@ internal fun XpCinemaRail(
     profileName: String,
     selected: Int,
     focus: FocusRequester,
+    onMenuFocus: (Boolean) -> Unit,
     onSelect: (Int) -> Unit,
     onProfile: () -> Unit,
     onSwitchProfile: (() -> Unit)?,
     onExit: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.width(if (expanded) 196.dp else 56.dp).fillMaxHeight()
-        .background(XpCinemaBackground.copy(alpha = if (expanded) .97f else 1f))
-        .onFocusChanged { expanded = it.hasFocus }.focusGroup().padding(horizontal = 5.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.Start) {
-        XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, expanded,
-            modifier = Modifier.testTag("cinema-profile"), onClick = onProfile, indicator = profileStatus)
-        if (expanded && onSwitchProfile != null) XpCinemaRailButton(stringResource(R.string.movioxp_switch_profile),
-            OwnTVIcon.SWAP, false, expanded, onClick = onSwitchProfile)
-        Spacer(Modifier.weight(1f))
-        val labels = listOf(R.string.moviotv_xp_nav_search, R.string.moviotv_nav_home, R.string.moviotv_xp_nav_discover,
-            R.string.moviotv_nav_series, R.string.movioxp_my_library)
-        val icons = listOf(OwnTVIcon.SEARCH, OwnTVIcon.HOME, OwnTVIcon.TREND, OwnTVIcon.SERIES, OwnTVIcon.FAVORITE)
-        labels.forEachIndexed { index, label ->
-            XpCinemaRailButton(stringResource(label), icons[index], selected == index, expanded,
-                modifier = if (selected == index) Modifier.focusRequester(focus) else Modifier,
-                onClick = { onSelect(index) })
+    val focusManager = LocalFocusManager.current
+    val labels = listOf(R.string.moviotv_xp_nav_search, R.string.moviotv_nav_home, R.string.moviotv_xp_nav_discover,
+        R.string.moviotv_nav_series, R.string.movioxp_my_library, R.string.moviotv_xp_nav_settings)
+    val icons = listOf(OwnTVIcon.SEARCH, OwnTVIcon.HOME, OwnTVIcon.TREND, OwnTVIcon.SERIES, OwnTVIcon.FAVORITE, OwnTVIcon.GEAR)
+    Box(Modifier.width(if (expanded) 210.dp else 56.dp).fillMaxHeight().padding(5.dp)) {
+        val shape = RoundedCornerShape(16.dp)
+        Column(Modifier.align(Alignment.CenterStart).fillMaxWidth().clip(shape)
+            .background(Brush.verticalGradient(listOf(Color(0xFF25252B), Color(0xFF0B0B10))))
+            .onFocusChanged {
+                expanded = it.hasFocus
+                onMenuFocus(it.hasFocus)
+            }.focusRestorer().focusGroup()
+            .testTag("cinema-navigation").padding(3.dp)) {
+            if (expanded) {
+                XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, true, modifier = Modifier.testTag("cinema-profile"),
+                    onClick = onProfile, indicator = profileStatus)
+                if (onSwitchProfile != null) XpCinemaRailButton(stringResource(R.string.movioxp_switch_profile),
+                    OwnTVIcon.SWAP, false, true, onClick = onSwitchProfile)
+            }
+            labels.forEachIndexed { index, label ->
+                if (expanded || index == 0 || index == 2 || index == 4) {
+                    val active = selected == index || !expanded && index == 2 && selected in 1..3
+                    XpCinemaRailButton(stringResource(label), icons[index], active, expanded,
+                        modifier = if (active) Modifier.focusRequester(focus) else Modifier,
+                        onClick = {
+                            onSelect(index)
+                            focusManager.moveFocus(FocusDirection.Right)
+                            expanded = false
+                        })
+                }
+            }
+            if (expanded) XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, true, onClick = onExit)
         }
-        Spacer(Modifier.weight(1f))
-        if (expanded) XpApprovedWordmark(Modifier.width(118.dp).height(30.dp).padding(horizontal = 6.dp))
-        XpCinemaRailButton(stringResource(R.string.movioxp_exit), OwnTVIcon.POWER, false, expanded, onClick = onExit)
+        androidx.activity.compose.BackHandler(enabled = expanded) { focusManager.moveFocus(FocusDirection.Right); expanded = false }
+        if (!expanded) Box(Modifier.align(Alignment.TopStart).width(46.dp)) {
+            XpCinemaRailButton(profileName, OwnTVIcon.PERSON, false, false,
+                modifier = Modifier.testTag("cinema-profile"), onClick = onProfile, indicator = profileStatus)
+        }
     }
 }
 
@@ -132,17 +155,20 @@ private fun XpCinemaRailButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(8.dp)
+    val active = selected && expanded
+    val foreground = if (active) XpCinemaBackground else Color.White
     Row(modifier.fillMaxWidth().height(35.dp).clip(shape)
-        .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .8f) else Color.Transparent, shape)
+        .background(if (active) Color.White else Color.Transparent)
+        .border(if (focused) 2.dp else 0.dp, if (focused) XpRemotePink else Color.Transparent, shape)
         .semantics { contentDescription = label }.onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(44.dp, 35.dp), contentAlignment = Alignment.Center) {
-            OwnTVIcon(icon, if (selected) XpRemotePink else Color.White, Modifier.size(20.dp))
+            OwnTVIcon(icon, if (selected) XpRemotePink else foreground, Modifier.size(20.dp))
             if (selected) Box(Modifier.align(Alignment.CenterStart).width(2.dp).height(16.dp).background(XpRemotePink, CircleShape))
             if (indicator != null) Box(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 6.dp)
                 .size(6.dp).background(indicator, CircleShape))
         }
-        if (expanded) Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+        if (expanded) Text(label, color = foreground, fontSize = 13.sp, fontWeight = FontWeight.Medium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -303,11 +329,15 @@ private fun XpCinemaFeatureButton(label: String, icon: OwnTVIcon, primary: Boole
 @Composable
 internal fun XpCinemaFocusedPreview(item: XpMeta) {
     val load = LocalXpCinemaDetails.current
-    val details by produceState<XpDetailMetadata?>(null, item.id, item.type, load) {
-        value = null
+    var settled by remember(item.id, item.type) { mutableStateOf(false) }
+    LaunchedEffect(item.id, item.type) {
         delayFocus()
-        value = load(item)
+        settled = true
     }
+    val details by produceState<XpDetailMetadata?>(null, item.id, item.type, load, settled) {
+        value = if (settled) load(item) else null
+    }
+    if (!settled) return
     val showYear = LocalXpPosterDisplay.current.second
     val artwork = details?.backdrop ?: item.backdrop
     Row(Modifier.fillMaxWidth().heightIn(max = 120.dp).clip(RoundedCornerShape(11.dp))
@@ -323,7 +353,9 @@ internal fun XpCinemaFocusedPreview(item: XpMeta) {
     }
 }
 
-private suspend fun delayFocus() = kotlinx.coroutines.delay(400)
+internal const val XP_CINEMA_FOCUS_DELAY = 1_500L
+
+private suspend fun delayFocus() = kotlinx.coroutines.delay(XP_CINEMA_FOCUS_DELAY)
 
 @Composable
 internal fun XpTouchHomeHero(item: XpMeta, compact: Boolean, onPlay: () -> Unit, onInfo: () -> Unit) {
